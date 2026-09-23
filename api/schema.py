@@ -32,3 +32,5 @@ def migrate(c):
     setup_organizations(c)
     from transfers import setup as setup_transfers
     setup_transfers(c)
+    from stripe_payments import setup as setup_stripe
+    setup_stripe(c)

@@ -65,7 +65,11 @@ PERMISSIONS.update(TRANSFER_PERMISSIONS)
 from migration_plan import PERMISSIONS as MIGRATION_PERMISSIONS
 PERMISSIONS.update(MIGRATION_PERMISSIONS)
 
+from stripe_payments import PERMISSIONS as STRIPE_PERMISSIONS
+PERMISSIONS.update(STRIPE_PERMISSIONS)
+
 DEPENDENCIES={
+ 'stripe.checkout':('payment.record',),'stripe.refund':('payment.refund',),
  'test.lab.receive':('clinical.ingest',),
  'clinical.ingest':('source.add',),
  'recording.create':('source.add',),'recording.complete':('recording.create',),
@@ -108,6 +112,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in STRIPE_PERMISSIONS:
+        from stripe_payments import dispatch as stripe_action
+        return stripe_action(c,a,p,clinic,actor)
     if a in MIGRATION_PERMISSIONS:
         from migration_plan import dispatch as migration
         return migration(c,a,p,clinic,actor)
@@ -240,6 +247,8 @@ def dispatch(c,a,p,clinic,actor):
         event(c,clinic,p['patient_id'],'invoice',r['data']['number'],f'SGD {total/100:.2f} invoiced'); return r
     if a=='payment.record':
         r=owned(c,p['id'],clinic,'invoice'); version(r,p); d=r['data'];
+        from stripe_payments import guard_invoice
+        guard_invoice(c,clinic,r['id'])
         if d['status']=='void': fail('Cannot pay a void invoice')
         amount=integer(require(p,'amount_cents'),'Amount',1)
         if amount>d['total_cents']-d['paid_cents']: fail('Payment exceeds outstanding balance')

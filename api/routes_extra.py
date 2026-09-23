@@ -104,7 +104,8 @@ def operation_status(request:Request):
     with connection() as c:
         if owned(c,actor,clinic,'member')['data']['role']!='admin':fail('Administrator access required',403)
         jobs=[dict(r) for r in c.execute('SELECT j.id,j.status,q.attempts,q.lease_until,q.next_attempt FROM jobs j LEFT JOIN job_claims q ON q.job_id=j.id WHERE j.clinic_id=? ORDER BY j.created_at DESC LIMIT 50',(clinic,))]
-        return {'sending_enabled':False,'payment_mode':'simulation','lab_mode':'synthetic','jobs':jobs,'pending_escalations':sum(r['data']['status']=='needs_attention' for r in all_records(c,clinic,'escalation'))}
+        from stripe_payments import configured
+        return {'sending_enabled':False,'payment_mode':'stripe_test' if configured(clinic) else 'simulation','lab_mode':'synthetic','jobs':jobs,'pending_escalations':sum(r['data']['status']=='needs_attention' for r in all_records(c,clinic,'escalation'))}
 
 @router.get('/api/organization')
 def organization(request:Request):

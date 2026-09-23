@@ -26,8 +26,10 @@ async def lifespan(app):
     setup_queue(); jobs.stop.clear(); thread=threading.Thread(target=jobs.loop,daemon=True); thread.start()
     from clinic_workflows import loop as schedule_loop
     scheduler=threading.Thread(target=schedule_loop,args=(jobs.stop,),daemon=True); scheduler.start()
+    from stripe_payments import loop as payment_loop
+    payments=threading.Thread(target=payment_loop,args=(jobs.stop,),daemon=True); payments.start()
     yield
-    jobs.stop.set(); thread.join(timeout=3); scheduler.join(timeout=3)
+    jobs.stop.set(); thread.join(timeout=3); scheduler.join(timeout=3); payments.join(timeout=3)
 app=FastAPI(title='Broby V2',lifespan=lifespan,
             docs_url=None if runtime.hosted() else '/docs',
             redoc_url=None if runtime.hosted() else '/redoc',
@@ -79,7 +81,9 @@ def bootstrap(request:Request):
                 entry=get(c,membership['clinic_id'],membership['clinic_id']); linked=get(c,membership['member_id'],membership['clinic_id'])
                 if entry and linked and linked['data'].get('active'):clinics.append({**entry,'member_id':linked['id']})
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
-        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))],'permissions':allowed_actions(c,clinic,actor),'integrations':providers.available(),'mode':'password' if auth.enabled() else 'local-demo'}
+        from stripe_payments import configured
+        integrations={**providers.available(),'payments':configured(clinic)}
+        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))],'permissions':allowed_actions(c,clinic,actor),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
 class Command(BaseModel):
     action:str
     payload:dict[str,Any]=Field(default_factory=dict)
@@ -206,3 +210,6 @@ app.include_router(hook_router)
 
 from transfers import router as transfers_router
 app.include_router(transfers_router)
+
+from stripe_payments import router as stripe_router
+app.include_router(stripe_router)

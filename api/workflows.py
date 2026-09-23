@@ -133,6 +133,7 @@ def dispatch(c,a,p,clinic,actor):
         return update(c,r,{**r['data'],**({'body':require(p,'body')} if a=='message.update' else {'status':'cancelled'})})
     if a=='payment.refund':
         payment=owned(c,p['id'],clinic,'payment');invoice=owned(c,payment['data']['invoice_id'],clinic,'invoice');version(invoice,p)
+        if payment['data'].get('checkout_id'):fail('Use the Stripe refund action so the provider and invoice remain reconciled',409)
         amount=integer(require(p,'amount_cents'),'Refund amount',1)
         already=sum(r['data']['amount_cents'] for r in all_records(c,clinic,'refund') if r['data']['payment_id']==payment['id'])
         if amount>payment['data']['amount_cents']-already:fail('Refund exceeds the unrefunded payment')
@@ -142,6 +143,8 @@ def dispatch(c,a,p,clinic,actor):
         return refund
     if a=='invoice.void':
         r=owned(c,p['id'],clinic,'invoice');version(r,p)
+        from stripe_payments import guard_invoice
+        guard_invoice(c,clinic,r['id'])
         if r['data']['paid_cents']:fail('Record any externally completed refunds before voiding')
         return update(c,r,{**r['data'],'status':'void','void_reason':require(p,'reason')})
     if a=='inventory.receive':
