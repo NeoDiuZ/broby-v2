@@ -2,6 +2,8 @@
 
 The patient-record foundation now uses **FastAPI, SQLAlchemy 2.0, Alembic and PostgreSQL**, with Next.js/React/TypeScript and Tailwind on the frontend. The original production checkout is untouched. This remains a local synthetic-data preview, not a production replacement.
 
+Handover review: [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1). The complete source is on `codex/v2-handover` until that PR is merged; `main` initially contains only the repository scaffold. Clone with `git clone --branch codex/v2-handover https://github.com/NeoDiuZ/broby-v2.git`.
+
 ## Open
 
 - [Workspace](http://127.0.0.1:3100/app) — Patients → Milo → Timeline / Observations
@@ -35,6 +37,6 @@ The [API contract](docs/V2_CONTRACT.md) is explicit and the first schema is a fr
 
 ## Important transition boundary
 
-Existing scheduling, billing, capture and other PMS workflows are preserved on SQLite while patient/clinical data is projected into the normalized spine. New v2 events are visible in the new record screens; older assistant, owner-sharing and reporting modules still need migration to consume them. This is not yet a single-store whole-product replacement. Exact mockup parity and a GitHub PR remain outstanding; the referenced mockup directory was unavailable. Mobile and the extension are deferred.
+Existing scheduling, billing, capture and other PMS workflows are preserved on SQLite while patient/clinical data is projected into the normalized spine. New v2 events are visible in the new record screens; older assistant, owner-sharing and reporting modules still need migration to consume them. This is not yet a single-store whole-product replacement. Exact mockup parity and handover review remain outstanding; the referenced mockup directory was unavailable. Mobile and the extension are deferred.
 
 See [acceptance and remaining work](docs/FIRST_BUILD.md), [full-product status](docs/FEATURE_STATUS.md), and the [earlier workflow guide](docs/PREVIEW_GUIDE.md). For backups of both stores, stop the API and run `.venv/bin/python scripts/backup-local.py /new/backup/path`. The UI ZIP backs up legacy PMS data only.
