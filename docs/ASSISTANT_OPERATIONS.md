@@ -75,4 +75,5 @@ Credit-note issue and reversal add two strict contracts with explicit net/tax
 amounts, reasons, charge-only effects and resulting balances. See CREDIT_NOTES.md.
 Hosted issue/reversal, confirmation replay and saved reviews passed. A provider
 format failure on missing tax details led to a structured-intent transport fix;
-its local failure/retry tests pass and hosted planner regression is pending.
+its local failure/retry tests pass, the failed question recovered through the
+browser, and fresh real-model credit/reversal/read/reminder regressions passed.

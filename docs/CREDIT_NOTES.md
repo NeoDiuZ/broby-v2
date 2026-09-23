@@ -53,7 +53,8 @@ Stripe's sandbox charged 80 cents after an initial 20-cent credit, then refunded
 30 cents after a second credit; both provider and app ended with 50 cents paid
 against a 50-cent net charge. PDF and register readback passed. A missing-tax
 response-format failure prompted the safe retry/structured-planner follow-up
-tracked in RELEASE_WORK.md.
+tracked in RELEASE_WORK.md. That follow-up passed its browser retry and bounded
+real-model regression on the deployed revision.
 
 The assistant transport uses an inert structured-result collector following
 [Anthropic's tool specification](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools).

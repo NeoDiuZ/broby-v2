@@ -125,15 +125,27 @@ with httpx.Client(base_url=args.base_url.rstrip('/') + '/api/', timeout=180) as 
             check(inv['data']['status'] == 'paid' and inv['data']['credited_cents'] == 50, 'real Stripe sandbox refund settles exactly the credit')
         elif args.phase == 'planner':
             before = records()
-            turn = ask('structured_credit', f"Propose a credit note for invoice {state['browser_invoice']}: SGD 0.10 before tax, SGD 0.00 tax. Reason: SYNTHETIC transport review. Do not confirm it.")
+            attempt = state.get('planner_attempt', 0) + 1
+            state.update(planner_attempt=attempt, planner_before=before); persist()
+            def planner_ask(case, message):return ask('structured_' + case + '_' + str(attempt), message)
+            turn = planner_ask('credit', f"Propose a credit note for invoice {state['browser_invoice']}: SGD 0.10 before tax, SGD 0.00 tax. Reason: SYNTHETIC transport review. Do not confirm it.")
             check(turn.get('action', {}).get('action') == 'credit_note.create' and bool(turn.get('review')), 'structured real model returns a reviewed credit proposal')
-            turn = ask('structured_reverse', f"Propose reversing credit note {state['stripe_credit']} in full. Reason: SYNTHETIC transport review. Do not confirm it.")
+            turn = planner_ask('reverse', f"Propose reversing credit note {state['stripe_credit']} in full. Reason: SYNTHETIC transport review. Do not confirm it.")
             check(turn.get('action', {}).get('action') == 'credit_note.reverse' and bool(turn.get('review')), 'structured real model returns a reviewed reversal proposal')
-            turn = ask('structured_read', 'Show outstanding invoices for this patient.')
+            turn = planner_ask('read', 'Show outstanding invoices for this patient.')
             check(not turn.get('action') and state['manual_invoice'] in {r['id'] for r in turn.get('sources', [])}, 'structured real model retains invoice read behavior')
-            turn = ask('structured_reminder', 'Create a reminder titled SYNTHETIC transport proposal due on 2098-08-01 for this patient. Only propose it.')
+            turn = planner_ask('reminder', 'Create a reminder titled SYNTHETIC transport proposal due on 2098-08-01 for this patient. Only propose it.')
             check(turn.get('action', {}).get('action') == 'reminder.create' and bool(turn.get('review')), 'structured real model retains routine operation proposals')
-            check(records() == before, 'all structured collector calls are read-only until confirmation')
+            after = records(); state['planner_after'] = after; persist()
+            def stable(rows):
+                copy = json.loads(json.dumps(rows))
+                for r in copy.values():
+                    if r['kind'] == 'stripe_checkout':
+                        # The existing worker refreshes these even without a payment.
+                        r.pop('version', None); r.pop('updated_at', None)
+                        r['data'].pop('verified_at', None)
+                return copy
+            check(stable(after) == stable(before), 'structured calls change no records except independent Stripe poll timestamps')
         elif args.phase == 'readback':
             rows = records(); inv = rows[state['manual_invoice']]; d = inv['data']
             check(d['total_cents'] == 1090 and d['credited_cents'] == 0 and d['paid_cents'] == 763, 'fresh session retains original invoice and reversed credit balance')
