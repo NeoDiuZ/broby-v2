@@ -17,9 +17,25 @@ def unpack(row):
     for key in ('data','payload','result'):
         if key in result and result[key] is not None: result[key] = json.loads(result[key])
     return result
+class TransactionConnection(sqlite3.Connection):
+    """Track newly created binary files until their owning transaction commits."""
+    rollback_files: list
+
+def transaction_file(con, path, content):
+    if not con.in_transaction:
+        raise RuntimeError('Binary copies require a write transaction')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Exclusive creation ensures rollback can never remove an existing copy.
+    with path.open('xb') as output:
+        con.rollback_files.append(path)
+        output.write(content)
+        output.flush()
+        os.fsync(output.fileno())
+
 @contextmanager
 def connection(write=False):
-    con = sqlite3.connect(DB, timeout=20)
+    con = sqlite3.connect(DB, timeout=20, factory=TransactionConnection)
+    con.rollback_files = []
     DB.chmod(0o600)
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA foreign_keys=ON')
@@ -29,6 +45,8 @@ def connection(write=False):
         if write: con.commit()
     except Exception:
         if write: con.rollback()
+        for path in reversed(con.rollback_files):
+            path.unlink(missing_ok=True)
         raise
     finally: con.close()
 def record(con, kind, clinic, data, id=None):

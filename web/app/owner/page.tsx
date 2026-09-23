@@ -2,12 +2,12 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {CalendarBlank,Pill,FileText,ShieldCheck,Microphone,LinkSimple} from '@phosphor-icons/react';
 import {PatientMark,Badge} from '@/components/ui';
+import {OwnerTransfer} from '@/components/OwnerTransfer';
 import {patientAge} from '@/lib/types';
 
 export default function Owner(){
  const [data,setData]=useState<any>(null),[error,setError]=useState(''),[token,setToken]=useState<string|null>(null),[petId,setPetId]=useState('');
  const [tab,setTab]=useState('Records'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[share,setShare]=useState(''),[question,setQuestion]=useState(''),[answer,setAnswer]=useState<any>(null),[editing,setEditing]=useState<any>(null),[revision,setRevision]=useState(0);
- const [clinics,setClinics]=useState<any[]>([]),[targetClinic,setTargetClinic]=useState(''),[consent,setConsent]=useState(false),[transfer,setTransfer]=useState<any>(null);
  const submission=useRef({body:'',key:''});
  useEffect(()=>setToken(new URLSearchParams(location.search).get('token')||''),[]);
  const base=token?'/api/owner/'+encodeURIComponent(token):'/api/owner-account'+(petId?'/pets/'+encodeURIComponent(petId):'');
@@ -20,7 +20,7 @@ export default function Owner(){
  const dueLabel=(date:string)=>date<data.today?'Overdue':date===data.today?'Due today':'Upcoming';
  return <main className="owner-page"><span className="wordmark">Broby<span>•</span></span>{!data?<p role={error?'alert':'status'}>{error||'Opening your pet’s approved record…'}</p>:<>
   {data.pets?.length>0&&<label className="demo-identity">Saved pets<select aria-label="Saved pets" value={data.patient.id} onChange={e=>{setPetId(e.target.value);setNotice('')}}>{data.pets.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
-  <details className="panel section-gap" onToggle={e=>{if(e.currentTarget.open)void fetch(base+'/transfer-clinics').then(async r=>{const b=await r.json();if(!r.ok)throw new Error(b.detail);setClinics(b)}).catch(e=>setNotice(e.message))}}><summary>Share with a registered clinic</summary><div className="modal-body"><p>Allow a receiving clinic to import your pet’s currently approved records and files, plus the primary owner’s contact details. Acceptance creates an independent medical copy; withdrawing this request afterwards cannot delete that copy.</p><label>Receiving clinic<select value={targetClinic} onChange={e=>setTargetClinic(e.target.value)}><option value="">Choose clinic</option>{clinics.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/>I consent to this transfer.</label><button className="secondary" disabled={busy||!targetClinic||!consent} onClick={async()=>{setBusy(true);try{setTransfer(await send('/transfers',{target_clinic:targetClinic,consent}));setNotice('Transfer request sent to the receiving clinic’s staff queue.')}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}}}>Request transfer</button>{transfer&&<button className="text-button" disabled={busy} onClick={async()=>{setBusy(true);try{await send('/transfers/'+transfer.id,{},'DELETE');setTransfer(null);setNotice('Transfer request withdrawn.')}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}}}>Withdraw pending request</button>}</div></details>
+  <OwnerTransfer key={base} base={base}/>
   <div className="owner-header"><PatientMark patient={data.patient} large/><div><Badge tone="teal"><ShieldCheck size={13}/> Shared by your clinic</Badge><h1>{data.patient.data.name}’s record</h1><p className="muted">{data.patient.data.breed} · {patientAge(data.patient.data)}</p>{data.patient.data.date_of_birth&&<p className="muted">Born {data.patient.data.date_of_birth}</p>}</div></div>
   <p className="muted section-gap">Your veterinarian’s approved notes, prescribed medications, and upcoming care.</p>
   <div className="actions section-gap"><a className="secondary" href={base+'/discharge.pdf'}>Download care instructions</a>{token&&<>
