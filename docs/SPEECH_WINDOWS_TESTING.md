@@ -50,3 +50,9 @@ Use only the isolated Broby New deployment. Generate a synthetic recording with 
 Browser acceptance: open that synthetic consultation, confirm the speaker checkbox, open Transcript, review both windows and select a timestamp after 25:00 to seek the original audio. The UI must label speaker identity limits and machine transcript review. Test a second browser-imported synthetic note with speaker separation disabled. Record the actual results and deployed commit separately; a passing procedure description is not evidence that it ran.
 
 This does not validate physical microphone capture, simultaneous device handoff, multilingual/clinical accuracy, continuous recording refinement, offline cold-start, live customer messaging or real payment/lab integrations.
+
+## Recorded hosted result
+
+PR #7 was merged and deployed to both Railway application services at `4e53ca4d72d62d631e5e8a51028b3ad9de7e5fc9`. PR/main CI passed all 112 backend tests, seven recording tests, TypeScript, frontend build and API container startup. The live generated 1506.478-second fixture passed all nine checks with real Deepgram requests, including both spoken markers, exact 1500-second split, global audio timestamps and byte-identical original retention. A fresh connection passed all eight read-back checks. Another 30 existing hosted security/clinical/workflow persistence checks passed on that revision.
+
+The hosted browser displayed the two-window transcript and per-window speaker IDs. Deepgram rendered the product name “Broby” as “Bravi”; the original audio and machine-transcript label make that inspectable. This test proves the processing path and receipts, not transcription accuracy for clinical speech. A consultation header also exposed an old unset-weight display (`0 kg`); the follow-up UI correction displays “Weight not recorded,” consistent with the patient screen.
