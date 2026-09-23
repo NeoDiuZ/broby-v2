@@ -40,8 +40,12 @@ def dispatch(c,a,p,clinic,actor):
         target=owned(c,require(p,'target_id'),clinic,'owner')
         if source['id']==target['id']:fail('Choose two different owners')
         if source['data'].get('merged_into') or target['data'].get('merged_into'):fail('An owner has already been merged',409)
+        from clinic_workflows import owner_ids
         for r in all_records(c,clinic,'patient'):
-            if r['data']['owner_id']==source['id']:update(c,r,{**r['data'],'owner_id':target['id']})
+            if source['id'] in owner_ids(r):
+                primary=target['id'] if r['data']['owner_id']==source['id'] else r['data']['owner_id']
+                extra=list(dict.fromkeys(target['id'] if x==source['id'] else x for x in r['data'].get('additional_owner_ids',[])))
+                update(c,r,{**r['data'],'owner_id':primary,'additional_owner_ids':[x for x in extra if x!=primary]})
         return update(c,source,{**source['data'],'merged_into':target['id']})
     if a in ('consultation.archive','template.archive'):
         r=owned(c,p['id'],clinic,a.split('.')[0]);version(r,p)
@@ -104,6 +108,7 @@ def dispatch(c,a,p,clinic,actor):
         for job in c.execute("SELECT * FROM jobs WHERE clinic_id=? AND status IN ('queued','running')",(clinic,)):
             payload=json.loads(job['payload'])
             if payload.get('recording_id')==r['id']:return {'id':job['id'],'status':job['status']}
+        if p.get('language','multi') not in ('multi','en','zh','ms'): fail('Unsupported speech language')
         job=uid();payload={'kind':'transcription','recording_id':r['id'],'patient_id':r['data']['patient_id'],'actor_id':actor,'language':p.get('language','multi')}
         c.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)',(job,clinic,r['data']['consultation_id'],'queued',json.dumps(payload),None,None,now(),now()))
         return {'id':job,'status':'queued'}
@@ -114,18 +119,14 @@ def dispatch(c,a,p,clinic,actor):
         c.execute("UPDATE jobs SET status='queued',error=NULL,updated_at=? WHERE id=?",(now(),r['id']))
         return {'id':r['id'],'status':'queued'}
     if a=='reminder.queue_due':
-        settings=owned(c,'settings-'+clinic,clinic,'settings');lead=settings['data'].get('reminder_days',7)
-        cutoff=(datetime.now()+timedelta(days=lead)).date().isoformat();created=[]
-        for r in all_records(c,clinic,'reminder'):
-            d=r['data']
-            if d['status']!='due' or d['due']>cutoff or d.get('outbox_id'):continue
-            patient=owned(c,d['patient_id'],clinic,'patient')
-            out=base(c,'message.queue',{'patient_id':patient['id'],'body':f"Reminder for {patient['data']['name']}: {d['title']}, due {d['due']}. Please contact your clinic to arrange this."},clinic,actor)
-            update(c,r,{**d,'outbox_id':out['id']});created.append(out['id'])
-        return {'id':uid(),'count':len(created)}
+        from clinic_workflows import queue_due
+        from actions import authorize
+        authorize(c,clinic,actor,'message.queue')
+        return queue_due(c,clinic,actor)
     if a in ('message.update','message.cancel'):
         r=owned(c,p['id'],clinic,'outbox');version(r,p)
         if r['data']['status'] not in ('pending','failed'):fail('This message cannot be changed after delivery starts',409)
+        if a=='message.cancel' and r['data'].get('grant_token'):c.execute('UPDATE grants SET revoked=1 WHERE token=? AND clinic_id=?',(r['data']['grant_token'],clinic))
         return update(c,r,{**r['data'],**({'body':require(p,'body')} if a=='message.update' else {'status':'cancelled'})})
     if a=='payment.refund':
         payment=owned(c,p['id'],clinic,'payment');invoice=owned(c,payment['data']['invoice_id'],clinic,'invoice');version(invoice,p)

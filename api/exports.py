@@ -29,6 +29,21 @@ def render(title,clinic,patient,content):
     def footer(canvas,document):
         canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor('#777777'));canvas.drawString(42,25,'Broby · Exported from stored clinic records');canvas.drawRightString(A4[0]-42,25,str(document.page))
     doc.build(story,onFirstPage=footer,onLaterPages=footer);return result.getvalue()
+
+def discharge_document(practice,data):
+    content=[p('Approved care information. Contact your clinic with questions; do not change prescribed treatment without its advice.')]
+    for e in data['events']:
+        content.extend([p(e['data']['title']+' · '+e['data']['occurred_at'][:10],True),p(e['data']['body'])])
+    content.append(p('Recorded medication instructions',True))
+    for m in data['medications']:
+        d=m['data'];content.extend([p(d['name'],True),p(d['dose']+' · '+d['frequency']),p(d['instructions'])])
+    if not data['medications']:content.append(p('No medication instructions shared.'))
+    content.append(p('Upcoming care',True))
+    due=[r for r in data['reminders'] if r['data']['status']=='due']
+    for r in due:content.append(p(r['data']['due']+' · '+r['data']['title']))
+    if not due:content.append(p('No care reminders scheduled.'))
+    if data['emergency_phone']:content.append(p('Clinic contact: '+data['emergency_phone']))
+    return render('Care instructions',practice,data['patient'],content)
 @router.get('/api/consultations/{id}/pdf')
 def consultation_pdf(id:str,request:Request):
     from main import identity

@@ -14,7 +14,7 @@ except ImportError:
     pass
 
 from db import init, connection, all_records, get, record, update, event, uid, now, unpack, DATA
-from actions import execute, owned, fail, PERMISSIONS
+from actions import execute, owned, fail, PERMISSIONS, authorize, allowed_actions
 import jobs,auth,providers,runtime
 
 @asynccontextmanager
@@ -24,8 +24,10 @@ async def lifespan(app):
     runtime.provision_admin()
     from spine.projection import setup_queue
     setup_queue(); jobs.stop.clear(); thread=threading.Thread(target=jobs.loop,daemon=True); thread.start()
+    from clinic_workflows import loop as schedule_loop
+    scheduler=threading.Thread(target=schedule_loop,args=(jobs.stop,),daemon=True); scheduler.start()
     yield
-    jobs.stop.set(); thread.join(timeout=3)
+    jobs.stop.set(); thread.join(timeout=3); scheduler.join(timeout=3)
 app=FastAPI(title='Broby V2',lifespan=lifespan,
             docs_url=None if runtime.hosted() else '/docs',
             redoc_url=None if runtime.hosted() else '/redoc',
@@ -76,7 +78,7 @@ def bootstrap(request:Request):
                 entry=get(c,membership['clinic_id'],membership['clinic_id']); linked=get(c,membership['member_id'],membership['clinic_id'])
                 if entry and linked and linked['data'].get('active'):clinics.append({**entry,'member_id':linked['id']})
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
-        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))],'permissions':[a for a,roles in PERMISSIONS.items() if member['data']['role'] in roles],'integrations':providers.available(),'mode':'password' if auth.enabled() else 'local-demo'}
+        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))],'permissions':allowed_actions(c,clinic,actor),'integrations':providers.available(),'mode':'password' if auth.enabled() else 'local-demo'}
 class Command(BaseModel):
     action:str
     payload:dict[str,Any]=Field(default_factory=dict)
@@ -100,6 +102,7 @@ async def upload(request:Request,file:UploadFile=File(...),patient_id:str=Form(.
     mime=file.content_type or 'application/octet-stream'
     if mime not in ('application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv'): fail('Use a PDF, image, text or CSV file')
     with connection(True) as c:
+        authorize(c,clinic,actor,'source.add')
         owned(c,patient_id,clinic,'patient')
         if consultation_id:
             cr=owned(c,consultation_id,clinic,'consultation')
@@ -121,6 +124,7 @@ async def chunk(id:str,index:int,request:Request):
     if len(body)>12*1024*1024 or not body: fail('Invalid chunk size')
     sha=hashlib.sha256(body).hexdigest()
     with connection(True) as c:
+        authorize(c,clinic,actor,'recording.create')
         r=owned(c,id,clinic,'recording')
         previous=c.execute('SELECT sha256 FROM chunks WHERE recording_id=? AND chunk_index=?',(id,index)).fetchone()
         if previous:
@@ -140,7 +144,8 @@ def audio(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
         r=owned(c,id,clinic,'recording'); paths=[r[0] for r in c.execute('SELECT path FROM chunks WHERE recording_id=? ORDER BY chunk_index',(id,))]
-    return Response(b''.join(Path(p).read_bytes() for p in paths),media_type=r['data'].get('mime','audio/webm'))
+    from audio_response import audio_response
+    return audio_response(b''.join(Path(p).read_bytes() for p in paths),r['data'].get('mime','audio/webm'),request.headers.get('range'))
 @app.get('/api/audit')
 def audit(request:Request):
     clinic,actor=identity(request)

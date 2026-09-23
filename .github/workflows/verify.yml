@@ -51,5 +51,6 @@ jobs:
           node-version: '22'
       - run: npm install --global pnpm@10.15.1
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm build

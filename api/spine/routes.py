@@ -5,6 +5,25 @@ from . import database,service,projection
 from .models import Event,Source
 from .contracts import LabInput,EventInput
 router=APIRouter(prefix='/api/v2',tags=['Patient spine'])
+
+@router.get('/overview')
+def overview(request:Request,days:int=Query(30,ge=1,le=366)):
+    from datetime import datetime,timezone,timedelta
+    from sqlalchemy import func,or_
+    from .models import Patient,Observation,Concept
+    from .categories import canonical
+    clinic,_=identity(request)
+    since=datetime.now(timezone.utc)-timedelta(days=days)
+    with database.session() as s:
+        groups=s.execute(select(Event.event_type,func.count()).where(Event.clinic_id==clinic,Event.occurred_at>=since).group_by(Event.event_type)).all()
+        counts={}
+        for category,count in groups:
+            name=canonical(category);counts[name]=counts.get(name,0)+count
+        flagged=s.execute(select(Observation,Concept,Event,Patient).join(Concept,Observation.concept_id==Concept.id).join(Event,Observation.event_id==Event.id).join(Patient,Event.patient_id==Patient.id).where(Event.clinic_id==clinic,Observation.observed_at>=since,or_(Observation.value<Observation.ref_low,Observation.value>Observation.ref_high)).order_by(Observation.observed_at.desc()).limit(50)).all()
+        return {'days':days,'since':service.utc(since),'categories':[{'name':k,'count':v} for k,v in sorted(counts.items())],
+                'patient_count':s.scalar(select(func.count()).select_from(Patient).where(Patient.clinic_id==clinic)),
+                'event_count':sum(counts.values()),'flagged_limit':50,
+                'flagged':[{'patient_id':p.id,'patient_name':p.name,'event_id':e.id,'name':t.name,'value':o.value,'unit':t.unit,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':service.flag(o),'source':service.source(s,o.source_id)} for o,t,e,p in flagged]}
 def identity(request):
     from main import identity
     clinic,actor=identity(request)

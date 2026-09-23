@@ -120,5 +120,46 @@ def test_source_positions_and_permission_locks(client):
 
 def test_alembic_revision_and_jsonb_tables(client):
     with database.engine().connect() as c:
-        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one()=='0001'
+        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one()=='0002'
         assert c.execute(text("SELECT data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='events' AND column_name='body'")).scalar_one()=='jsonb'
+
+
+def test_owner_contacts_dob_and_category_aliases_project_consistently(client):
+    from clinic_workflows import owner_ids
+    actions.execute('patient.update',{'id':'luna','version':1,'date_of_birth':'2020-02-29'},'clinic-east','clinic-east-vet','dob-roundtrip')
+    actions.execute('patient.owners',{'id':'luna','version':2,'owner_id':'owner-luna','additional_owner_ids':['owner-milo']},'clinic-east','clinic-east-vet','owners-roundtrip')
+    p=client.get('/api/v2/patients/luna').json()
+    assert p['date_of_birth']=='2020-02-29' and p['owner']['id']=='owner-luna'
+    with database.session() as s:
+        assert len(s.scalars(select(OwnerPatient).where(OwnerPatient.patient_id=='luna')).all())==2
+    assert any(p['id']=='luna' for p in client.get('/api/v2/patients?q=Rachel').json()['items'])
+    source=actions.execute('source.add',{'patient_id':'luna','category':'x-ray','title':'Imaging note','text':'Searchable synthetic imaging detail'},'clinic-east','clinic-east-vet','xray-source')
+    for category in ('x-ray','x_ray','xray'):
+        records=client.get('/api/v2/patients/luna/timeline',params={'category':category,'q':'synthetic imaging detail'}).json()['items']
+        assert len(records)==1 and records[0]['event_type']=='x_ray'
+
+
+def test_overview_includes_native_labs_scopes_clinic_and_keeps_exact_boundaries(client):
+    from datetime import datetime,timezone
+    p=result(occurred_at=datetime.now(timezone.utc).isoformat())
+    eid=ingest(client,p).json()['id']
+    data=client.get('/api/v2/overview?days=7').json()
+    assert any(r['event_id']==eid and r['source']['page']==1 for r in data['flagged'])
+    assert any(r['name']=='lab_result' and r['count']>=1 for r in data['categories'])
+    other=client.get('/api/v2/overview',headers={'x-clinic-id':'clinic-river'}).json()
+    assert other['flagged']==[] and other['patient_count']==0
+    for value in (3.5,5.1):
+        p=result(dedupe_key='boundary:'+str(value),observations=[{'concept':'potassium','name':'Potassium','value':value,'unit':'mmol/L','ref_low':3.5,'ref_high':5.1}])
+        assert ingest(client,p).json()['event']['observations'][0]['flag'] is None
+
+
+def test_upgrade_from_existing_0001_preserves_patient_events(client):
+    p=result();eid=ingest(client,p).json()['id']
+    config=Config(str(Path(main.__file__).parent/'alembic.ini'))
+    command.downgrade(config,'0001')
+    with database.engine().connect() as c:
+        assert c.execute(text('SELECT count(*) FROM events WHERE id=:id'),{'id':eid}).scalar_one()==1
+    command.upgrade(config,'head')
+    current=client.get('/api/v2/patients/milo/events/'+eid).json()
+    assert current['observations'][0]['value']==5.8
+    assert client.get('/api/v2/patients/milo').json()['owner']['id']=='owner-milo'
