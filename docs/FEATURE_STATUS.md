@@ -46,3 +46,9 @@ Scope: preserve the v1 website/interface direction and core web workflows, add t
 5. Production storage/authentication/observability/security, retention policy and deployment validation.
 
 Do not treat the unavailable external integrations or any items in the right column as completed.
+
+## 23 September 2026 — advanced workflow update
+
+The hard-workflow release adds typed PostgreSQL observations and shared clinical readers; lab receipt/owner-approval controls; durable saved queries; worker leases and bounded retries; stock lots, expiry and purchase orders; explicit invoice discounts/tax; room/availability validation; staff invitations, MFA and recovery codes; organization masters and inherited restrictions; reviewed dictionary proposals; signed synthetic integration callbacks; consented receiving-clinic transfers; and stable-source-ID migration rehearsal.
+
+See [HARD_WORKFLOWS_SPEC.md](HARD_WORKFLOWS_SPEC.md) for the exact implemented/partial/unfinished boundaries and [HARD_WORKFLOWS_TESTING.md](HARD_WORKFLOWS_TESTING.md) for reproduction. Older “remaining” cells above predate this release. This remains a synthetic-data environment; no real payment, messaging or physical laboratory integration is claimed.

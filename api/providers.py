@@ -49,12 +49,13 @@ def assemble(sources,sections,retention):
     if not isinstance(result,dict) or not isinstance(result.get('sections'),list):raise ProviderError('AI sections are invalid')
     for s in result['sections']:
         if not isinstance(s,dict) or s.get('name') not in sections or s['name'] in seen:raise ProviderError('AI returned an invalid or duplicate section')
-        seen.add(s['name']);quotes=[];receipts=[]
+        seen.add(s['name']);quotes=[];receipts=[];evidence=[]
         for e in s.get('evidence',[]):
             sid=e.get('source_id');quote=e.get('quote')
             if sid not in by_id or not isinstance(quote,str) or not quote.strip() or quote not in by_id[sid]:raise ProviderError('AI supplied an unsupported fact or receipt; output rejected')
+            evidence.append({'source_id':sid,'quote':quote,'start_char':by_id[sid].index(quote),'end_char':by_id[sid].index(quote)+len(quote)})
             quotes.append(quote);receipts.append(sid);remaining[sid]=remaining[sid].replace(quote,'',1)
-        if quotes:output.append({'name':s['name'],'text':'\n\n'.join(quotes),'source_ids':list(dict.fromkeys(receipts))})
+        if quotes:output.append({'name':s['name'],'text':'\n\n'.join(quotes),'source_ids':list(dict.fromkeys(receipts)),'evidence':evidence})
     if not output:raise ProviderError('No source-backed clinical excerpts were returned')
     omitted=[{'source_id':sid,'text':text.strip()} for sid,text in remaining.items() if text.strip()]
     return output,omitted

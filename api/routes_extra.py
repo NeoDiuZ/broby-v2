@@ -16,9 +16,10 @@ def session(request:Request):
 class Login(BaseModel):
     username:str=Field(min_length=1,max_length=200)
     password:str=Field(min_length=1,max_length=1000)
+    code:str=Field(default='',max_length=10)
 @router.post('/api/login')
 def login(p:Login,request:Request,response:Response):
-    token=auth.login(p.username,p.password,request.client.host if request.client else 'local')
+    token=auth.login(p.username,p.password,request.client.host if request.client else 'local',p.code)
     response.set_cookie('broby_session',token,httponly=True,samesite='strict',max_age=12*3600,secure=runtime.hosted() or request.url.scheme=='https',path='/')
     with connection() as c:
         m=c.execute('SELECT clinic_id,member_id FROM auth_memberships WHERE username=? ORDER BY clinic_id',(p.username,)).fetchone()
@@ -29,8 +30,9 @@ def logout(request:Request,response:Response):
     response.delete_cookie('broby_session',path='/');return {'ok':True}
 @router.get('/api/ontology')
 def ontology(request:Request):
-    identity(request)
-    with connection() as c:return [dict(r) for r in c.execute('SELECT * FROM ontology ORDER BY category,name')]
+    from ontology_workflow import definitions
+    clinic,_=identity(request)
+    with connection() as c:return definitions(c,clinic)
 @router.get('/api/handover')
 def handover(request:Request):
     clinic,_=identity(request)
@@ -71,7 +73,12 @@ def backup(request:Request):
         rs=all_records(c,clinic);versions=[dict(r) for r in c.execute('SELECT * FROM record_versions WHERE clinic_id=?',(clinic,))]
         chunks=[dict(r) for r in c.execute('SELECT chunks.* FROM chunks JOIN records ON records.id=chunks.recording_id WHERE records.clinic_id=?',(clinic,))]
         output=io.BytesIO();manifest={'version':1,'clinic_id':clinic,'created_at':now(),'records':rs,'history':versions,'ontology':[dict(r) for r in c.execute('SELECT * FROM ontology')],'audit':[dict(r) for r in c.execute('SELECT * FROM audit WHERE clinic_id=?',(clinic,))],'chunks':[],'files':[]}
+        from spine.reader import clinical_archive
+        spine=clinical_archive(clinic)
+        manifest['spine_archive']='spine.json'
+        manifest['native_event_count']=sum(e['payload_hash']!='legacy' for e in spine.get('events',[]))
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
+            z.writestr('spine.json',json.dumps({'clinic_id':clinic,'tables':spine},ensure_ascii=False,indent=2,default=str))
             for r in rs:
                 if r['kind']=='attachment':
                     path=Path(r['data']['path']);target='files/'+r['id'];content=path.read_bytes();z.writestr(target,content)
@@ -81,3 +88,32 @@ def backup(request:Request):
                 manifest['chunks'].append({**ch,'path':target});manifest['files'].append({'path':target,'sha256':hashlib.sha256(content).hexdigest()})
             z.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False,indent=2))
     return Response(output.getvalue(),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="broby-clinic-backup.zip"'})
+
+@router.get('/api/dashboards/{id}')
+def saved_dashboard(id:str,request:Request):
+    from advanced_workflows import dashboard
+    clinic,_=identity(request)
+    with connection() as c:
+        r=owned(c,id,clinic,'dashboard')
+        if r['data'].get('archived'):fail('View was deleted',404)
+        return {**r,'result':dashboard(c,clinic,r['data']['query'])}
+
+@router.get('/api/operations/status')
+def operation_status(request:Request):
+    clinic,actor=identity(request)
+    with connection() as c:
+        if owned(c,actor,clinic,'member')['data']['role']!='admin':fail('Administrator access required',403)
+        jobs=[dict(r) for r in c.execute('SELECT j.id,j.status,q.attempts,q.lease_until,q.next_attempt FROM jobs j LEFT JOIN job_claims q ON q.job_id=j.id WHERE j.clinic_id=? ORDER BY j.created_at DESC LIMIT 50',(clinic,))]
+        return {'sending_enabled':False,'payment_mode':'simulation','lab_mode':'synthetic','jobs':jobs,'pending_escalations':sum(r['data']['status']=='needs_attention' for r in all_records(c,clinic,'escalation'))}
+
+@router.get('/api/organization')
+def organization(request:Request):
+    from organizations import policy,master
+    clinic,actor=identity(request)
+    with connection() as c:
+        org=policy(c,clinic)
+        if not org:return None
+        result={'id':org['id'],'name':org['name'],'master':master(c,org,actor),'locked_actions':json.loads(org['locked_actions'])}
+        if result['master']:
+            result['clinics']=[{'id':r[0],'name':get(c,r[0],r[0])['data']['name']} for r in c.execute('SELECT clinic_id FROM organization_clinics WHERE organization_id=?',(org['id'],))]
+        return result

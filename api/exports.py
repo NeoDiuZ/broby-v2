@@ -34,6 +34,7 @@ def discharge_document(practice,data):
     content=[p('Approved care information. Contact your clinic with questions; do not change prescribed treatment without its advice.')]
     for e in data['events']:
         content.extend([p(e['data']['title']+' · '+e['data']['occurred_at'][:10],True),p(e['data']['body'])])
+        for o in e['data'].get('observations',[]):content.append(p(f"{o['name']}: {o['value']} {o['unit']} · supplied reference {o['ref_low']}–{o['ref_high']}"))
     content.append(p('Recorded medication instructions',True))
     for m in data['medications']:
         d=m['data'];content.extend([p(d['name'],True),p(d['dose']+' · '+d['frequency']),p(d['instructions'])])
@@ -64,5 +65,5 @@ def invoice_pdf(id:str,request:Request):
         r=owned(c,id,clinic,'invoice');patient=owned(c,r['data']['patient_id'],clinic,'patient');practice=get(c,clinic,clinic);d=r['data']
         rows=[[p('Item'),p('Qty'),p('Unit SGD'),p('Total SGD')]]+[[p(i['name']),p(i['quantity']),p(f"{i['price_cents']/100:.2f}"),p(f"{i['quantity']*i['price_cents']/100:.2f}")] for i in d['items']]
         table=Table(rows,colWidths=[270,45,75,120],repeatRows=1,hAlign='LEFT');table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eef3ed')),('VALIGN',(0,0),(-1,-1),'TOP'),('LINEBELOW',(0,0),(-1,-1),.4,colors.HexColor('#deded6')),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
-        content=[p('Status: '+d['status']+' · '+r['created_at'][:10]),table,Spacer(1,20),p(f"Total: SGD {d['total_cents']/100:.2f}",True),p(f"Payments recorded: SGD {d['paid_cents']/100:.2f}"),p(f"Outstanding: SGD {(d['total_cents']-d['paid_cents'])/100:.2f}"),p('Payment records reflect funds received externally. This document does not process a payment.')]
+        content=[p('Status: '+d['status']+' · '+r['created_at'][:10]),table,Spacer(1,20),p(f"Subtotal: SGD {d.get('subtotal_cents',d['total_cents'])/100:.2f}"),p(f"Discount: SGD {d.get('discount_cents',0)/100:.2f}"),p(f"Tax ({d.get('tax_bps',0)/100:g}%): SGD {d.get('tax_cents',0)/100:.2f}"),p(f"Total: SGD {d['total_cents']/100:.2f}",True),p(f"Payments recorded: SGD {d['paid_cents']/100:.2f}"),p(f"Outstanding: SGD {(d['total_cents']-d['paid_cents'])/100:.2f}"),p('Payment records reflect funds received externally. This document does not process a payment.')]
     return Response(render(d['number'],practice,patient,content),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="invoice.pdf"'})

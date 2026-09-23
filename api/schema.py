@@ -8,6 +8,7 @@ DEFINITIONS=[
 ]
 def migrate(c):
     c.executescript('''
+    CREATE TABLE IF NOT EXISTS job_claims(job_id TEXT PRIMARY KEY,token TEXT,lease_until TEXT,attempts INTEGER DEFAULT 0,next_attempt TEXT DEFAULT '',last_error TEXT);
     CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS record_versions(record_id TEXT,version INTEGER,clinic_id TEXT,kind TEXT,data TEXT,recorded_at TEXT,PRIMARY KEY(record_id,version));
     CREATE TRIGGER IF NOT EXISTS record_history BEFORE UPDATE ON records BEGIN
@@ -23,3 +24,11 @@ def migrate(c):
     INSERT OR IGNORE INTO schema_migrations(version) VALUES(1);
     ''')
     c.executemany('INSERT OR IGNORE INTO ontology VALUES(?,?,?,?,?)',DEFINITIONS)
+    from accounts import setup
+    setup(c)
+    from integration_hooks import setup as setup_hooks
+    setup_hooks(c)
+    from organizations import setup as setup_organizations
+    setup_organizations(c)
+    from transfers import setup as setup_transfers
+    setup_transfers(c)

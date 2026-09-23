@@ -54,27 +54,28 @@ def sync(clinic):
                 linked=next((m for m in memberships if m['member_id']==r['id']),None)
                 person_id='account:'+linked['username'] if linked else r['id']
                 s.merge(Person(id=person_id,name=d['name']));s.flush();s.merge(Member(person_id=person_id,clinic_id=clinic,role=d['role'],active=d['active']))
-            if r['kind']=='source':
+            if r['kind'] in ('source','intake','attachment'):
                 recording=d.get('recording_id');segments=d.get('utterances',[])
-                s.merge(Source(id=r['id'],clinic_id=clinic,patient_id=d['patient_id'],kind='audio' if recording else 'human',reference_id=recording or r['id'],start_ms=round(segments[0]['start']*1000) if segments else None,end_ms=round(segments[-1]['end']*1000) if segments else None,content={'text':d.get('text',''),'title':d.get('title',''),'author':d.get('author',''),'legacy':True}))
+                s.merge(Source(id=r['id'],clinic_id=clinic,patient_id=d['patient_id'],kind='document' if r['kind']=='attachment' else 'audio' if recording else 'human',reference_id=recording or r['id'],start_ms=round(segments[0]['start']*1000) if segments else None,end_ms=round(segments[-1]['end']*1000) if segments else None,content={'text':d.get('text',''),'title':d.get('title',''),'author':d.get('author',''),'legacy':True}))
         s.flush()
         events=[r for r in records if r['kind']=='event'];source_events={}
         for r in events:
-            d=r['data'];src=next((x for x in d.get('source_ids',[]) if x in by_id and by_id[x]['kind']=='source'),None)
+            d=r['data'];src=next((x for x in d.get('source_ids',[]) if x in by_id and by_id[x]['kind'] in ('source','intake','attachment')),None)
             from .categories import canonical
             typ=canonical(d['category'])
-            s.merge(Event(id=r['id'],clinic_id=clinic,patient_id=d['patient_id'],event_type=typ,occurred_at=stamp(d['occurred_at']),summary=d['title'],actor={'kind':'human','name':by_id[src]['data'].get('author','Recorded in clinic') if src else 'Recorded in clinic'},source_id=src,body={'text':d['body'],'legacy':True},dedupe_key='legacy:'+r['id'],payload_hash='legacy'))
+            s.merge(Event(id=r['id'],clinic_id=clinic,patient_id=d['patient_id'],event_type=typ,occurred_at=stamp(d['occurred_at']),summary=d['title'],actor={'kind':'human','name':by_id[src]['data'].get('author','Recorded in clinic') if src else 'Recorded in clinic'},source_id=src,body={'text':d['body'],'legacy':True,'approved':bool(d.get('approved'))},dedupe_key='legacy:'+r['id'],payload_hash='legacy'))
             if src:source_events[(d['patient_id'],src)]=r['id']
         s.flush()
         for r in records:
             d=r['data']
-            if r['kind']!='observation' or type(d.get('value')) not in (float,int):continue
+            if r['kind']!='observation':continue
+            typ=d.get('value_type','number')
             source_id=d.get('source_id');source_id=source_id if source_id in by_id and by_id[source_id]['kind']=='source' else None
             eid=source_events.get((d['patient_id'],source_id))
             if not eid:
                 eid='observation-event:'+r['id']
                 s.merge(Event(id=eid,clinic_id=clinic,patient_id=d['patient_id'],event_type='measurement',occurred_at=stamp(r['created_at']),summary=d['name'],actor={'kind':'human','name':'Recorded in clinic'},source_id=source_id,body={'legacy':True},dedupe_key='legacy:'+eid,payload_hash='legacy'));s.flush()
             code=d.get('code') or re.sub(r'[^a-z0-9]+','_',d['name'].lower()).strip('_');cid=str(uuid.uuid5(uuid.NAMESPACE_URL,'broby:concept:'+code+':'+d['unit']))
-            if not s.get(Concept,cid):s.add(Concept(id=cid,code=code,name=d['name'],unit=d['unit']));s.flush()
-            s.merge(Observation(id=r['id'],event_id=eid,concept_id=cid,observed_at=stamp(d.get('observed_at',r['created_at'])),value=d['value'],ref_low=d.get('low'),ref_high=d.get('high'),source_id=source_id))
+            if not s.get(Concept,cid):s.add(Concept(id=cid,code=code,name=d['name'],unit=d['unit'],value_type=typ));s.flush()
+            s.merge(Observation(id=r['id'],event_id=eid,concept_id=cid,observed_at=stamp(d.get('observed_at',r['created_at'])),value=d['value'] if typ=='number' else None,value_type=typ,text_value=d['value'] if typ=='text' else None,boolean_value=d['value'] if typ=='boolean' else None,ref_low=d.get('low'),ref_high=d.get('high'),source_id=source_id))
         s.merge(Projection(name=clinic,sequence=seq))

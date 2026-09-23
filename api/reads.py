@@ -33,7 +33,9 @@ def handover(c,clinic,instant=None):
 
 def patient_records(c,clinic,patient_id,kind=None,category=None,start=None,end=None,query=''):
     owned(c,patient_id,clinic,'patient')
-    rows=[r for r in all_records(c,clinic,kind) if r['data'].get('patient_id')==patient_id]
+    from spine.reader import native_records
+    records=all_records(c,clinic,kind)+[r for r in native_records(clinic,patient_id) if not kind or r['kind']==kind]
+    rows=[r for r in records if r['data'].get('patient_id')==patient_id]
     def match(r):
         d=r['data'];when=d.get('occurred_at',r['created_at'])[:10]
         return (not category or d.get('category','').lower()==category.lower()) and (not start or when>=start) and (not end or when<=end) and (not query or query.lower() in json.dumps(d,ensure_ascii=False).lower())

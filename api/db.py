@@ -1,5 +1,7 @@
 """Local SQLite store. Every mutation is transactional, versioned and clinic-scoped."""
 import json, os, sqlite3, uuid
+from contextvars import ContextVar
+mutation_actor=ContextVar('mutation_actor',default=None)
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
@@ -18,6 +20,7 @@ def unpack(row):
 @contextmanager
 def connection(write=False):
     con = sqlite3.connect(DB, timeout=20)
+    DB.chmod(0o600)
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA foreign_keys=ON')
     try:
@@ -39,9 +42,17 @@ def all_records(con,clinic,kind=None):
     rows=con.execute('SELECT * FROM records WHERE clinic_id=?'+(' AND kind=?' if kind else '')+' ORDER BY created_at DESC',(clinic,kind) if kind else (clinic,)).fetchall()
     return [unpack(r) for r in rows]
 def update(con,r,data):
-    con.execute('UPDATE records SET data=?,version=version+1,updated_at=? WHERE id=? AND version=?',(json.dumps(data),now(),r['id'],r['version']))
+    changed=con.execute('UPDATE records SET data=?,version=version+1,updated_at=? WHERE id=? AND version=?',(json.dumps(data),now(),r['id'],r['version']))
+    if changed.rowcount!=1:
+        from fastapi import HTTPException
+        raise HTTPException(409,'Record changed before this write; reload and retry')
     return get(con,r['id'],r['clinic_id'])
 def event(con,clinic,patient_id,category,title,body,source_ids=None,approved=False):
+    actor=mutation_actor.get()
+    if not source_ids and actor:
+        member=get(con,actor,clinic)
+        receipt=record(con,'source',clinic,{'patient_id':patient_id,'title':title+' · recorded action','text':body,'category':category,'section':'Objective','author':member['data']['name'] if member else 'Recorded clinic action','actor_id':actor})
+        source_ids=[receipt['id']]
     return record(con,'event',clinic,{'patient_id':patient_id,'category':category,'title':title,'body':body,'source_ids':source_ids or [],'approved':approved,'occurred_at':now()})
 def init(seed=True):
     with connection() as c:

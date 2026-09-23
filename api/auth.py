@@ -27,7 +27,7 @@ def resolve(request):
         if not member or not member['data'].get('active'):raise HTTPException(403,'Membership is inactive')
         return clinic,m['member_id']
 
-def login(username,password,address):
+def login(username,password,address,code=''):
     if not enabled():raise HTTPException(409,'Password authentication is not enabled')
     key=digest(address+':'+username)
     with connection(True) as c:
@@ -38,6 +38,16 @@ def login(username,password,address):
         salt=row['salt'] if row else '00'*16
         valid=row and hmac.compare_digest(password_hash(password,salt),row['password_hash'])
         if not row:password_hash(password,salt)
+        if valid:
+            from accounts import verify_code
+            mfa=c.execute('SELECT * FROM account_mfa WHERE username=?',(username,)).fetchone()
+            if mfa and mfa['enabled']:
+                counter=verify_code(mfa['secret'],code,mfa['last_counter'])
+                valid=counter is not None
+                if not valid and len(code)==10:
+                    recovery=c.execute('UPDATE mfa_recovery SET used_at=? WHERE username=? AND code_hash=? AND used_at IS NULL',(now(),username,digest(code))).rowcount
+                    valid=recovery==1
+                if counter is not None:c.execute('UPDATE account_mfa SET last_counter=? WHERE username=?',(counter,username))
         if not valid:
             failures=(attempt['failures'] if attempt and attempt['failures']<5 else 0)+1
             until=(datetime.now(timezone.utc)+timedelta(minutes=5 if failures>=5 else 0)).isoformat()
