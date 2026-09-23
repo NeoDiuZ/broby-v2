@@ -291,3 +291,30 @@ def test_binary_tampering_after_preview_cannot_import():
     err(409, lambda: act('transfer.accept', {'id': r['id'], 'expected_digest': review['digest']}, **TARGET))
     with db.connection() as c:
         assert not db.all_records(c, 'clinic-river', 'patient')
+
+
+def test_source_reversion_requires_review_and_retains_chronology():
+    client = TestClient(main.app)
+    _, first = request(client)
+    origin = next(x for x in preview(client, first)['items'] if x['kind'] == 'event')
+    original = get(origin['origin_id'])
+    accept(client, first)
+    with db.connection(True) as c:
+        db.update(c, original, {**original['data'], 'body': 'Corrected source'})
+    _, second = request(client)
+    accept(client, second, review_changes=True)
+    with db.connection(True) as c:
+        changed = db.get(c, original['id'])
+        db.update(c, changed, original['data'])
+    _, third = request(client)
+    review = preview(client, third)
+    reverted = next(x for x in review['items'] if x['kind'] == 'event')
+    assert reverted['state'] == 'changed' and reverted['revision'] == 3
+    assert reverted['previous']['body'] == 'Corrected source'
+    err(409, lambda: act('transfer.accept', {'id': third['id'], 'expected_digest': review['digest']}, **TARGET))
+    accept(client, third, review_changes=True)
+    with db.connection() as c:
+        copies = [x for x in db.all_records(c, 'clinic-river', 'event') if x['data'].get('origin_id') == original['id']]
+        assert len(copies) == 3 and {x['data']['origin_revision'] for x in copies} == {1, 2, 3}
+    _, fourth = request(client)
+    assert accept(client, fourth)['counts']['changed'] == 0

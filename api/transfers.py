@@ -33,8 +33,7 @@ def setup(c):
     c.execute('''CREATE TABLE IF NOT EXISTS transfer_revisions(
         source_clinic TEXT,source_patient TEXT,target_clinic TEXT,kind TEXT,origin_id TEXT,
         fingerprint TEXT,revision INTEGER,target_id TEXT,payload TEXT,request_id TEXT,
-        PRIMARY KEY(source_clinic,source_patient,target_clinic,kind,origin_id,revision),
-        UNIQUE(source_clinic,source_patient,target_clinic,kind,origin_id,fingerprint))''')
+        PRIMARY KEY(source_clinic,source_patient,target_clinic,kind,origin_id,revision))''')
 
 
 class Consent(BaseModel):
@@ -232,9 +231,10 @@ def plan(c, r):
     for item in items:
         fp = digest(item['payload'])
         prior = [x for x in revisions if x['kind'] == item['kind'] and x['origin_id'] == item['origin_id']]
-        same = next((x for x in prior if x['fingerprint'] == fp), None)
-        last = same or (prior[-1] if prior else None)
-        state = 'unchanged' if same else 'changed' if prior else 'new'
+        last = prior[-1] if prior else None
+        # A source reverting to an older value is still a change from the last
+        # accepted revision. It needs review and a dated revision, not a silent skip.
+        state = 'unchanged' if last and last['fingerprint'] == fp else 'changed' if prior else 'new'
         current = get(c, last['target_id'], r['target_clinic']) if last else None
         item.update(fingerprint=fp, state=state, revision=(max([x['revision'] for x in prior], default=0) + 1),
                     previous=json.loads(last['payload']) if last else None, destination_copy=current)
