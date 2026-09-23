@@ -68,33 +68,6 @@ def dispatch(c,a,p,clinic,actor):
         return update(c,r,{**r['data'],'archived':True})
     fail('Unknown advanced action',404)
 
-def validate_query(c,query,clinic):
-    from actions import fail,owned
-    from assistant import READ_KINDS
-    if not isinstance(query,dict) or set(query)-{'kind','patient_id','start','end','category'}:fail('Invalid saved query')
-    if query.get('kind') not in READ_KINDS:fail('Unsupported query kind')
-    if query.get('patient_id'):owned(c,query['patient_id'],clinic,'patient')
-    for key in ('start','end'):
-        if query.get(key):
-            try:date.fromisoformat(query[key])
-            except (TypeError,ValueError):fail('Invalid query date')
-    if query.get('start') and query.get('end') and query['start']>query['end']:fail('Invalid query date range')
-    if not isinstance(query.get('category',''),str):fail('Invalid category')
-    return query
 
-def dashboard(c,clinic,query):
-    from spine.reader import native_records
-    query=validate_query(c,query,clinic);kind=query['kind']
-    rows=[r for r in all_records(c,clinic,kind)+native_records(clinic,query.get('patient_id')) if r['kind']==kind]
-    selected=[]
-    for r in rows:
-        d=r['data'];when=(d.get('occurred_at') or d.get('date') or r['created_at'])[:10]
-        if query.get('patient_id') and r['id']!=query['patient_id'] and d.get('patient_id')!=query['patient_id']:continue
-        if query.get('category') and d.get('category','').lower()!=query['category'].lower():continue
-        if query.get('start') and when<query['start'] or query.get('end') and when>query['end']:continue
-        selected.append(r)
-    groups={}
-    for r in selected:
-        label=r['data'].get('category') or r['data'].get('status') or r['data'].get('species') or kind
-        groups[label]=groups.get(label,0)+1
-    return {'count':len(selected),'groups':[{'label':k,'count':v} for k,v in sorted(groups.items())],'records':selected[:100],'record_limit':100,'refreshed_at':now()}
+# Assistant and saved dashboards deliberately share the same validated executor.
+from record_queries import validate_query, dashboard

@@ -1,0 +1,163 @@
+"""Assistant-to-dashboard parity and explicit, typed clinical query boundaries."""
+import uuid
+import pytest
+from fastapi.testclient import TestClient
+import assistant, db, main
+from record_queries import dashboard, select_records, validate_query
+from test_integrity import isolated, act, get, rows, err
+
+
+def query(payload):
+    with db.connection() as c:return dashboard(c,'clinic-east',payload)
+
+
+def ask(monkeypatch, message, plan=None, patient=None):
+    monkeypatch.setattr(assistant.providers,'available',lambda:{'ai':plan is not None})
+    monkeypatch.setattr(assistant.providers,'model_json',lambda *args:plan)
+    with db.connection() as c:return assistant.answer(c,'clinic-east','clinic-east-vet',message,patient)
+
+
+def test_low_stock_answer_saved_view_and_live_refresh_match(monkeypatch):
+    low=act('inventory.create',{'name':'Synthetic low','unit':'tablet','stock':2,'reorder':3},actor='clinic-east-admin')
+    high=act('inventory.create',{'name':'Synthetic high','unit':'tablet','stock':8,'reorder':3},actor='clinic-east-admin')
+    service=act('inventory.create',{'name':'Synthetic service','unit':'service','stock':0,'reorder':3},actor='clinic-east-admin')
+    answer=ask(monkeypatch,'Which stock is low?')
+    contract=answer['dashboard']['query'];assert contract['low_stock'] is True
+    view=act('dashboard.save',{'name':'Low stock','query':contract})
+    client=TestClient(main.app);result=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert result['count']==answer['dashboard']['count']
+    assert {r['id'] for r in result['records']}=={r['id'] for r in answer['sources']}
+    assert low['id'] in {r['id'] for r in result['records']}
+    assert not {high['id'],service['id']} & {r['id'] for r in result['records']}
+    act('inventory.adjust',{'id':low['id'],'version':low['version'],'stock':4,'reason':'Synthetic count'},actor='clinic-east-admin')
+    refreshed=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert refreshed['count']==result['count']-1
+    assert answer['dashboard']['count']==result['count'] # Saved answer is a snapshot.
+
+
+def test_general_stock_does_not_silently_mean_low_stock(monkeypatch):
+    answer=ask(monkeypatch,'List inventory stock')
+    assert 'low_stock' not in answer['dashboard']['query']
+    assert answer['dashboard']['count']==len(rows('inventory'))
+
+
+def test_outstanding_saved_query_uses_actual_positive_balance(monkeypatch):
+    invoice=act('invoice.create',{'patient_id':'luna','items':[{'name':'Synthetic','quantity':1,'price_cents':100}]})
+    zero=act('invoice.create',{'patient_id':'luna','items':[{'name':'Synthetic free','quantity':1,'price_cents':0}]})
+    void=act('invoice.create',{'patient_id':'luna','items':[{'name':'Synthetic void','quantity':1,'price_cents':100}]})
+    act('invoice.void',{'id':void['id'],'version':void['version'],'reason':'Synthetic'})
+    answer=ask(monkeypatch,'Show outstanding invoices',patient='luna')
+    result=query(answer['dashboard']['query'])
+    assert result['count']==answer['dashboard']['count']
+    ids={r['id'] for r in result['records']};assert invoice['id'] in ids and not {zero['id'],void['id']} & ids
+    act('payment.record',{'id':invoice['id'],'version':invoice['version'],'amount_cents':100,'method':'cash'})
+    assert query(answer['dashboard']['query'])['count']==result['count']-1
+
+
+def test_status_and_due_dates_are_persisted_in_model_query(monkeypatch):
+    due=act('reminder.create',{'patient_id':'luna','title':'Future synthetic recall','due':'2098-07-10'})
+    other=act('reminder.create',{'patient_id':'luna','title':'Other date','due':'2098-07-11'})
+    answer=ask(monkeypatch,'Show due reminders on 2098-07-10 grouped by day',{'read':{'kind':'reminder','status':'due','start':'2098-07-10','end':'2098-07-10','group_by':'day'}},'luna')
+    result=query(answer['dashboard']['query'])
+    assert [r['id'] for r in result['records']]==[due['id']]
+    assert result['groups']==[{'label':'2098-07-10','count':1}]
+    assert 'status: due' in answer['text'] and other['id'] not in answer['dashboard']['source_ids']
+
+
+def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
+    with db.connection(True) as c:
+        first=db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Midnight clinic time','occurred_at':'2026-09-23T16:30:00Z'})
+        db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Before midnight','occurred_at':'2026-09-23T15:30:00Z'})
+    r=query({'kind':'event','patient_id':'luna','start':'2026-09-24','end':'2026-09-24','group_by':'day'})
+    assert first['id'] in {x['id'] for x in r['records']}
+    assert all(x['data'].get('title')!='Before midnight' for x in r['records'])
+    assert r['timezone']=='Asia/Singapore'
+
+
+def test_typed_equality_false_is_not_zero_and_exact_unit_comparisons():
+    with db.connection(True) as c:
+        facts=[]
+        for v,u in [(False,''),(0,''),(True,''),('false',''),(6.2,'mmol/L'),(7.2,'mg/dL'),(4.2,'mmol/L')]:
+            facts.append(db.record(c,'observation','clinic-east',{'patient_id':'luna','name':'Synthetic fact','code':'synthetic','value':v,'unit':u}))
+    assert [r['id'] for r in query({'kind':'observation','code':'synthetic','value_equals':False})['records']]==[facts[0]['id']]
+    assert [r['id'] for r in query({'kind':'observation','code':'synthetic','unit':'mmol/L','value_min':5,'value_max':7})['records']]==[facts[4]['id']]
+    assert [r['id'] for r in query({'kind':'observation','code':'synthetic','value_equals':'false'})['records']]==[facts[3]['id']]
+
+
+@pytest.mark.parametrize('payload',[
+    {'kind':'invoice','low_stock':True}, {'kind':'inventory','outstanding':True},
+    {'kind':'observation','value_min':2}, {'kind':'observation','code':'potassium','value_min':2},
+    {'kind':'observation','code':'potassium','unit':'mmol/L','value_min':7,'value_max':2},
+    {'kind':'observation','code':'x','value_equals':False,'value_min':2,'unit':'x'},
+    {'kind':'observation','code':'x','unit':'x','value_min':True},
+    {'kind':'observation','code':'x','value_equals':float('inf')},
+    {'kind':'invoice','low_stock':'false'}, {'kind':'patient','status':'due'},
+    {'kind':'invoice','start':'20260924'}, {'kind':'invoice','start':'2099-02-30'},
+    {'kind':'event','start':'2099-02-01','end':'2099-01-01'},
+    {'kind':'event','arbitrary_sql':'SELECT secret'}, {'kind':'event','group_by':'secret'},
+    {'kind':'event','name':'silently ignored field'}, {'kind':'settings'},
+])
+def test_unsupported_or_malformed_filters_fail_closed(payload):
+    err(422,lambda:query(payload))
+    err(422,lambda:act('dashboard.save',{'name':'Invalid','query':payload}))
+
+
+def test_cross_clinic_and_explicit_patient_scope(monkeypatch):
+    source=act('source.add',{'patient_id':'milo','text':'Other patient fact'})
+    answer=ask(monkeypatch,'Show events',{'read':{'kind':'event'}},'luna')
+    assert all(r['data']['patient_id']=='luna' for r in answer['sources'])
+    assert source['id'] not in answer['text']
+    with db.connection() as c:
+        err(404,lambda:validate_query(c,{'kind':'event','patient_id':'luna'},'clinic-river'))
+        foreign={'id':'foreign','clinic_id':'clinic-river','kind':'patient','created_at':'2026-01-01','data':{'name':'Foreign'}}
+        assert select_records(c,'clinic-east',{'kind':'patient'},[foreign])['count']==0
+
+
+def test_model_filters_and_query_catalog_are_explicit(monkeypatch):
+    seen=[]
+    monkeypatch.setattr(assistant.providers,'available',lambda:{'ai':True})
+    def provider(_,payload):
+        seen.append(payload)
+        return {'read':{'kind':'observation','code':'weight','unit':'kg','value_min':2}}
+    monkeypatch.setattr(assistant.providers,'model_json',provider)
+    with db.connection() as c:r=assistant.answer(c,'clinic-east','clinic-east-vet','Show recorded weights at least 2 kg','luna')
+    assert r['dashboard']['query']['value_min']==2
+    assert 'value_equals' in seen[0]['read_contract']['properties']
+    assert 'additionalProperties' in seen[0]['read_contract'] and seen[0]['read_contract']['additionalProperties'] is False
+
+
+def test_invalid_model_filter_is_not_ignored(monkeypatch):
+    err(422,lambda:ask(monkeypatch,'Show facts',{'read':{'kind':'observation','secret_filter':'nonsense'}}))
+    err(422,lambda:ask(monkeypatch,'Show facts',{'read':{'kind':'event','scope':'all_accounts'}}))
+
+
+def test_clinic_wide_override_includes_native_facts_outside_original_patient(monkeypatch):
+    native={'id':'native-other','kind':'event','clinic_id':'clinic-east','created_at':'2026-09-24T00:00:00Z','data':{'patient_id':'milo','title':'Native other patient'}}
+    monkeypatch.setattr('spine.reader.native_records',lambda clinic,pid=None: [native] if pid in (None,'milo') else [])
+    answer=ask(monkeypatch,'Show clinic-wide events',{'read':{'kind':'event','scope':'clinic'}},'luna')
+    assert any(r['id']==native['id'] for r in answer['sources'])
+
+
+def test_bounded_receipts_do_not_truncate_totals_or_change_order(monkeypatch):
+    with db.connection(True) as c:
+        for i in range(105):db.record(c,'event','clinic-east',{'patient_id':'luna','title':f'Synthetic {i}','category':'test_only'})
+    answer=ask(monkeypatch,'Show synthetic events',{'read':{'kind':'event','category':'test_only'}},'luna')
+    result=query(answer['dashboard']['query'])
+    assert result['count']==105 and len(result['records'])==100 and result['truncated'] is True
+    assert answer['dashboard']['count']==105 and len(answer['sources'])==30
+    assert answer['dashboard']['source_ids']==[r['id'] for r in result['records']]
+    assert 'Showing 12 of 105' in answer['text']
+
+
+def test_transferred_history_is_distinct_from_local_prescription(monkeypatch):
+    with db.connection(True) as c:
+        history=db.record(c,'medication_history','clinic-east',{'patient_id':'luna','dose':'Original synthetic dose','frequency':'Source frequency','instructions':'Historical only'})
+    answer=ask(monkeypatch,'Show medication history',{'read':{'kind':'medication_history'}},'luna')
+    assert [r['id'] for r in answer['sources']]==[history['id']]
+    assert 'Original synthetic dose' in answer['text'] and not rows('medication')
+
+
+def test_legacy_saved_queries_still_read_without_new_fields():
+    view=act('dashboard.save',{'name':'Legacy shape','query':{'kind':'invoice','patient_id':None,'start':None,'end':None,'category':''}})
+    result=TestClient(main.app).get('/api/dashboards/'+view['id'])
+    assert result.status_code==200 and result.json()['result']['count']==len(rows('invoice'))

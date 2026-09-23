@@ -174,8 +174,9 @@ def test_typed_native_facts_reach_assistant_saved_view_and_approved_owner(client
     assert any(r['kind']=='observation' and r['data'].get('native_spine') and r['data']['value']==value for r in client.get('/api/bootstrap').json()['records'])
     assistant=client.post('/api/assistant',json={'message':'Show observations','patient_id':'milo'}).json()
     assert any(r['data']['value']==value and r['data'].get('native_spine') for r in assistant['sources'])
-    view=actions.execute('dashboard.save',{'name':'Typed facts','query':{'kind':'observation','patient_id':'milo'}},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
-    assert any(r['data']['value']==value for r in client.get('/api/dashboards/'+view['id']).json()['result']['records'])
+    view=actions.execute('dashboard.save',{'name':'Typed facts','query':{'kind':'observation','patient_id':'milo','code':code,'value_equals':value}},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    filtered=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert filtered['count']==1 and filtered['records'][0]['data']['value']==value
     grant=actions.execute('share.create',{'patient_id':'milo'},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
     assert not any(r['id']==e['id'] for r in client.get('/api/owner/'+grant['id']).json()['events'])
     actions.execute('clinical.approve',{'id':e['id'],'approved':True},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
@@ -184,6 +185,21 @@ def test_typed_native_facts_reach_assistant_saved_view_and_approved_owner(client
     assert event['data']['observations'][0]['value']==value
     assert 'source' not in event['data']['observations'][0] and 'receipt' not in event['data']
     assert client.get('/api/dashboards/'+view['id'],headers={'x-clinic-id':'clinic-river'}).status_code==404
+
+
+def test_native_query_assistant_dashboard_numeric_date_and_receipt_parity(client,monkeypatch):
+    import providers
+    for i,(value,when) in enumerate([(6.2,'2026-09-23T17:00:00Z'),(4.1,'2026-09-23T17:00:00Z'),(6.3,'2026-09-23T15:00:00Z')]):
+        assert ingest(client,result(dedupe_key='query:'+str(i),occurred_at=when,observations=[{'concept':'potassium','name':'Potassium','value':value,'unit':'mmol/L'}])).status_code==200
+    contract={'kind':'observation','code':'potassium','unit':'mmol/L','value_min':5,'start':'2026-09-24','end':'2026-09-24','group_by':'day'}
+    monkeypatch.setattr(providers,'available',lambda:{'ai':True})
+    monkeypatch.setattr(providers,'model_json',lambda *args:{'read':contract})
+    answer=client.post('/api/assistant',json={'message':'Show recorded potassium at least 5 mmol/L on 2026-09-24','patient_id':'milo'}).json()
+    assert answer['dashboard']['count']==1 and answer['sources'][0]['data']['value']==6.2
+    assert answer['sources'][0]['data']['receipt']['receipt_id']
+    view=actions.execute('dashboard.save',{'name':'Native filtered facts','query':answer['dashboard']['query']},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    saved=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert saved['records']==answer['sources'] and saved['groups']==[{'label':'2026-09-24','count':1}]
 
 
 def test_typed_values_reject_ranges_coercion_and_concept_type_changes(client):
