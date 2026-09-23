@@ -277,10 +277,18 @@ def receipt_text(item):
             text += '\n' + f"{o['name']}: {o['value']} {o['unit']} (supplied range {o.get('ref_low')}–{o.get('ref_high')})"
         return text
     if item['kind'] == 'medication':
+        labels = {'name': 'Medication', 'quantity': 'Recorded quantity', 'dose': 'Recorded dose', 'frequency': 'Recorded frequency',
+                  'instructions': 'Source instructions', 'prescribed_by': 'Source prescriber reference', 'recorded_at': 'Originally recorded'}
         return ('Externally recorded medication history. This is not a new prescription or dispensing instruction.\n' +
-                '\n'.join(f'{k}: {v}' for k, v in d.items()))
+                '\n'.join(f'{labels[k]}: {v}' for k, v in d.items()))
     if item['kind'] == 'identity':
-        return 'Source clinic patient and owner details at transfer. Local details are not overwritten.\n' + json.dumps(d, indent=2, ensure_ascii=False)
+        labels = {'name': 'Name', 'species': 'Species', 'breed': 'Breed', 'sex': 'Sex', 'weight': 'Weight (kg)', 'age': 'Recorded age',
+                  'date_of_birth': 'Date of birth', 'external_id': 'Source patient reference', 'phone': 'Phone', 'email': 'Email'}
+        lines = ['Source clinic patient and owner details at transfer. Local details are not overwritten.']
+        for heading, values in [('Patient', d['patient']), ('Primary owner', d['owner'])]:
+            lines.append(heading)
+            lines.extend(f'{labels[k]}: {v}' for k, v in values.items() if v is not None and v != '')
+        return '\n'.join(lines)
     return 'Original approved ' + ('voice note' if item['kind'] == 'audio' else 'file') + ' copied with verified checksums. Original recorded at ' + d['recorded_at']
 
 
@@ -314,7 +322,7 @@ def dispatch(c, a, p, clinic, actor):
                       'origin_fingerprint': item['fingerprint'], 'origin_recorded_at': d.get('occurred_at', d.get('recorded_at'))}
         text = receipt_text(item)
         title = d.get('title') or d.get('name') or ('Patient and owner details' if kind == 'identity' else 'Voice note')
-        title = 'Transferred ' + title + (f" · source revision {item['revision']}" if item['revision'] > 1 else '')
+        title = ('Transferred medication history · ' if kind == 'medication' else 'Transferred ') + title + (f" · source revision {item['revision']}" if item['revision'] > 1 else '')
         source = record(c, 'source', clinic, {**provenance, 'patient_id': patient['id'], 'title': title,
                         'text': text, 'category': d.get('category', 'clinical'), 'section': 'Objective',
                         'author': 'Consented transfer from ' + review['source_clinic']['name']})
