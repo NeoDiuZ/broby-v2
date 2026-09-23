@@ -32,6 +32,32 @@ Do not label placeholders, a healthy deployment, test-mode money or an internal
 notification as verified live delivery, settlement, clinical acceptance or a V1
 cutover. See FEATURE_STATUS.md for the complete open requirement inventory.
 
+## Acceptance — earlier transfer baseline recovery, 24 September
+
+Patients imported before revision tracking can now receive further updates through
+an explicit reviewed current-source baseline. A current owner transfer request is
+still required. The receiving reviewer sees patient/owner identity and earlier
+clinical copies, records a reason, and acknowledges possible duplicate facts.
+Acceptance appends current approved source records, retains all earlier copies
+and local edits, and records a private timeline receipt. It never invents the
+missing historical manifest or calls an old record an equivalent match.
+
+Local acceptance passed 293 backend tests, including 12 baseline cases, plus
+16 frontend tests, TypeScript and the production build. A separate local production
+frontend/API with isolated SQLite/files and PostgreSQL schema reproduced the old
+import layout. Browser acceptance verified the disabled confirmation, displayed
+earlier record, stale-owner rejection, reload/reset, successful import and restored
+timeline after reload. Ten API/database checks verified the single saved baseline,
+review reason/actor, every preserved record/stock value, prior file bytes, the
+PostgreSQL timeline, replay and next-request deduplication.
+
+The current hosted synthetic fixture has no pre-revision mapping. Historical
+recovery evidence is therefore isolated-local, with normal-transfer regression
+verified separately after deployment. Exact release SHA, deployment IDs and hosted
+evidence are recorded in `.local/reports/broby-baseline-release-2026-09-24.md`.
+Private local evidence is in `.local/baseline-ui/` and `.local/baseline-*.txt`.
+V1, provider configuration, WhatsApp and payments are outside this release.
+
 ## Verified checkpoint — 24 September
 
 Stripe PR #9 is merged and deployed at `5d9f35d`. Hosted declined-card, successful SGD 1.00 payment, signed event receipt and SGD 0.40 partial refund were verified in the browser and against Stripe. Private evidence: `.local/stripe-hosted-results.json`. The ten hosted account/migration/ontology checks also passed; evidence: `.local/advanced-access-results.json`.

@@ -47,12 +47,33 @@ unreferenced files; automated orphan collection and cloud restore rehearsal rema
 operational follow-ups. Imports still use the existing single-backend SQLite
 transaction alongside the PostgreSQL clinical projection.
 
-Earlier transfers accepted before origin-revision tracking did not retain a
-reliable source manifest. Subsequent imports for those mappings stop with an
-explicit request for reviewed origin mapping, rather than guessing a baseline.
-Verified owner login/identity and automatic reconciliation of independently
-created destination patients are separate unfinished requirements. This release
-uses existing revocable owner capability links, not proof of legal identity.
+## Earlier imports without revision history
+
+Earlier transfers did not retain a reliable source manifest. A receiving vet or
+administrator can now review the existing patient/owner and clinical records,
+then explicitly establish a **new current-source baseline**. The source owner
+must still make a valid, unexpired transfer request. Settings → Data & migration
+→ Review transfer shows the earlier copies beside the current approved source.
+
+Acceptance requires both identity confirmation and a separate duplicate-risk
+acknowledgement, plus a 10–1,000 character review reason. All currently shared
+source items are appended to the already-mapped receiving patient. Earlier copies,
+files, local edits, contact details, and inventory remain unchanged. This can
+produce duplicate facts: it does not reconstruct the historical source payload,
+automatically match old facts, or assert that old and new records are equivalent.
+Future requests compare to the new baseline and skip unchanged origins normally.
+
+An immutable baseline receipt records the reviewer, reason, preview digest, prior
+accepted request IDs, preserved receiving record versions/fingerprints and the
+new origin fingerprints. A private timeline event explains the decision. The
+preview includes native PostgreSQL receiving facts as well as PMS records; changes
+to any reviewed receiving record, owner or source invalidate acceptance. Review
+context is bounded to 1,000 records and 5 MB; larger histories require an archive
+reconciliation. Request tokens and filesystem paths are not displayed.
+
+Verified owner login/identity and reconciliation of independently created
+destination patients remain separate unfinished requirements. This release uses
+revocable owner capability links, not proof of legal identity.
 
 ## Verification
 
@@ -64,3 +85,14 @@ source revocation after acceptance, typed observations, gaps/checksum/size/limit
 failures and rollback after files are written. The previous transfer test now uses
 the reviewed preview contract. `scripts/smoke-clinic-transfers.py` provides the
 hosted synthetic two-clinic rehearsal. See RELEASE_WORK.md for release evidence.
+
+`api/tests/test_transfer_baselines.py` adds pre-revision recovery, acknowledgement
+and reason validation, permissions, stale owner/local/native/source checks,
+patient isolation, limits, transaction/file rollback, concurrent request rejection,
+immutable history and repeat-request deduplication. The isolated production browser
+rehearsal covers disabled acceptance, stale owner rejection, reload/review reset,
+acceptance and persistence. API/database readback checks the PostgreSQL timeline,
+old file bytes, one baseline, unchanged records/stock and the next deduplicated
+transfer. No old-format mapping is present in the current hosted synthetic fixture;
+that historical path is verified in the isolated local database, with hosted
+normal-transfer regression checked separately.
