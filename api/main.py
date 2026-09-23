@@ -185,10 +185,15 @@ class Chat(BaseModel):
     message:str=Field(min_length=1,max_length=2000)
     patient_id:str|None=None
     history:list[str]=Field(default_factory=list,max_length=10)
+    conversation_id:str|None=Field(default=None,max_length=100)
+    key:str|None=Field(default=None,min_length=8,max_length=128)
 @app.post('/api/assistant')
 def assistant(body:Chat,request:Request):
     from assistant import answer
     clinic,actor=identity(request)
+    if body.key:
+        from assistant_history import ask
+        return ask(clinic,actor,body.message,body.patient_id,body.conversation_id,body.key)
     with connection() as c:return answer(c,clinic,actor,body.message,body.patient_id,body.history)
 
 from portal import router as portal_router
@@ -213,3 +218,6 @@ app.include_router(transfers_router)
 
 from stripe_payments import router as stripe_router
 app.include_router(stripe_router)
+
+from assistant_history import router as assistant_history_router
+app.include_router(assistant_history_router)

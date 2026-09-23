@@ -54,8 +54,9 @@ callbacks are caught by polling active/recent checkouts and by manual checks.
   and refund reservation across a persistence failure.
 - A real Stripe sandbox Checkout was created and retrieved successfully from an
   isolated local invoice. No mock provider was used for that check.
-- Hosted browser payment, webhook receipt, refund and exact deployment revision
-  are recorded below after release verification.
+- PR #9 merged to `5d9f35d2ebfb3df51ba0dfb7dfdfe8917f31b6a4`; both Railway services deployed that exact revision successfully.
+- Hosted browser acceptance on 24 September: synthetic invoice INV-1004, SGD 1.00. A declined test card stayed unpaid, then a successful test card marked it paid. A SGD 0.40 partial refund succeeded and left SGD 0.60 paid / SGD 0.40 outstanding.
+- Independent Stripe API retrieval confirmed the completed, paid, non-live session and successful 40-cent refund. Broby persisted four matched signed events with no failed tasks. The browser showed the same invoice and refund values.
 
 ## Operational limits and recovery
 

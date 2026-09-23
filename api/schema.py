@@ -34,3 +34,6 @@ def migrate(c):
     setup_transfers(c)
     from stripe_payments import setup as setup_stripe
     setup_stripe(c)
+
+    from assistant_history import setup as setup_assistant
+    setup_assistant(c)
