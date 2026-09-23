@@ -4,6 +4,7 @@ from datetime import datetime,timezone
 from sqlalchemy import select,or_,and_,func
 from sqlalchemy.dialects.postgresql import insert
 from fastapi import HTTPException
+from .categories import canonical, aliases
 from .models import Patient,Owner,OwnerPatient,Event,Source,Concept,Observation
 
 def fail(message,status=422):raise HTTPException(status,message)
@@ -31,7 +32,7 @@ def event_view(s,e):
         if f:flags.append({'type':'out_of_range','observation_id':o.id})
         if not o.source_id:flags.append({'type':'missing_source','observation_id':o.id})
         values.append({'id':o.id,'concept':term.code,'name':term.name,'value':o.value,'unit':term.unit,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':f,'source':source(s,o.source_id)})
-    return {'id':e.id,'event_type':e.event_type,'occurred_at':utc(e.occurred_at),'summary':e.summary,'actor':e.actor,'source':source(s,e.source_id),'body':e.body,'flags':flags,'observations':values}
+    return {'id':e.id,'event_type':canonical(e.event_type),'occurred_at':utc(e.occurred_at),'summary':e.summary,'actor':e.actor,'source':source(s,e.source_id),'body':e.body,'flags':flags,'observations':values}
 
 def add_source(s,clinic,pid,value,id=None):
     if value is None:return None
@@ -67,7 +68,7 @@ def cursor_decode(token,scope):
         return v
     except Exception:fail('Invalid cursor')
 def patient_view(s,p):
-    owner=s.scalar(select(Owner).join(OwnerPatient,Owner.id==OwnerPatient.owner_id).where(OwnerPatient.patient_id==p.id).order_by(Owner.id))
+    owner=s.scalar(select(Owner).join(OwnerPatient,Owner.id==OwnerPatient.owner_id).where(OwnerPatient.patient_id==p.id).order_by(OwnerPatient.is_primary.desc(),Owner.id))
     last=s.scalar(select(func.max(Event.occurred_at)).where(Event.patient_id==p.id,Event.event_type=='consult'))
     return {'id':p.id,'name':p.name,'species':p.species,'breed':p.breed,'sex':p.sex,'date_of_birth':p.date_of_birth.isoformat() if p.date_of_birth else None,'owner':{'id':owner.id,'name':owner.name} if owner else None,'last_seen':utc(last) if last else None,'stats':{'visits':s.scalar(select(func.count()).select_from(Event).where(Event.patient_id==p.id,Event.event_type=='consult')),'observations':s.scalar(select(func.count()).select_from(Observation).join(Event).where(Event.patient_id==p.id)),'document_sources':s.scalar(select(func.count()).select_from(Source).where(Source.patient_id==p.id,Source.kind=='document'))}}
 def patients(s,clinic,q,limit,cursor):
@@ -83,8 +84,10 @@ def patients(s,clinic,q,limit,cursor):
 def timeline(s,clinic,pid,limit,cursor,category='',q='',start=None,end=None):
     patient(s,pid,clinic);scope=json.dumps([clinic,pid,category,q,str(start),str(end)]);after=cursor_decode(cursor,scope)
     query=select(Event).where(Event.clinic_id==clinic,Event.patient_id==pid)
-    if category:query=query.where(Event.event_type==category)
-    if q:query=query.where(Event.summary.ilike('%'+q.replace('%','\\%').replace('_','\\_')+'%',escape='\\'))
+    if category:query=query.where(Event.event_type.in_(aliases(category)))
+    if q:
+        pattern='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
+        query=query.where(or_(Event.summary.ilike(pattern,escape='\\'),Event.body['text'].as_string().ilike(pattern,escape='\\')))
     if start:query=query.where(Event.occurred_at>=datetime.combine(start,datetime.min.time(),timezone.utc))
     if end:query=query.where(Event.occurred_at<=datetime.combine(end,datetime.max.time(),timezone.utc))
     if after:

@@ -40,6 +40,7 @@ class OwnerPatient(Base):
     __tablename__='owner_patients'
     owner_id:Mapped[str]=mapped_column(ForeignKey('owners.id'),primary_key=True)
     patient_id:Mapped[str]=mapped_column(ForeignKey('patients.id'),primary_key=True)
+    is_primary:Mapped[bool]=mapped_column(default=False)
 class Source(Base):
     __tablename__='sources'
     id:Mapped[str]=mapped_column(String,primary_key=True)

@@ -15,6 +15,7 @@ def migrate(c):
     END;
     CREATE TABLE IF NOT EXISTS ontology(code TEXT PRIMARY KEY,name TEXT,value_type TEXT,unit TEXT,category TEXT);
     CREATE TABLE IF NOT EXISTS owner_claims(token_hash TEXT PRIMARY KEY,grant_token TEXT,expires_at TEXT);
+    CREATE TABLE IF NOT EXISTS saved_pets(vault_hash TEXT,grant_token TEXT,expires_at TEXT,PRIMARY KEY(vault_hash,grant_token));
     CREATE TABLE IF NOT EXISTS grant_parents(token TEXT PRIMARY KEY,parent_token TEXT);
     CREATE TABLE IF NOT EXISTS credentials(username TEXT PRIMARY KEY,member_id TEXT NOT NULL,clinic_id TEXT NOT NULL,salt TEXT,password_hash TEXT);
     CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,username TEXT,expires_at TEXT);

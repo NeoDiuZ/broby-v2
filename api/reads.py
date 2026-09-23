@@ -22,8 +22,8 @@ def period(query,timezone='Asia/Singapore'):
     if 'today' in q:return today,today
     return None,None
 
-def handover(c,clinic):
-    records=all_records(c,clinic);tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore');today=datetime.now(ZoneInfo(tz)).date().isoformat()
+def handover(c,clinic,instant=None):
+    records=all_records(c,clinic);tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore');today=(instant or datetime.now(ZoneInfo(tz))).astimezone(ZoneInfo(tz)).date().isoformat()
     return {'date':today,'appointments':[r for r in records if r['kind']=='appointment' and r['data']['date']==today],
        'intakes':[r for r in records if r['kind']=='intake' and r['data']['status']=='new'],
        'reminders':[r for r in records if r['kind']=='reminder' and r['data']['status']=='due' and r['data']['due']<=today],

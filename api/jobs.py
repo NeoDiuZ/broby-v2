@@ -5,11 +5,8 @@ import providers
 from db import connection, get, update, now, unpack, uid
 
 def authorize(c,clinic,actor,action):
-    from actions import owned,PERMISSIONS,fail
-    member=owned(c,actor,clinic,'member')
-    if not member['data'].get('active') or member['data']['role'] not in PERMISSIONS[action]:fail('Requesting member no longer has permission for this job',403)
-    locked=owned(c,clinic,clinic,'clinic')['data'].get('locked_features',[])
-    if member['data']['role']!='admin' and action in locked:fail('This job was locked by the clinic administrator',403)
+    from actions import authorize as check
+    return check(c,clinic,actor,action)
 
 stop=threading.Event()
 def run_job(job_id):
@@ -37,11 +34,11 @@ def run_job(job_id):
     with connection(True) as c:
         authorize(c,job['clinic_id'],snapshot.get('actor_id'),'summary.generate')
         consult=get(c,job['consultation_id'],job['clinic_id'])
-        result={'summary':sections,'mode':mode,'omitted_sources':omitted,'source_ids':snapshot['source_ids']}
+        result={'summary':sections,'mode':mode,'omitted_sources':omitted,'source_ids':snapshot['source_ids'],'context_preference':snapshot.get('retention','medical')}
         if not consult or consult['version']!=snapshot['version']:
             c.execute('UPDATE jobs SET status=?,result=?,error=?,updated_at=? WHERE id=?',('conflict',json.dumps(result),'The consultation changed while this job ran. Newer edits were preserved; regenerate from the latest record.',now(),job_id))
             return
-        d=consult['data']; d.update(summary=sections,template_id=snapshot['template_id'],generated_revision=snapshot['input_revision'],generation_mode=mode,omitted_sources=omitted,status='in_progress')
+        d=consult['data']; d.update(summary=sections,template_id=snapshot['template_id'],generated_revision=snapshot['input_revision'],generation_mode=mode,context_preference=snapshot.get('retention','medical'),omitted_sources=omitted,status='in_progress')
         update(c,consult,d)
         c.execute('UPDATE jobs SET status=?,result=?,updated_at=? WHERE id=?',('completed',json.dumps(result),now(),job_id))
 def loop():

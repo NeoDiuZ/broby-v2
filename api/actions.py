@@ -44,15 +44,34 @@ PERMISSIONS={
 
 from workflows import PERMISSIONS as MORE_PERMISSIONS
 PERMISSIONS.update(MORE_PERMISSIONS)
+from clinic_workflows import PERMISSIONS as CLINIC_PERMISSIONS
+PERMISSIONS.update(CLINIC_PERMISSIONS)
+
+DEPENDENCIES={
+ 'recording.create':('source.add',),'recording.complete':('recording.create',),
+ 'recording.rename':('source.add',),'source.speakers':('source.add',),
+ 'recording.transcribe':('source.add',),'lab.import':('source.add',),
+ 'observation.add':('source.add',),'observation.record':('source.add',),
+ 'intake.accept':('source.add',),'reminder.queue_due':('message.queue',),
+ 'discharge.queue':('message.queue','share.create'),
+}
+
+def allowed_actions(c,clinic,actor):
+    member=owned(c,actor,clinic,'member')['data'];practice=owned(c,clinic,clinic,'clinic')['data']
+    locked=set(practice.get('locked_features',[]))
+    def allowed(action):
+        return member.get('active') and member['role'] in PERMISSIONS[action] and (member['role']=='admin' or action not in locked) and all(allowed(dep) for dep in DEPENDENCIES.get(action,()))
+    return [a for a in PERMISSIONS if allowed(a)]
+
+def authorize(c,clinic,actor,action):
+    if action not in allowed_actions(c,clinic,actor):fail('Your role or clinic permissions do not allow this action',403)
+    return owned(c,actor,clinic,'member')
 
 def execute(action,p,clinic,actor,key):
     if action not in PERMISSIONS: fail('Unknown action',404)
     fingerprint=hashlib.sha256(json.dumps({'action':action,'payload':p},sort_keys=True).encode()).hexdigest()
     with connection(True) as c:
-        member=owned(c,actor,clinic,'member')
-        if not member['data'].get('active') or member['data']['role'] not in PERMISSIONS[action]: fail('Your role does not allow this action',403)
-        settings=get(c,clinic,clinic)
-        if action in settings['data'].get('locked_features',[]) and member['data']['role']!='admin': fail('This action is locked by the clinic administrator',403)
+        authorize(c,clinic,actor,action)
         previous=c.execute('SELECT * FROM mutations WHERE clinic_id=? AND actor_id=? AND key=?',(clinic,actor,key)).fetchone()
         if previous:
             if previous['payload_hash']!=fingerprint: fail('Idempotency key was reused with different input',409)
@@ -63,20 +82,29 @@ def execute(action,p,clinic,actor,key):
         return result
 
 def dispatch(c,a,p,clinic,actor):
+    from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in CLINIC_PERMISSIONS:
+        from clinic_workflows import dispatch as workflow
+        return workflow(c,a,p,clinic,actor)
     if a=='owner.create':
         return record(c,'owner',clinic,{'name':require(p,'name'),'email':p.get('email',''),'phone':p.get('phone','')})
     if a=='patient.create':
         owner_id=p.get('owner_id')
-        if owner_id: owned(c,owner_id,clinic,'owner')
+        if owner_id:
+            if owned(c,owner_id,clinic,'owner')['data'].get('merged_into'):fail('Select an active owner')
         else: owner_id=record(c,'owner',clinic,{'name':require(p,'owner_name'),'email':p.get('owner_email',''),'phone':p.get('owner_phone','')})['id']
         external=p.get('external_id','').strip()
         if external and any(r['data'].get('external_id')==external for r in all_records(c,clinic,'patient')): fail('External patient ID already exists',409)
-        return record(c,'patient',clinic,{'name':require(p,'name'),'species':require(p,'species'),'breed':p.get('breed',''),'sex':p.get('sex','Unknown'),'weight':number(p.get('weight',0),'Weight'),'age':p.get('age',''),'owner_id':owner_id,'external_id':external})
+        return record(c,'patient',clinic,{'name':require(p,'name'),'species':require(p,'species'),'breed':p.get('breed',''),'sex':p.get('sex','Unknown'),'weight':number(p.get('weight',0),'Weight'),'age':p.get('age',''),'date_of_birth':calendar_date(p.get('date_of_birth'), 'Date of birth', latest=clinic_today(c,clinic).date(), optional=True),'owner_id':owner_id,'external_id':external})
     if a=='patient.update':
         r=owned(c,p['id'],clinic,'patient'); version(r,p)
-        allowed={'name','species','breed','sex','weight','age','owner_id'}
+        allowed={'name','species','breed','sex','weight','age','date_of_birth','owner_id'}
         d={**r['data'],**{k:v for k,v in p.items() if k in allowed}}
         require(d,'name'); require(d,'species'); d['weight']=number(d['weight'],'Weight'); owned(c,d['owner_id'],clinic,'owner')
+        if owned(c,d['owner_id'],clinic,'owner')['data'].get('merged_into'):fail('Select an active owner')
+        if 'additional_owner_ids' in d:d['additional_owner_ids']=[x for x in d['additional_owner_ids'] if x!=d['owner_id']]
+        d['date_of_birth']=calendar_date(d.get('date_of_birth'), 'Date of birth', latest=clinic_today(c,clinic).date(), optional=True)
+        if d['owner_id']!=r['data']['owner_id']: revoke_patient_access(c,clinic,r['id'])
         return update(c,r,d)
     if a=='consultation.create':
         check_patient(c,p,clinic)
@@ -190,16 +218,20 @@ def dispatch(c,a,p,clinic,actor):
         return record(c,'template',clinic,d)
     if a=='reminder.create':
         check_patient(c,p,clinic)
-        try: datetime.fromisoformat(require(p,'due'))
-        except ValueError: fail('Invalid due date')
+        p={**p,'due':calendar_date(require(p,'due'),'Due date')}
         return record(c,'reminder',clinic,{'patient_id':p['patient_id'],'title':require(p,'title'),'due':p['due'],'status':'due'})
     if a=='reminder.complete':
-        r=owned(c,p['id'],clinic,'reminder'); version(r,p); return update(c,r,{**r['data'],'status':'completed'})
+        from clinic_workflows import cancel_reminder_draft
+        r=owned(c,p['id'],clinic,'reminder'); version(r,p)
+        if r['data']['status']!='due': fail('This reminder is already closed',409)
+        cancel_reminder_draft(c,r)
+        return update(c,r,{**r['data'],'status':'completed'})
     if a=='message.queue':
         patient=check_patient(c,p,clinic); owner=owned(c,patient['data']['owner_id'],clinic,'owner')
         return record(c,'outbox',clinic,{'patient_id':patient['id'],'owner_id':owner['id'],'recipient':owner['data']['name'],'body':require(p,'body'),'channel':'manual','status':'pending','attempts':0})
     if a=='message.complete':
         r=owned(c,p['id'],clinic,'outbox'); version(r,p)
+        if r['data']['status']!='pending': fail('Only pending messages can be marked sent',409)
         result=update(c,r,{**r['data'],'status':'sent_manually','sent_at':now()})
         event(c,clinic,r['data']['patient_id'],'message','Owner communication',r['data']['body']); return result
     if a=='share.create':
@@ -219,7 +251,7 @@ def dispatch(c,a,p,clinic,actor):
     if a=='settings.save':
         r=owned(c,'settings-'+clinic,clinic,'settings'); version(r,p)
         if p.get('retention') not in ('medical','medical_context'): fail('Invalid retention setting')
-        d={k:p.get(k,r['data'].get(k)) for k in ('retention','language','emergency_phone','reminder_days')}; d['reminder_days']=integer(d['reminder_days'],'Reminder days')
+        d={**r['data'],**{k:p.get(k,r['data'].get(k)) for k in ('retention','language','emergency_phone','reminder_days')}}; d['reminder_days']=integer(d['reminder_days'],'Reminder days')
         return update(c,r,d)
     if a=='member.save':
         role=require(p,'role')
@@ -246,6 +278,10 @@ def dispatch(c,a,p,clinic,actor):
         missing=sorted(set(range(expected))-received)
         if received-set(range(expected)): fail('Chunk count does not match this recording',409)
         if missing: fail({'message':'Audio is incomplete. Retry missing chunks before completion.','missing':missing},409)
-        return update(c,r,{**r['data'],'status':'saved','duration':number(p.get('duration',0),'Duration'),'expected_chunks':expected})
+        duration=number(p.get('duration',0),'Duration')
+        if r['data']['status']=='saved':
+            if expected!=r['data']['expected_chunks'] or duration!=r['data']['duration']: fail('Recording is finalized; its manifest cannot be changed',409)
+            return r
+        return update(c,r,{**r['data'],'status':'saved','duration':duration,'expected_chunks':expected})
     from workflows import dispatch as extended_dispatch
     return extended_dispatch(c,a,p,clinic,actor)

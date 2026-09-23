@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter,Request,Response,Query
 from pydantic import BaseModel,Field
 from db import connection,get,all_records,now,unpack
-from actions import owned,fail,PERMISSIONS
+from actions import owned,fail,PERMISSIONS,allowed_actions
 import auth,providers,reads,runtime
 router=APIRouter()
 def identity(request):
@@ -62,7 +62,7 @@ def catalog(request:Request):
     clinic,actor=identity(request)
     with connection() as c:
         member=owned(c,actor,clinic,'member');locked=get(c,clinic,clinic)['data'].get('locked_features',[])
-        return [{'name':a,'allowed':member['data']['role'] in roles and (a not in locked or member['data']['role']=='admin')} for a,roles in PERMISSIONS.items()]
+        return [{'name':a,'allowed':a in allowed_actions(c,clinic,actor)} for a in PERMISSIONS]
 @router.get('/api/backup')
 def backup(request:Request):
     clinic,actor=identity(request)

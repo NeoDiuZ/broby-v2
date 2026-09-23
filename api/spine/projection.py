@@ -48,7 +48,8 @@ def sync(clinic):
             d=r['data']
             if r['kind']=='patient':
                 s.execute(delete(OwnerPatient).where(OwnerPatient.patient_id==r['id']))
-                if d.get('owner_id'):s.add(OwnerPatient(owner_id=d['owner_id'],patient_id=r['id']))
+                from clinic_workflows import owner_ids
+                for oid in owner_ids(r):s.add(OwnerPatient(owner_id=oid,patient_id=r['id'],is_primary=oid==d.get('owner_id')))
             if r['kind']=='member':
                 linked=next((m for m in memberships if m['member_id']==r['id']),None)
                 person_id='account:'+linked['username'] if linked else r['id']
@@ -60,7 +61,8 @@ def sync(clinic):
         events=[r for r in records if r['kind']=='event'];source_events={}
         for r in events:
             d=r['data'];src=next((x for x in d.get('source_ids',[]) if x in by_id and by_id[x]['kind']=='source'),None)
-            typ={'consultation':'consult','bloods':'lab_result','vaccine':'vaccination'}.get(d['category'],d['category'])
+            from .categories import canonical
+            typ=canonical(d['category'])
             s.merge(Event(id=r['id'],clinic_id=clinic,patient_id=d['patient_id'],event_type=typ,occurred_at=stamp(d['occurred_at']),summary=d['title'],actor={'kind':'human','name':by_id[src]['data'].get('author','Recorded in clinic') if src else 'Recorded in clinic'},source_id=src,body={'text':d['body'],'legacy':True},dedupe_key='legacy:'+r['id'],payload_hash='legacy'))
             if src:source_events[(d['patient_id'],src)]=r['id']
         s.flush()
