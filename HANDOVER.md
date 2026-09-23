@@ -20,7 +20,7 @@ The document describes both a broad 58-item product and a narrower FIRST BUILD. 
 
 ## Hosted setup update — 23 September 2026
 
-The `codex/railway-setup` branch adds a working isolated Railway deployment, password access, persistent storage, Docker builds, PostgreSQL CI, and live synthetic workflow verification. See [DEPLOYMENT.md](docs/DEPLOYMENT.md). The unfinished product scope below remains unfinished; hosting does not complete it.
+The Railway setup adds a working isolated deployment, password access, persistent storage, Docker builds, PostgreSQL CI, and live synthetic workflow verification. The release branch is `main`; both application services deploy from it. See [DEPLOYMENT.md](docs/DEPLOYMENT.md). The unfinished product scope below remains unfinished; hosting does not complete it.
 
 ## Implemented
 

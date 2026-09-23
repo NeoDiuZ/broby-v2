@@ -2,17 +2,18 @@
 
 The patient-record foundation now uses **FastAPI, SQLAlchemy 2.0, Alembic and PostgreSQL**, with Next.js/React/TypeScript and Tailwind on the frontend. The original production checkout is untouched. An isolated, authenticated synthetic-data deployment is now running in Railway **Broby New**. It is not a replacement for V1.
 
-Handover review: [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1). The complete source is on `codex/v2-handover` until that PR is merged; `main` initially contains only the repository scaffold. Clone with `git clone --branch codex/v2-handover https://github.com/NeoDiuZ/broby-v2.git`.
+The release source and Railway deployment branch are `main`. The handover and hosting changes are tracked in [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1) and [PR #2](https://github.com/NeoDiuZ/broby-v2/pull/2). Clone with `git clone https://github.com/NeoDiuZ/broby-v2.git`.
 
 ## Open
 
+- [Live website](https://frontend-production-1283.up.railway.app) · [Live clinic](https://frontend-production-1283.up.railway.app/app)
 - [Workspace](http://127.0.0.1:3100/app) — Patients → Milo → Timeline / Observations
 - [Preserved website](http://127.0.0.1:3100)
 - [API reference](http://127.0.0.1:8100/docs)
 
 Website and app now share port **3100**. `/` serves the preserved website, `/app` the clinic workspace, `/owner` the owner portal, and `/api/*` proxies the internal API on 8100. Port 3101 is no longer needed. `web/` is the active combined frontend; `website/` is retained as the original reference.
 
-Start with [HANDOVER.md](HANDOVER.md), then [Railway deployment plan](docs/DEPLOYMENT.md) and [database migration plan](docs/DATABASE_HANDOVER.md). The target is a **new, isolated Railway project with Railway PostgreSQL**. Supabase and Sites are no longer deployment targets. The deployed branch is `codex/railway-setup`. See [backend setup and verification](docs/DEPLOYMENT.md) for the live URL, service configuration, test evidence, and remaining release boundaries.
+Start with [HANDOVER.md](HANDOVER.md), then [Railway deployment plan](docs/DEPLOYMENT.md) and [database migration plan](docs/DATABASE_HANDOVER.md). The target is a **new, isolated Railway project with Railway PostgreSQL**. Supabase and Sites are no longer deployment targets. The deployed branch is `main`. See [backend setup and verification](docs/DEPLOYMENT.md) for the live URL, service configuration, test evidence, and remaining release boundaries.
 
 ## Run and test
 

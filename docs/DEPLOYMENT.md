@@ -5,8 +5,8 @@ Updated 23 September 2026. The implemented handover workflows are running in an 
 - Website: https://frontend-production-1283.up.railway.app
 - Clinic: https://frontend-production-1283.up.railway.app/app
 - Railway: https://railway.com/project/ca389ebd-0186-4b7e-baec-8ddacdfc406b
-- Repository: https://github.com/NeoDiuZ/broby-v2/tree/codex/railway-setup
-- Deploy branch: `codex/railway-setup`, derived from `codex/v2-handover`. Pushes trigger deployment. Coordinate this branch with the frontend owner before pushing.
+- Repository: https://github.com/NeoDiuZ/broby-v2/tree/main
+- Deploy branch: `main`. Merge reviewed changes into `main` to trigger Railway deployment for both application services. The original setup was developed on `codex/railway-setup`, based on `codex/v2-handover`.
 
 The local initial account details are in `.local/hosted-access.json` (owner-readable, ignored by Git). Username: `kaushik`, linked to the synthetic East Coast administrator. That demo membership is displayed as Daniel Lim. Provider keys are held only in Railway. Do not put the access file or provider values in issues, PRs, screenshots, or Git.
 
