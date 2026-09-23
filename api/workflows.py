@@ -11,7 +11,7 @@ PERMISSIONS={
  'observation.record':{'vet','nurse','admin'}, 'ontology.save':{'admin'},
  'intake.accept':{'vet','nurse','admin'},'intake.close':{'vet','nurse','admin'},
  'recording.approve':{'vet','admin'}, 'job.retry':{'vet','admin'},
- 'recording.transcribe':{'vet','nurse','admin'}, 'reminder.queue_due':{'vet','nurse','admin'},
+ 'recording.transcribe':{'vet','nurse','admin'}, 'recording.refine':{'vet','nurse','admin'}, 'reminder.queue_due':{'vet','nurse','admin'},
  'message.update':{'vet','nurse','admin'},'message.cancel':{'vet','nurse','admin'},
  'payment.refund':{'vet','admin'},'invoice.void':{'vet','admin'},
  'inventory.receive':{'admin'},'import.records':{'admin'},
@@ -100,12 +100,18 @@ def dispatch(c,a,p,clinic,actor):
         r=owned(c,p['id'],clinic,'recording');version(r,p)
         if r['data']['status']!='saved':fail('Finish uploading this recording first')
         return update(c,r,{**r['data'],'approved':bool(p.get('approved',True)),'approved_by':actor})
+    if a=='recording.refine':
+        from live_speech import request_prefix
+        return request_prefix(c,p,clinic)
     if a=='recording.transcribe':
         import providers
         if not providers.available()['transcription']:fail('Configure the speech provider before transcribing',503)
         r=owned(c,p['id'],clinic,'recording')
         if r['data']['status']!='saved':fail('Recording has missing chunks or is incomplete')
         if r['data'].get('transcript_source_id'):return {'id':r['data']['transcript_source_id'],'status':'completed'}
+        if r['data'].get('refinement'):
+            from live_speech import enqueue
+            return enqueue(c,r,r['data']['expected_chunks'])
         if not isinstance(p.get('diarize',True),bool):fail('Speaker separation must be true or false')
         for job in c.execute("SELECT * FROM jobs WHERE clinic_id=? AND status IN ('queued','running','failed') ORDER BY created_at DESC",(clinic,)):
             payload=json.loads(job['payload'])

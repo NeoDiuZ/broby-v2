@@ -152,9 +152,18 @@ def run_transcription(job,payload,token):
             with connection(True) as writer:writer.execute("UPDATE jobs SET status='completed',updated_at=? WHERE id=?",(now(),job['id']))
             return
         chunks=[dict(row) for row in c.execute('SELECT * FROM chunks WHERE recording_id=? ORDER BY chunk_index',(r['id'],))]
-        if [ch['chunk_index'] for ch in chunks]!=list(range(r['data']['expected_chunks'])):
+        expected=payload['prefix_chunks'] if payload.get('continuous') else r['data']['expected_chunks']
+        if payload.get('continuous'):
+            chunks=[ch for ch in chunks if ch['chunk_index']<expected]
+        if [ch['chunk_index'] for ch in chunks]!=list(range(expected)):
             raise audio_windows.AudioValidationError('Recording has missing chunks; restore the original before transcription.')
-    output=transcribe_windows(job,payload,token,chunks)
+        if payload.get('final') and (r['data']['status']!='saved' or expected!=r['data']['expected_chunks']):
+            raise audio_windows.AudioValidationError('Finish uploading the complete audio before publishing its transcript.')
+    if payload.get('continuous'):
+        from live_speech import transcribe_prefix
+        output=transcribe_prefix(job,payload,token,chunks)
+    else:
+        output=transcribe_windows(job,payload,token,chunks)
     if output is None:return
     with connection(True) as c:
         if not owns_claim(c,job['id'],token):return
