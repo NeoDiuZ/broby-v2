@@ -53,6 +53,15 @@ evaluate and readback phases using synthetic data, the real configured model,
 authenticated hosted APIs, audio-byte verification and saved conversation reloads.
 Credentials and capability-bearing evidence belong in ignored private files.
 
+Hosted acceptance on 24 September passed all ten operations with the real model,
+plus missing-quantity clarification, stale-write rejection and confirmation
+replay. A new authenticated session verified saved reviews/results, reminder
+states, received stock, owner links and identical original audio bytes. Browser
+acceptance created a synthetic reminder, confirmed it, restored its completed
+review after reload and checked its exact title/date in Messages. PR #18 and
+the Railway release details are recorded in RELEASE_WORK.md; final acceptance
+follow-up evidence is in the ignored operator release report.
+
 There are now 59 advertised actions out of 89 shared operations. Ten use the
 new strict proposal schemas; the other 49 retain their earlier field descriptions
 and executor-time validation. The remaining 30 advanced operations still need

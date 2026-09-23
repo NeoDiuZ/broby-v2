@@ -54,7 +54,7 @@ export default function Assistant({patientId,onClose}:{patientId?:string;onClose
    {loading&&<p>Loading saved conversations…</p>}
    {!loading&&!turns.length&&<div className="chat-welcome"><Sparkle size={30}/><h3>Your records, within reach.</h3><p>Find recorded facts or propose an action. Answers are saved so you can return later.</p>{[selectedPatient?'Show patient history':"What’s on today?",'Show outstanding invoices','Which stock is low?'].map(q=><button key={q} disabled={busy} onClick={()=>void ask(q)}>{q}<ArrowUpRight size={15}/></button>)}</div>}
    {turns.map(m=><div key={m.turn_id}><article className="chat-message user"><small>YOU</small><p className="preserve">{m.message}</p></article><article className="chat-message assistant"><small>BROBY{m.created_at?' · Saved '+new Date(m.created_at).toLocaleString('en-SG'):''}</small>
-    {m.status==='pending'?<p>Checking your records…</p>:<p className="preserve">{m.text}</p>}
+    {m.status==='pending'?<p>Checking your records…</p>:<p className="preserve">{m.execution&&m.action?'This action was completed after confirmation. The saved review below shows what was approved.':m.text}</p>}
     {m.status!=='completed'&&<button className="secondary" disabled={busy} onClick={()=>void ask(m.message,m.patient_id,m)}>Retry question</button>}
     {m.status==='completed'&&<>
      {m.choices?.map(p=><button className="secondary" disabled={busy} key={p.id} onClick={()=>{setSelectedPatient(p.id);void ask('Show patient history',p.id)}}>{p.data.name} · {p.data.species}</button>)}

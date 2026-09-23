@@ -119,7 +119,7 @@ and ignores late responses from a superseded selection/clinic. This prevents
 rapid selection changes from attaching the previous result to the new selection.
 Final follow-up revision/deployment and browser readback are recorded privately.
 
-## Next release — reviewed assistant operations
+## Verified checkpoint — reviewed assistant operations
 
 Eight additional assistant operations now cover reminder edits/cancellation,
 purchase orders/cancellation, recording names, complete owner links and handover
@@ -130,6 +130,24 @@ Saved confirmation still uses the shared permission/version/idempotency boundary
 Handover preparation also rejects confirmation after the reviewed clinic date
 changes. See ASSISTANT_OPERATIONS.md for exact scope and outstanding contracts.
 
-Release revision, CI, hosted real-model checks and browser acceptance will be
-recorded in the ignored operator report; this implementation entry alone is not
-evidence of a completed hosted release.
+PR #18 merged at `7fe01daf6df14da7f1b00eab3d8ff1245bccc1e8`. Backend
+`fe70f553-6147-462d-9762-c6d14ab96dfe` and Frontend
+`8b4de65e-9006-45da-8c9e-c7ed5a8bb54a` deployed that exact revision successfully.
+PR/push CI `35920552784` / `35920522375` and main CI `35920847185` passed.
+Local verification passed 246 backend tests, including 30 operation scenarios,
+plus 14 frontend tests, TypeScript and the production build.
+
+Real-provider hosted acceptance passed all ten typed operations, missing-quantity
+clarification, stale-confirmation rejection and repeat-confirmation identity.
+Readbacks verified all saved reviews/results, cancelled drafts, preserved partial
+stock, owner-link revocation, unchanged original audio bytes and disabled sending.
+Browser acceptance created and confirmed a synthetic reminder, restored its
+completed review after reload and found the exact reminder/date in Messages.
+A small follow-up replaces the historical "nothing changed" introduction after
+confirmation with an explicit completed-review message. Final follow-up deployment
+and readback evidence is kept in `.local/reports/broby-operations-release-2026-09-24.md`.
+
+Private fixtures/evidence: `.local/operations-hosted.json`,
+`.local/operations-hosted-prepare.txt`, `.local/operations-hosted-evaluate.txt`,
+`.local/operations-hosted-readback.txt`. They contain synthetic data and a revoked
+owner capability; never copy credentials/capabilities into repository docs.
