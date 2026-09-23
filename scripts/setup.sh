@@ -8,3 +8,7 @@ if [[ -x "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/
 [[ -x "$ROOT/.venv/bin/python" ]] || "$PYTHON" -m venv "$ROOT/.venv"
 "$ROOT/.venv/bin/python" -m pip install -r "$ROOT/api/requirements.txt"
 (cd "$ROOT/web" && npx --yes pnpm@10.15.1 install --frozen-lockfile)
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "Speech transcription needs FFmpeg. On macOS install it with: brew install ffmpeg"
+fi

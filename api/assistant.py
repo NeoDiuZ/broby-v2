@@ -30,7 +30,7 @@ ACTION_FIELDS={
  'reminder.create':'patient_id, title, due YYYY-MM-DD','reminder.complete':'id, version','reminder.queue_due':'no fields',
  'message.queue':'patient_id, body','message.update':'id,version,body','message.cancel':'id,version','message.complete':'id,version',
  'share.create':'patient_id','share.revoke':'token','attachment.approve':'id,version,approved:boolean',
- 'recording.approve':'id,version,approved:boolean','recording.transcribe':'id,language?','job.retry':'id',
+ 'recording.approve':'id,version,approved:boolean','recording.transcribe':'id,language?:multi/en/zh/ms,diarize?:boolean','job.retry':'id',
  'intake.accept':'id,version,consultation_id?','intake.close':'id,version',
  'settings.save':'version,retention:medical/medical_context,language,emergency_phone,reminder_days',
  'member.save':'name,role:vet/nurse/admin,active:boolean,id?,version?', 'feature_locks.save':'version (clinic),actions:[action name]',

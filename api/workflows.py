@@ -106,11 +106,12 @@ def dispatch(c,a,p,clinic,actor):
         r=owned(c,p['id'],clinic,'recording')
         if r['data']['status']!='saved':fail('Recording has missing chunks or is incomplete')
         if r['data'].get('transcript_source_id'):return {'id':r['data']['transcript_source_id'],'status':'completed'}
-        for job in c.execute("SELECT * FROM jobs WHERE clinic_id=? AND status IN ('queued','running')",(clinic,)):
+        if not isinstance(p.get('diarize',True),bool):fail('Speaker separation must be true or false')
+        for job in c.execute("SELECT * FROM jobs WHERE clinic_id=? AND status IN ('queued','running','failed') ORDER BY created_at DESC",(clinic,)):
             payload=json.loads(job['payload'])
             if payload.get('recording_id')==r['id']:return {'id':job['id'],'status':job['status']}
         if p.get('language','multi') not in ('multi','en','zh','ms'): fail('Unsupported speech language')
-        job=uid();payload={'kind':'transcription','recording_id':r['id'],'patient_id':r['data']['patient_id'],'actor_id':actor,'language':p.get('language','multi')}
+        job=uid();payload={'kind':'transcription','recording_id':r['id'],'patient_id':r['data']['patient_id'],'actor_id':actor,'language':p.get('language','multi'),'diarize':p.get('diarize',True)}
         c.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)',(job,clinic,r['data']['consultation_id'],'queued',json.dumps(payload),None,None,now(),now()))
         return {'id':job,'status':'queued'}
     if a=='job.retry':
