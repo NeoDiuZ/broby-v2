@@ -22,6 +22,10 @@ class AudioValidationError(Exception):
     pass
 
 
+class IncompleteAudio(AudioValidationError):
+    """A growing media container does not yet expose decodable packets."""
+
+
 def media_format(header):
     if header.startswith(b'\x1aE\xdf\xa3'):
         return 'matroska'
@@ -70,7 +74,7 @@ class AudioWindows:
 
 
 @contextmanager
-def prepare(chunks):
+def prepare(chunks, partial=False):
     with tempfile.TemporaryDirectory(prefix='broby-speech-') as directory:
         original = Path(directory) / 'input.audio'
         decoded = Path(directory) / 'decoded.wav'
@@ -93,7 +97,9 @@ def prepare(chunks):
         with original.open('rb') as source:
             demuxer = media_format(source.read(16))
         try:
-            subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-xerror',
+            # A live prefix may end inside a container packet. Only previews may
+            # tolerate that EOF; final publication always decodes strictly.
+            subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', *([] if partial else ['-xerror']),
                             '-protocol_whitelist', 'file,pipe', '-f', demuxer,
                             '-i', str(original), '-map', '0:a:0', '-vn', '-sn', '-dn',
                             '-t', str(MAX_SECONDS + 1), '-ac', '1', '-ar', str(SAMPLE_RATE),
@@ -102,6 +108,11 @@ def prepare(chunks):
         except FileNotFoundError as exc:
             raise AudioValidationError('Audio processing is unavailable; install FFmpeg on the backend. The original is preserved.') from exc
         except (subprocess.SubprocessError, OSError) as exc:
-            raise AudioValidationError('Audio could not be decoded within the processing limit. The original is preserved.') from exc
+            error = IncompleteAudio if partial else AudioValidationError
+            raise error('Audio could not be decoded within the processing limit. The original is preserved.') from exc
         decoded.chmod(0o600)
+        if partial:
+            with wave.open(str(decoded), 'rb') as audio:
+                if not audio.getnframes():
+                    raise IncompleteAudio('Waiting for complete audio packets.')
         yield AudioWindows(decoded, combined.hexdigest())

@@ -20,3 +20,5 @@ body{font-size:var(--text-body)}.sidebar{width:var(--sidebar-width);flex-basis:v
 @media(prefers-reduced-motion:reduce){.nav-item{transition:none}}
 
 .assistant-history-controls{display:flex;gap:8px;padding:0 20px 12px}.assistant-history-controls select{flex:1;min-width:0;font-size:12px}.assistant-history-controls button{flex-shrink:0}.assistant-drawer .chat-footnote{line-height:1.5}.assistant-drawer .chat-message small{display:block}
+
+.speech-progress{padding:12px 20px;border-top:1px solid var(--line);font-size:12px}.speech-progress p{margin-bottom:8px}.speech-progress article{padding:12px 0;border-top:1px solid var(--line)}.speech-progress summary{cursor:pointer;color:var(--teal-dark)}

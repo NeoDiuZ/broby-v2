@@ -77,7 +77,7 @@ DEPENDENCIES={
  'clinical.ingest':('source.add',),
  'recording.create':('source.add',),'recording.complete':('recording.create',),
  'recording.rename':('source.add',),'source.speakers':('source.add',),
- 'recording.transcribe':('source.add',),'lab.import':('source.add',),
+ 'recording.transcribe':('source.add',),'recording.refine':('recording.transcribe',),'lab.import':('source.add',),
  'observation.add':('source.add',),'observation.record':('source.add',),
  'intake.accept':('source.add',),'reminder.queue_due':('message.queue',),
  'discharge.queue':('message.queue','share.create'),
@@ -337,11 +337,13 @@ def dispatch(c,a,p,clinic,actor):
         results=[dispatch(c,'patient.create',row,clinic,actor) for row in rows]
         return {'id':uid(),'count':len(results)}
     if a=='recording.create':
+        from live_speech import options
+        refinement=options(c,p.get('refinement'),clinic,actor)
         patient=check_patient(c,p,clinic)
         consult=owned(c,require(p,'consultation_id'),clinic,'consultation')
         if consult['data']['patient_id']!=patient['id']: fail('Patient mismatch')
         count=sum(r['data']['consultation_id']==consult['id'] for r in all_records(c,clinic,'recording'))
-        return record(c,'recording',clinic,{'patient_id':patient['id'],'consultation_id':consult['id'],'number':count+1,'device':p.get('device','web'),'mime':p.get('mime','audio/webm'),'interrupted':bool(p.get('interrupted',False)),'status':'recording','duration':0})
+        return record(c,'recording',clinic,{'patient_id':patient['id'],'consultation_id':consult['id'],'number':count+1,'device':p.get('device','web'),'mime':p.get('mime','audio/webm'),'interrupted':bool(p.get('interrupted',False)),'status':'recording','duration':0,'refinement':refinement})
     if a=='recording.complete':
         r=owned(c,p['id'],clinic,'recording'); expected=integer(p.get('expected_chunks'),'Expected chunks',1)
         received={row[0] for row in c.execute('SELECT chunk_index FROM chunks WHERE recording_id=?',(r['id'],))}
@@ -350,8 +352,13 @@ def dispatch(c,a,p,clinic,actor):
         if missing: fail({'message':'Audio is incomplete. Retry missing chunks before completion.','missing':missing},409)
         duration=number(p.get('duration',0),'Duration')
         if r['data']['status']=='saved':
-            if expected!=r['data']['expected_chunks'] or duration!=r['data']['duration']: fail('Recording is finalized; its manifest cannot be changed',409)
+            if expected!=r['data']['expected_chunks'] or duration!=r['data'].get('capture_duration',r['data']['duration']): fail('Recording is finalized; its manifest cannot be changed',409)
             return r
-        return update(c,r,{**r['data'],'status':'saved','duration':duration,'expected_chunks':expected})
+        r=update(c,r,{**r['data'],'status':'saved','duration':duration,'capture_duration':duration,'expected_chunks':expected,'interrupted':r['data'].get('interrupted',False) or bool(p.get('interrupted',False))})
+        if r['data'].get('refinement'):
+            from live_speech import enqueue
+            enqueue(c,r,expected)
+            r=get(c,r['id'],clinic)
+        return r
     from workflows import dispatch as extended_dispatch
     return extended_dispatch(c,a,p,clinic,actor)
