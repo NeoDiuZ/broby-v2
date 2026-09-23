@@ -10,7 +10,7 @@ if [[ ! -f "$ROOT/.local/pgdata/PG_VERSION" ]]; then
  "$PG/initdb" -D "$ROOT/.local/pgdata" -U broby --encoding=UTF8 --locale=C --auth-local=trust --auth-host=scram-sha-256 --pwfile="$ROOT/.local/pg-password" > "$ROOT/.local/pg-init.log"
 fi
 if ! "$PG/pg_ctl" -D "$ROOT/.local/pgdata" status >/dev/null 2>&1; then
- "$PG/pg_ctl" -D "$ROOT/.local/pgdata" -l "$ROOT/.local/postgres.log" -o "-h 127.0.0.1 -p 55432 -k $ROOT/.local/socket" start
+ "$PG/pg_ctl" -D "$ROOT/.local/pgdata" -l "$ROOT/.local/postgres.log" -o "-h 127.0.0.1 -p 55432 -k '$ROOT/.local/socket'" start
 fi
 if ! "$PG/psql" -h "$ROOT/.local/socket" -p 55432 -U broby -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='broby_spine'" | grep -q 1; then
  "$PG/createdb" -h "$ROOT/.local/socket" -p 55432 -U broby broby_spine

@@ -4,7 +4,7 @@ from fastapi import APIRouter,Request,Response,Query
 from pydantic import BaseModel,Field
 from db import connection,get,all_records,now,unpack
 from actions import owned,fail,PERMISSIONS
-import auth,providers,reads
+import auth,providers,reads,runtime
 router=APIRouter()
 def identity(request):
     from main import identity as resolve
@@ -19,7 +19,7 @@ class Login(BaseModel):
 @router.post('/api/login')
 def login(p:Login,request:Request,response:Response):
     token=auth.login(p.username,p.password,request.client.host if request.client else 'local')
-    response.set_cookie('broby_session',token,httponly=True,samesite='strict',max_age=12*3600,secure=request.url.scheme=='https',path='/')
+    response.set_cookie('broby_session',token,httponly=True,samesite='strict',max_age=12*3600,secure=runtime.hosted() or request.url.scheme=='https',path='/')
     with connection() as c:
         m=c.execute('SELECT clinic_id,member_id FROM auth_memberships WHERE username=? ORDER BY clinic_id',(p.username,)).fetchone()
     return {'authenticated':True,'clinic':m['clinic_id'],'actor':m['member_id']}

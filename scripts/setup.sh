@@ -7,4 +7,4 @@ PYTHON="${BROBY_PYTHON:-python3}"
 if [[ -x "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3" && -z "${BROBY_PYTHON:-}" ]]; then PYTHON="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"; fi
 [[ -x "$ROOT/.venv/bin/python" ]] || "$PYTHON" -m venv "$ROOT/.venv"
 "$ROOT/.venv/bin/python" -m pip install -r "$ROOT/api/requirements.txt"
-(cd "$ROOT/web" && pnpm install --frozen-lockfile)
+(cd "$ROOT/web" && npx --yes pnpm@10.15.1 install --frozen-lockfile)
