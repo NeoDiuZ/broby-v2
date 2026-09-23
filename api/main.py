@@ -28,8 +28,10 @@ async def lifespan(app):
     scheduler=threading.Thread(target=schedule_loop,args=(jobs.stop,),daemon=True); scheduler.start()
     from stripe_payments import loop as payment_loop
     payments=threading.Thread(target=payment_loop,args=(jobs.stop,),daemon=True); payments.start()
+    from twilio_trial import loop as twilio_loop
+    messaging=threading.Thread(target=twilio_loop,args=(jobs.stop,),daemon=True); messaging.start()
     yield
-    jobs.stop.set(); thread.join(timeout=3); scheduler.join(timeout=3); payments.join(timeout=3)
+    jobs.stop.set(); thread.join(timeout=3); scheduler.join(timeout=3); payments.join(timeout=3); messaging.join(timeout=3)
 app=FastAPI(title='Broby V2',lifespan=lifespan,
             docs_url=None if runtime.hosted() else '/docs',
             redoc_url=None if runtime.hosted() else '/redoc',
@@ -221,3 +223,6 @@ app.include_router(stripe_router)
 
 from assistant_history import router as assistant_history_router
 app.include_router(assistant_history_router)
+
+from twilio_trial import router as twilio_router
+app.include_router(twilio_router)

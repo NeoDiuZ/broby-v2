@@ -37,3 +37,6 @@ def migrate(c):
 
     from assistant_history import setup as setup_assistant
     setup_assistant(c)
+
+    from twilio_trial import setup as setup_twilio
+    setup_twilio(c)

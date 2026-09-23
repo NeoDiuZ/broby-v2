@@ -44,6 +44,9 @@ PERMISSIONS={
 
 from workflows import PERMISSIONS as MORE_PERMISSIONS
 PERMISSIONS.update(MORE_PERMISSIONS)
+
+from twilio_trial import PERMISSIONS as TWILIO_PERMISSIONS
+PERMISSIONS.update(TWILIO_PERMISSIONS)
 from clinic_workflows import PERMISSIONS as CLINIC_PERMISSIONS
 PERMISSIONS.update(CLINIC_PERMISSIONS)
 
@@ -112,6 +115,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in TWILIO_PERMISSIONS:
+        from twilio_trial import dispatch as twilio_action
+        return twilio_action(c,a,p,clinic,actor)
     if a in STRIPE_PERMISSIONS:
         from stripe_payments import dispatch as stripe_action
         return stripe_action(c,a,p,clinic,actor)

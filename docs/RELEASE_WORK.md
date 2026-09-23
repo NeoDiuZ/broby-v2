@@ -38,4 +38,6 @@ Stripe PR #9 is merged and deployed at `5d9f35d`. Hosted declined-card, successf
 
 Twilio trial account and WhatsApp sandbox are activated with explicit user approval. Recipient must send `join twilio-trial` to the trial sender shown in Twilio; a user-input request is pending. Native WhatsApp controls did not open its new-chat form. Do not claim delivery or backend integration complete. The earlier console-domain review rejection was resolved using official Twilio documentation.
 
-Assistant history implementation and tests are on `codex/assistant-history`. Finish its checked merge/deployment and hosted saved-history/confirmation acceptance before calling that release verified.
+Assistant history PR #10 is merged and deployed at `1a67908`. Eight hosted real-AI/privacy/replay checks passed, followed by browser question/confirmation/reload acceptance. Evidence: `.local/assistant-hosted-results.json`.
+
+WhatsApp trial adapter and admin UI are implemented on `codex/whatsapp-trial`, initially disabled. Twelve provider-mocked failure-path scenarios cover signatures, isolation, uncertain send recovery without resend, consent and polling bounds. See WHATSAPP_TRIAL.md. Recipient join, actual credentials/template configuration and real delivery remain pending; the user-input request is still open. Official trial restrictions prevent custom clinic messages before upgrade/registered sender.
