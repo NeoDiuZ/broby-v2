@@ -50,6 +50,15 @@ def test_admin_bootstrap_does_not_reset_existing_password(hosted, monkeypatch):
     assert hosted.post('/api/login',json={'username':'admin','password':'synthetic-test-password'}).status_code == 200
 
 
+def test_owner_saved_access_uses_a_secure_cookie(hosted):
+    hosted.post('/api/login',json={'username':'admin','password':'synthetic-test-password'})
+    shared=hosted.post('/api/actions',json={'action':'share.create','payload':{'patient_id':'milo'},'key':'hosted-owner-test'}).json()
+    token=shared['url'].split('token=')[1]
+    response=hosted.post('/api/owner/'+token+'/claim')
+    assert response.status_code == 200
+    assert 'secure' in response.headers['set-cookie'].lower()
+
+
 def test_hosted_startup_fails_closed(monkeypatch):
     monkeypatch.setenv('BROBY_ENVIRONMENT','staging')
     monkeypatch.setenv('BROBY_AUTH_MODE','demo')

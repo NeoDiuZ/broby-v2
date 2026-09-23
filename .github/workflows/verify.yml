@@ -30,6 +30,15 @@ jobs:
       - run: pip install -r api/requirements.txt
       - run: python -m pytest -q
       - run: docker build --tag broby-api-check ./api
+      - name: Verify packaged API over IPv4
+        run: |
+          docker run --detach --name broby-api-check --publish 8101:8000 broby-api-check python serve.py
+          for attempt in $(seq 1 20); do
+            if curl --fail http://127.0.0.1:8101/api/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs broby-api-check
+          exit 1
   frontend:
     runs-on: ubuntu-latest
     defaults:
