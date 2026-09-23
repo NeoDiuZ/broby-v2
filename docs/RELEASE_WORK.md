@@ -181,8 +181,9 @@ that fix passes 281 backend tests. PR #21 deployed this fix at
 `ebe37535-9187-42f6-9d83-d4b1d3a2c5f1`, both SUCCESS. PR/push CI
 `35928564045` / `35928533147` and main CI `35928865824` passed. The exact failed
 question recovered using the browser Retry button and its original saved turn.
-Four fresh real-model proposals/reads passed without changing clinic records;
-only the independent Stripe poll worker advanced checkout verification timestamps.
+Four fresh real-model proposals/reads passed with identical before/after clinic
+record snapshots. The acceptance harness now retains both snapshots and excludes
+only independent Stripe poll timestamp/version metadata when comparing results.
 Fresh-session credit/export/payment readback was repeated on this revision.
 The report CSV was downloaded through the browser and reconciled to the hosted
 records (15657 cents net charges, 50 cents net credits, 873 cents net payments). This remains a scoped billing release,
