@@ -78,3 +78,43 @@ with a clear medication-history title. It does not change consent or acceptance
 boundaries. Final follow-up deployment/readback evidence belongs in the private
 release report. Verified owner identity and baselines for old accepted transfers
 without origin manifests remain unfinished; see CLINIC_TRANSFERS.md.
+
+## Verified checkpoint — assistant query parity
+
+PR #16 merged at `c5f28629a7d72c79d8600394ac026152a56a73d5`. Backend
+`0e0aaea0-85b9-4494-b346-c072e8a9077d` and Frontend
+`6c743e06-5fcf-4adc-a291-a5d739162319` both deployed that exact revision in
+Broby New. PR CI `35913556217`, push CI `35913511487` and main CI
+`35913932834` passed. Local acceptance passed 216 backend tests against isolated
+PostgreSQL, 14 frontend tests, TypeScript and the production build.
+
+The assistant previously applied low-stock/outstanding filters without storing
+them in its saved query, so Reports could show a broader result. Both surfaces
+now use the same validated contract/executor. Status/name/code/unit/value filters,
+clinic-local occurrence dates, reminder due dates and groupings are explicit.
+Boolean false remains distinct from zero or text. See ASSISTANT_QUERIES.md.
+
+Fifteen hosted checks used the real configured AI provider: low/all inventory,
+patient outstanding invoices, future due reminders, numeric PostgreSQL facts
+with original receipts and clinic dates, boolean false, unsupported-join
+clarification, prescribing refusal, six exact saved-view comparisons and invalid
+filter rejection. Four refresh checks proved a persisted inventory change updates
+the view while the saved answer remains unchanged, sending stays disabled and
+storage stays ready. One fixture preparation/readiness check also passed.
+
+Browser acceptance asked for low stock grouped by name, saved the answer, opened
+Reports, inspected the original record, reloaded and restored the same filters.
+After a synthetic stock change, Refresh results changed one match to zero; opening
+the saved conversation still showed its dated original one-match answer.
+
+All fixtures belong to the existing synthetic receiving clinic in Broby New.
+No V1 access, customer message or payment occurred. Evidence lives in
+`.local/query-hosted.json`, `.local/query-hosted-evaluate.txt`,
+`.local/query-hosted-refresh.txt` and the private query release report. This
+verification does not complete advanced action contracts, arbitrary joins,
+representative clinical/language evaluation or large-data performance.
+
+The acceptance follow-up also clears the previous view while a new selection loads
+and ignores late responses from a superseded selection/clinic. This prevents
+rapid selection changes from attaching the previous result to the new selection.
+Final follow-up revision/deployment and browser readback are recorded privately.
