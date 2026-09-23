@@ -21,7 +21,9 @@ function LocalCopy({record}:{record:any}){
  if(record.kind==='source')return <p className="preserve">{record.data.text}</p>;
  if(record.kind==='observation')return <p>{record.data.name}: {String(record.data.value)} {record.data.unit} · supplied range {record.data.low??'—'}–{record.data.high??'—'}</p>;
  if(record.kind==='consultation')return <><p>{record.data.title} · {record.data.status}</p>{record.data.summary?.map((s:any,i:number)=><p className="preserve" key={i}>{s.name}: {s.text}</p>)}</>;
- const kind=({recording:'audio',attachment:'file',medication_history:'medication'} as Record<string,string>)[record.kind]||'event';
+ if(record.kind==='attachment')return <p>Stored receiving file: {record.data.name} · {Math.ceil(record.data.size/1024)} KB. Open Documents to inspect its contents.</p>;
+ if(record.kind==='recording')return <p>Stored receiving voice note: {record.data.title||'Voice note'} · {record.data.status}. Open its visit to listen.</p>;
+ const kind=record.kind==='medication_history'?'medication':'event';
  return <><p>{record.data.title||record.data.name||'Earlier local copy'}</p><TransferContent kind={kind} data={record.data}/></>;
 }
 

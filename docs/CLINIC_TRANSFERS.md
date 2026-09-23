@@ -69,7 +69,9 @@ new origin fingerprints. A private timeline event explains the decision. The
 preview includes native PostgreSQL receiving facts as well as PMS records; changes
 to any reviewed receiving record, owner or source invalidate acceptance. Review
 context is bounded to 1,000 records and 5 MB; larger histories require an archive
-reconciliation. Request tokens and filesystem paths are not displayed.
+reconciliation. Existing receiving media is listed by stored metadata; only newly
+copied source binaries are checksum-verified during acceptance. Request tokens and
+filesystem paths are not displayed.
 
 Verified owner login/identity and reconciliation of independently created
 destination patients remain separate unfinished requirements. This release uses
