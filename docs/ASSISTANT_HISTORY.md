@@ -22,6 +22,10 @@ actions remain visible. Pending or stale proposals never execute automatically.
 The model's action catalogue applies the same effective permissions and
 only advertises actions with documented field contracts. Richer intent
 coverage and field contracts for every advanced workflow remain unfinished.
+Ten routine operations now use strict proposal schemas and labelled deterministic
+reviews, including eight newly advertised actions. Invalid model fields or record
+references produce clarification instead of a confirm button. See
+[Reviewed assistant operations](ASSISTANT_OPERATIONS.md) for scope and limits.
 
 Read answers and saved Reports views share a validated query contract, including
 low-stock/outstanding filters, statuses, clinic-local dates and typed observation

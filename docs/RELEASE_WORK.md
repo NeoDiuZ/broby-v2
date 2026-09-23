@@ -118,3 +118,18 @@ The acceptance follow-up also clears the previous view while a new selection loa
 and ignores late responses from a superseded selection/clinic. This prevents
 rapid selection changes from attaching the previous result to the new selection.
 Final follow-up revision/deployment and browser readback are recorded privately.
+
+## Next release — reviewed assistant operations
+
+Eight additional assistant operations now cover reminder edits/cancellation,
+purchase orders/cancellation, recording names, complete owner links and handover
+preparation/acknowledgement. Ten operations (including existing reminder create
+and complete) use strict schemas, read-only record/version/patient checks and
+deterministic labelled reviews. Missing/invalid fields produce clarification.
+Saved confirmation still uses the shared permission/version/idempotency boundary.
+Handover preparation also rejects confirmation after the reviewed clinic date
+changes. See ASSISTANT_OPERATIONS.md for exact scope and outstanding contracts.
+
+Release revision, CI, hosted real-model checks and browser acceptance will be
+recorded in the ignored operator report; this implementation entry alone is not
+evidence of a completed hosted release.
