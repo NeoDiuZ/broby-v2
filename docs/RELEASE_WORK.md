@@ -44,11 +44,37 @@ WhatsApp trial adapter and admin UI were merged in PR #11 and deployed at `62863
 
 Continuous recording refinement PR #12 is merged and deployed at `7a87357`. The full 161-backend/14-frontend suite and CI passed. Hosted real-Deepgram acceptance passed eight preview checks and ten final checks, with identical preview/final decoded bytes, reused provider receipt, one source and original audio integrity. The browser showed the provisional preview outside Sources, then both final timestamped markers. An additional isolated real-browser MediaRecorder/IndexedDB test passed with 11 seconds of generated audio. See CONTINUOUS_SPEECH.md and `.local/continuous-hosted.json`. Physical long-session/device acceptance remains.
 
-## In progress — reviewed clinic-transfer release
+## Verified checkpoint — reviewed clinic transfers
 
-Implementing explicit optional audio/medication consent, receiving preview/digest,
-immutable origin revisions, subsequent-request deduplication, exact binary copies
-and rollback cleanup. Medication history cannot dispense or change stock. Private
-transcripts remain excluded. See CLINIC_TRANSFERS.md. Older accepted transfers
-without source manifests require a reviewed baseline; verified owner identity
-remains unfinished. No full-vision completion claim is made.
+PR #14 is merged at `040afab44e0121b0c30edb9f4699920ddfcac9cc`.
+Backend `d26991af-76eb-4971-b742-e4c05319534a` and Frontend
+`0572f14d-e10e-4112-aa9f-2bfaef840a88` both deployed successfully in Broby New.
+Final PR head `66e72d2` passed CI run `35908273168`; the local full suite passed
+185 backend tests, including 24 transfer cases, plus 14 frontend tests, TypeScript
+and the production build.
+
+Hosted synthetic acceptance passed: owner consent and persistent request state;
+receiving-clinic preview and initial import; exact original audio/file bytes;
+private receiving defaults; unchanged stock/no dispensing; repeat-request dedupe;
+explicit changed-source review and preserved local patient edit; both immutable
+identity revisions; normalized PostgreSQL timeline with typed potassium and
+external medication history; independent media after source-grant revocation.
+The copied two-second generated WAV played to its end in the browser (duration 2,
+currentTime 2, ended true, no media error). Native accessibility clicks on the
+embedded browser's media play button crashed that test tab twice; a fresh tab and
+normal keyboard playback completed successfully. The cause of the native-control automation crashes remains unconfirmed;
+keyboard playback succeeded and no server failure was observed. Backend error-log query
+returned no matches. No physical microphone, V1 data or customer contact was used.
+
+Evidence: `.local/transfer-hosted.json`, `.local/transfer-hosted-prepare.txt`,
+`.local/transfer-hosted-verify.txt`, `.local/transfer-hosted-final.txt` and
+`.local/reports/broby-transfer-release-2026-09-24.md`. The private state includes
+an already-revoked synthetic owner capability; never copy it into public docs.
+The synthetic receiving clinic was provisioned through the existing organization
+workflow under the same administrator, within Broby New.
+
+A follow-up makes the receiving preview readable as labelled clinical fields,
+with a clear medication-history title. It does not change consent or acceptance
+boundaries. Final follow-up deployment/readback evidence belongs in the private
+release report. Verified owner identity and baselines for old accepted transfers
+without origin manifests remain unfinished; see CLINIC_TRANSFERS.md.

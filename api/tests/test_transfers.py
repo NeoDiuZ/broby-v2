@@ -75,6 +75,9 @@ def test_exact_media_history_and_revocation_independence():
         assert not db.all_records(c, 'clinic-river', 'medication')
         history = db.all_records(c, 'clinic-river', 'medication_history')[0]
         assert history['data']['externally_recorded'] and history['data']['dose'] == med['data']['dose']
+        medication_event = next(x for x in db.all_records(c, 'clinic-river', 'event') if x['data'].get('origin_kind') == 'medication')
+        assert medication_event['data']['title'].startswith('Transferred medication history · ')
+        assert 'Recorded dose: ' + med['data']['dose'] in medication_event['data']['body']
         assert 'inventory_id' not in history['data'] and 'lots' not in history['data']
         copied_audio = db.all_records(c, 'clinic-river', 'recording')[0]
         copied_file = db.all_records(c, 'clinic-river', 'attachment')[0]
