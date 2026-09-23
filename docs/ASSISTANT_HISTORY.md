@@ -19,9 +19,14 @@ submitted by the browser. The shared action executor checks the operator's
 current permissions, master locks and record versions. Its stable confirmation
 key prevents duplicate mutations after a lost response or reload. Completed
 actions remain visible. Pending or stale proposals never execute automatically.
-The model's action catalogue now applies the same effective permissions and
+The model's action catalogue applies the same effective permissions and
 only advertises actions with documented field contracts. Richer intent
 coverage and field contracts for every advanced workflow remain unfinished.
+
+Read answers and saved Reports views share a validated query contract, including
+low-stock/outstanding filters, statuses, clinic-local dates and typed observation
+comparisons. See [Assistant queries](ASSISTANT_QUERIES.md). An answer is a snapshot;
+a saved view refreshes the same stored filters against current records.
 
 Verification: nine backend scenarios cover private/cross-clinic access, retry
 payload mismatch, inactive membership, provider interruption, active claims,
