@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply text-text-primary bg-background;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * .legal-prose — typography for markdown-rendered legal pages.
+ * Applied inside LegalDocPage.jsx around the `dangerouslySetInnerHTML` block.
+ * Tokens are from BROBY_DESIGN_SYSTEM.md (ds-*); see tailwind.config.js.
+ * ────────────────────────────────────────────────────────────────────────── */
+.legal-prose {
+  @apply text-[15px] leading-[1.75] text-ds-text-dark;
+}
+
+.legal-prose h1,
+.legal-prose h2,
+.legal-prose h3,
+.legal-prose h4 {
+  @apply font-semibold tracking-tight text-ds-text-dark;
+}
+.legal-prose h2 {
+  @apply text-2xl mt-12 mb-4;
+}
+.legal-prose h3 {
+  @apply text-lg mt-8 mb-3;
+}
+.legal-prose h4 {
+  @apply text-base mt-6 mb-2;
+}
+
+.legal-prose p {
+  @apply mb-4;
+}
+
+.legal-prose strong {
+  @apply font-semibold;
+}
+
+.legal-prose em {
+  @apply italic;
+}
+
+.legal-prose ul,
+.legal-prose ol {
+  @apply pl-6 mb-4 space-y-1.5;
+}
+.legal-prose ul {
+  @apply list-disc;
+}
+.legal-prose ol {
+  @apply list-decimal;
+}
+.legal-prose li > p {
+  @apply mb-1;
+}
+
+.legal-prose a {
+  @apply text-ds-primary underline-offset-2 hover:text-ds-primary-hover hover:underline;
+}
+
+.legal-prose hr {
+  @apply my-10 border-0 border-t border-ds-border;
+}
+
+.legal-prose blockquote {
+  @apply pl-4 border-l-2 border-ds-primary text-ds-text-muted italic my-4;
+}
+
+.legal-prose code {
+  @apply px-1 py-0.5 bg-black/[0.04] rounded text-[13px] font-mono;
+}
+
+.legal-prose pre {
+  @apply p-4 bg-black/[0.04] rounded-ds-lg overflow-x-auto my-4 text-[13px];
+}
+
+/* Tables — used heavily in PP §5, §7, §9 and DPA Annex A/C */
+.legal-prose table {
+  @apply w-full border-collapse my-6 text-[14px];
+}
+.legal-prose thead {
+  @apply bg-black/[0.02];
+}
+.legal-prose th {
+  @apply text-left font-semibold text-ds-text-dark border border-ds-border px-3 py-2;
+}
+.legal-prose td {
+  @apply border border-ds-border px-3 py-2 align-top;
+}
+
+/* First H2 in document shouldn't have giant top margin */
+.legal-prose > h2:first-child {
+  @apply mt-0;
+}
+@font-face{font-family:"Plus Jakarta Sans";src:url("/fonts/PlusJakartaSans-Variable.ttf") format("truetype");font-weight:200 800;font-display:swap}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}

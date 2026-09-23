@@ -1,0 +1,22 @@
+{
+  "name": "broby-v2-website",
+  "version": "1.0.0",
+  "description": "Broby Vets Landing Page",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3101",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3101"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.16",
+    "lucide-react": "^0.525.0",
+    "marked": "^16.4.2",
+    "next": "16.2.2",
+    "postcss": "^8.4.32",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "sanitize-html": "^2.17.3",
+    "tailwindcss": "^3.3.6"
+  }
+}

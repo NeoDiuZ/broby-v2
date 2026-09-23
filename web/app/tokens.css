@@ -1,0 +1,2 @@
+/* First-build design values from the specification; no legacy CSS copied. */
+:root{--font-body:Jakarta,Arial,sans-serif;--font-label:JetBrains,monospace;--text-body:13px;--text-label:9px;--interactive:#0d9488;--corner-control:6px;--corner-card:8px;--card-shadow:0 1px 2px rgba(0,0,0,.04);--sidebar-width:140px;--label-tracking:.16em}

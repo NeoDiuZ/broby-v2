@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+.DS_Store
+*.log
+
+# Environment files (keep .env.example, ignore local)
+.env.local
+.env.*.local

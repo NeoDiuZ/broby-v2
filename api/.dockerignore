@@ -1,0 +1,6 @@
+__pycache__
+data
+tests
+*.pyc
+.env*
+*.sqlite3*

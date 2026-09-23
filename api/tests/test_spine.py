@@ -1,0 +1,124 @@
+"""Specification acceptance tests against a real, isolated PostgreSQL schema."""
+import uuid,os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine,text,select,func
+from alembic import command
+from alembic.config import Config
+import db,auth,main,actions
+from spine import database,projection
+from spine.models import Event,Observation,Member,Patient,Owner,OwnerPatient
+
+@pytest.fixture
+def client(tmp_path,monkeypatch):
+    url=os.getenv('BROBY_TEST_SPINE_URL') or os.getenv('BROBY_SPINE_URL')
+    if not url:pytest.fail('PostgreSQL acceptance tests require BROBY_TEST_SPINE_URL or BROBY_SPINE_URL; run scripts/start-spine.sh')
+    admin=create_engine(url);schema='acceptance_'+uuid.uuid4().hex
+    with admin.begin() as c:c.exec_driver_sql('CREATE SCHEMA '+schema)
+    engine=create_engine(url,connect_args={'options':'-csearch_path='+schema})
+    monkeypatch.setattr(database,'engine',lambda:engine)
+    monkeypatch.setattr(db,'DB',tmp_path/'legacy.sqlite3');monkeypatch.setattr(main,'DATA',tmp_path)
+    monkeypatch.setenv('BROBY_AUTH_MODE','demo')
+    try:
+        command.upgrade(Config(str(Path(main.__file__).parent/'alembic.ini')),'head')
+        db.init();auth.setup_tables();projection.setup_queue()
+        yield TestClient(main.app)
+    finally:
+        engine.dispose()
+        with admin.begin() as c:c.exec_driver_sql('DROP SCHEMA '+schema+' CASCADE')
+        admin.dispose()
+
+def result(**changes):
+    return {'patient_id':'milo','dedupe_key':'lab:report-001','occurred_at':'2026-09-18T09:14:00Z','summary':'Haematology + biochemistry','actor':{'kind':'system','name':'Synthetic analyser'},'source':{'kind':'document','id':'report-001','page':1,'text':'Potassium 5.8 mmol/L. Lab reference 3.5–5.1.'},'body':{'accession':'001'},'observations':[{'concept':'potassium','name':'Potassium','value':5.8,'unit':'mmol/L','ref_low':3.5,'ref_high':5.1}],**changes}
+def ingest(client,p=None,**kwargs):return client.post('/api/v2/ingest/lab',json=p or result(),**kwargs)
+
+def test_lab_without_visit_is_one_patient_event(client):
+    with db.connection() as c:before=len(db.all_records(c,'clinic-east','consultation'))
+    response=ingest(client);assert response.status_code==200,response.text
+    eid=response.json()['id'];timeline=client.get('/api/v2/patients/milo/timeline').json()
+    e=next(x for x in timeline['items'] if x['id']==eid)
+    assert e['event_type']=='lab_result' and e['source']['page']==1
+    assert e['observations'][0]['value']==5.8
+    with db.connection() as c:assert len(db.all_records(c,'clinic-east','consultation'))==before
+    with database.session() as s:assert s.scalar(select(func.count()).select_from(Event).where(Event.dedupe_key=='lab:report-001'))==1
+
+def test_same_result_across_actors_and_concurrent_requests_creates_one(client):
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses=list(pool.map(lambda n:ingest(client,headers={'x-actor-id':'clinic-east-vet' if n%2 else 'clinic-east-nurse'}),range(4)))
+    assert all(r.status_code==200 for r in responses),[r.text for r in responses]
+    assert len({r.json()['id'] for r in responses})==1
+    assert sum(not r.json()['duplicate'] for r in responses)==1
+    with database.session() as s:assert s.scalar(select(func.count()).select_from(Observation).join(Event).where(Event.dedupe_key=='lab:report-001'))==1
+    assert ingest(client,result(summary='Changed report')).status_code==409
+
+def test_missing_source_is_returned_as_needs_checking(client):
+    e=ingest(client,result(source=None)).json()['event']
+    assert e['source'] is None
+    assert {'type':'missing_source'} in e['flags']
+    assert any(f.get('observation_id') for f in e['flags'] if f['type']=='missing_source')
+
+def test_ranges_high_low_normal_and_absent_are_deterministic(client):
+    cases=[(5.8,3.5,5.1,'high'),(4.0,3.5,5.1,None),(3.0,3.5,5.1,'low'),(99,None,None,None)]
+    for i,(value,low,high,expected) in enumerate(cases):
+        p=result(dedupe_key='range:'+str(i),observations=[{'concept':'potassium','name':'Potassium','value':value,'unit':'mmol/L','ref_low':low,'ref_high':high}])
+        e=ingest(client,p).json()['event'];assert e['observations'][0]['flag']==expected
+        assert any(f['type']=='out_of_range' for f in e['flags'])==(expected is not None)
+    series=client.get('/api/v2/patients/milo/observations?concept=potassium').json()
+    assert len(series['series'])==4 and series['concept']['unit']=='mmol/L'
+    assert all(x['event_id'] and x['source']['page']==1 for x in series['series'])
+
+def test_new_event_type_no_migration(client):
+    p=result(event_type='home_monitor_reading',observations=[],dedupe_key='new-type')
+    r=client.post('/api/v2/events',json=p);assert r.status_code==200,r.text
+    assert r.json()['event']['event_type']=='home_monitor_reading'
+    assert client.get('/api/v2/patients/milo/timeline?category=home_monitor_reading').json()['items'][0]['id']==r.json()['id']
+
+def test_clinic_patient_and_receipt_isolation(client):
+    r=ingest(client).json();rid=r['event']['source']['receipt_id']
+    other={'x-clinic-id':'clinic-river','x-actor-id':'clinic-river-vet'}
+    for path in ('/api/v2/patients/milo/timeline','/api/v2/sources/'+rid):assert client.get(path,headers=other).status_code==404
+    assert ingest(client,headers=other).status_code==404
+    assert client.get('/api/v2/patients/luna/events/'+r['id']).status_code==404
+
+def test_cursor_pagination_and_owner_search(client):
+    for i in range(6):assert ingest(client,result(dedupe_key='page:'+str(i))).status_code==200
+    seen=[];cursor=''
+    while True:
+        r=client.get('/api/v2/patients/milo/timeline',params={'limit':2,'cursor':cursor,'category':'lab_result'}).json()
+        seen.extend(x['id'] for x in r['items']);cursor=r['next_cursor']
+        if not cursor:break
+    assert len(seen)==6 and len(set(seen))==6
+    patients=client.get('/api/v2/patients?q=Rachel').json()['items'];assert [p['id'] for p in patients]==['milo']
+    assert client.get('/api/v2/patients/milo/timeline?cursor=invalid').status_code==422
+
+def test_invalid_result_is_atomic(client):
+    p=result();p['observations'].append({**p['observations'][0],'ref_low':10,'ref_high':1})
+    assert ingest(client,p).status_code==422
+    with database.session() as s:assert s.scalar(select(func.count()).select_from(Event).where(Event.dedupe_key=='lab:report-001'))==0
+    p=result(occurred_at='2026-09-18T09:14:00');assert ingest(client,p).status_code==422
+
+def test_member_can_belong_to_multiple_clinics(client):
+    auth.provision('shared','clinic-east-vet','clinic-east','test-password-1234')
+    with db.connection(True) as c:c.execute('INSERT INTO auth_memberships VALUES(?,?,?)',('shared','clinic-river-vet','clinic-river'))
+    projection.sync('clinic-east');projection.sync('clinic-river')
+    with database.session() as s:assert len(s.scalars(select(Member).where(Member.person_id=='account:shared')).all())==2
+
+def test_legacy_change_projects_without_overwriting_native_event(client):
+    native=ingest(client).json()['id']
+    actions.execute('patient.update',{'id':'milo','version':1,'name':'Milo updated'},'clinic-east','clinic-east-vet','rename-test-key')
+    assert client.get('/api/v2/patients/milo').json()['name']=='Milo updated'
+    assert client.get('/api/v2/patients/milo/events/'+native).status_code==200
+
+def test_source_positions_and_permission_locks(client):
+    p=result(source={'kind':'audio','id':'sample-note','start_ms':1200,'end_ms':2400,'text':'Recorded statement'})
+    e=ingest(client,p).json()['event'];source=client.get('/api/v2/sources/'+e['source']['receipt_id']).json()
+    assert source['start_ms']==1200 and source['end_ms']==2400
+    actions.execute('feature_locks.save',{'version':1,'actions':['source.add']},'clinic-east','clinic-east-admin','lock-test-key')
+    assert ingest(client,result(dedupe_key='blocked')).status_code==403
+
+def test_alembic_revision_and_jsonb_tables(client):
+    with database.engine().connect() as c:
+        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one()=='0001'
+        assert c.execute(text("SELECT data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='events' AND column_name='body'")).scalar_one()=='jsonb'
