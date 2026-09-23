@@ -192,11 +192,16 @@ class Chat(BaseModel):
 @app.post('/api/assistant')
 def assistant(body:Chat,request:Request):
     from assistant import answer
+    from providers import ProviderError
     clinic,actor=identity(request)
-    if body.key:
-        from assistant_history import ask
-        return ask(clinic,actor,body.message,body.patient_id,body.conversation_id,body.key)
-    with connection() as c:return answer(c,clinic,actor,body.message,body.patient_id,body.history)
+    try:
+        if body.key:
+            from assistant_history import ask
+            return ask(clinic,actor,body.message,body.patient_id,body.conversation_id,body.key)
+        with connection() as c:return answer(c,clinic,actor,body.message,body.patient_id,body.history)
+    except ProviderError:
+        # A saved question remains failed/retryable, with no confirmable action.
+        fail('The AI provider could not return a verified answer. No clinic record was changed. Retry this question.',503)
 
 from portal import router as portal_router
 from routes_extra import router as extra_router

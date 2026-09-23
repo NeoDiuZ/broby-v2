@@ -48,6 +48,74 @@ def test_retry_after_provider_failure_keeps_turn_and_server_context(monkeypatch)
     with db.connection() as c:assert c.execute('SELECT COUNT(*) FROM assistant_turns').fetchone()[0]==2
 
 
+def test_provider_failure_is_safe_retryable_http_response_without_proposal(monkeypatch):
+    from providers import ProviderError
+    def unavailable(*a):raise ProviderError('Untrusted provider diagnostic')
+    monkeypatch.setattr(assistant,'answer',unavailable)
+    client=TestClient(main.app);payload={'message':'Issue credit; tax unknown','patient_id':'luna','key':'credit-provider-failure'}
+    response=client.post('/api/assistant',json=payload)
+    assert response.status_code==503 and 'Retry this question' in response.json()['detail']
+    assert 'Untrusted provider diagnostic' not in response.text
+    with db.connection() as c:
+        turn=dict(c.execute('SELECT * FROM assistant_turns').fetchone())
+        assert turn['status']=='failed' and turn['response'] is None and turn['execution'] is None and turn['lease_until']==0
+    assert client.post(f"/api/assistant/conversations/{turn['conversation_id']}/turns/{turn['id']}/confirm").status_code==404
+    assert not rows('credit_note')
+    monkeypatch.setattr(assistant,'answer',lambda *a:{'text':'Please specify net and tax credit amounts.','sources':[]})
+    retried=client.post('/api/assistant',json=payload)
+    assert retried.status_code==200 and retried.json()['turn_id']==turn['id'] and not retried.json().get('action')
+    with db.connection() as c:assert c.execute('SELECT COUNT(*) FROM assistant_turns').fetchone()[0]==1
+
+
+@pytest.mark.parametrize('model_text', ['not JSON', '[]', 'null', 'true', '"answer"'])
+def test_invalid_provider_json_reaches_retry_boundary(monkeypatch, model_text):
+    import httpx,providers
+    monkeypatch.setattr(providers,'available',lambda:{'ai':True})
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic')
+    monkeypatch.setenv('ANTHROPIC_MODEL','synthetic')
+    original=httpx.Client
+    def respond(request):return httpx.Response(200,json={'content':[{'type':'text','text':model_text}]})
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    client=TestClient(main.app)
+    response=client.post('/api/assistant',json={'message':'Issue a credit without supplied tax','patient_id':'luna','key':'malformed-provider'})
+    assert response.status_code==503 and not rows('credit_note')
+    with db.connection() as c:assert c.execute('SELECT status FROM assistant_turns').fetchone()[0]=='failed'
+
+
+@pytest.mark.parametrize('result', [{'clarify':True},{'read':{'kind':'invoice','scope':'patient'}},{'action':{'action':'credit_note.create','payload':{'id':'invoice-test'}}}])
+def test_planner_uses_structured_collector_without_executing(monkeypatch,result):
+    import httpx,providers
+    monkeypatch.setattr(providers,'available',lambda:{'ai':True})
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic');monkeypatch.setenv('ANTHROPIC_MODEL','synthetic')
+    original=httpx.Client
+    def respond(request):
+        body=json.loads(request.content)
+        assert body['tool_choice']=={'type':'tool','name':'submit_clinic_intent','disable_parallel_tool_use':True}
+        schema=body['tools'][0]['input_schema']
+        assert schema['properties']['action']['properties']['action']['enum']==['credit_note.create']
+        return httpx.Response(200,json={'stop_reason':'tool_use','content':[{'type':'tool_use','name':'submit_clinic_intent','input':result}]})
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    assert providers.model_json('system',{'allowed_actions':{'credit_note.create':{}},'read_contract':{}})==result
+    assert not rows('credit_note')
+
+
+@pytest.mark.parametrize('blocks', [[],[{'type':'tool_use','name':'other','input':{'clarify':True}}],
+    [{'type':'tool_use','name':'submit_clinic_intent','input':{'clarify':False}}],
+    [{'type':'tool_use','name':'submit_clinic_intent','input':{'clarify':True,'action':{}}}],
+    [{'type':'tool_use','name':'submit_clinic_intent','input':{'clarify':True}}]*2])
+def test_collector_rejects_missing_wrong_multiple_and_ambiguous_results(monkeypatch,blocks):
+    import httpx,providers
+    monkeypatch.setattr(providers,'available',lambda:{'ai':True})
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic');monkeypatch.setenv('ANTHROPIC_MODEL','synthetic')
+    original=httpx.Client
+    def respond(request):
+        body=json.loads(request.content)
+        assert 'action' not in body['tools'][0]['input_schema']['properties']
+        return httpx.Response(200,json={'stop_reason':'tool_use','content':blocks})
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    with pytest.raises(providers.ProviderError):providers.model_json('system',{'allowed_actions':{},'read_contract':{}})
+
+
 def test_active_lease_blocks_duplicate_and_stale_result_is_fenced(monkeypatch):
     def competing(*args):
         err(409,lambda:ask())

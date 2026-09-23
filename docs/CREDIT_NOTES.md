@@ -37,10 +37,25 @@ history, replay, stale versions, permissions/locks/isolation, legacy invoices,
 Stripe reservations and refund callbacks, saved assistant confirmations and
 scoped exports. Frontend tests cover precise decimal parsing and balance rules.
 `scripts/smoke-credit-notes.py` separates hosted preparation, real-model review,
-Stripe test settlement and fresh-session readback. It stores progress in a private
+Stripe checkout/test settlement, bounded planner regression and fresh-session readback. It stores progress in a private
 ignored file and refuses accidental repeat mutation phases.
 
 This is an operational credit-note register, not a general ledger, statutory tax
 certification or accounting-system integration. Clinic-approved tax treatment,
 accounting reconciliation/period policy and live merchant acceptance remain open.
 The broader requirements in FEATURE_STATUS.md are not completed by this release.
+
+## Verified hosted core
+
+On 24 September, the browser issued/reversed a 218-cent synthetic credit. The real
+assistant issued/reversed a 327-cent credit with explicit tax and saved reviews.
+Stripe's sandbox charged 80 cents after an initial 20-cent credit, then refunded
+30 cents after a second credit; both provider and app ended with 50 cents paid
+against a 50-cent net charge. PDF and register readback passed. A missing-tax
+response-format failure prompted the safe retry/structured-planner follow-up
+tracked in RELEASE_WORK.md.
+
+The assistant transport uses an inert structured-result collector following
+[Anthropic's tool specification](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools).
+It returns proposal data only; all existing server validation and explicit
+confirmation remain mandatory. Clinical excerpt generation is unchanged.

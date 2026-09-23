@@ -73,4 +73,6 @@ remain open. No supplier message, customer send or real payment is part of this 
 
 Credit-note issue and reversal add two strict contracts with explicit net/tax
 amounts, reasons, charge-only effects and resulting balances. See CREDIT_NOTES.md.
-Local regression is complete; hosted credit acceptance is pending.
+Hosted issue/reversal, confirmation replay and saved reviews passed. A provider
+format failure on missing tax details led to a structured-intent transport fix;
+its local failure/retry tests pass and hosted planner regression is pending.

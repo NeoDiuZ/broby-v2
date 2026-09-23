@@ -17,7 +17,7 @@ p.add_argument('--credentials', type=Path, required=True)
 p.add_argument('--state', type=Path, required=True)
 p.add_argument('--clinic', required=True)
 p.add_argument('--actor', required=True)
-p.add_argument('--phase', choices=['prepare', 'evaluate', 'settle', 'readback'], required=True)
+p.add_argument('--phase', choices=['prepare', 'evaluate', 'clarify', 'planner', 'checkout', 'settle', 'readback'], required=True)
 args = p.parse_args()
 state = json.loads(args.state.read_text()) if args.state.exists() else {}
 
@@ -95,8 +95,13 @@ with httpx.Client(base_url=args.base_url.rstrip('/') + '/api/', timeout=180) as 
             remember('manual_reversal', confirm('reverse'))
             current = records()[invoice['id']]
             check(current['data']['credited_cents'] == 0 and current['data']['paid_cents'] == 763 and current['data']['status'] == 'partial', 'reversal restores charge and reopens only 327 cents debt')
+        if args.phase in ('evaluate', 'clarify'):
+            invoice = records()[state['manual_invoice']]
             turn = ask('missing_tax', f"Issue a new credit note of SGD 1.00 for invoice {invoice['id']}. Reason: SYNTHETIC unclear tax. I have not supplied a tax allocation; ask me for it.")
             check(not turn.get('action'), 'missing explicit tax allocation requires clarification')
+        elif args.phase == 'checkout':
+            assert not state.get('checkout_started'), 'Checkout acceptance already started; inspect saved steps before resuming'
+            state['checkout_started'] = True; persist()
             inv = records()[state['stripe_invoice']]
             remember('stripe_credit', act('credit_note.create', {'id': inv['id'], 'version': inv['version'], 'net_cents': 20, 'tax_cents': 0, 'reason': 'SYNTHETIC checkout credit'}))
             inv = records()[inv['id']]
@@ -118,14 +123,25 @@ with httpx.Client(base_url=args.base_url.rstrip('/') + '/api/', timeout=180) as 
             refund = remember('stripe_refund', act('stripe.refund', {'id': state['checkout'], 'amount_cents': 30, 'reason': 'SYNTHETIC credit refund acceptance'}))
             inv = wait_record(inv['id'], lambda r: r['data']['paid_cents'] == 50)
             check(inv['data']['status'] == 'paid' and inv['data']['credited_cents'] == 50, 'real Stripe sandbox refund settles exactly the credit')
-        else:
+        elif args.phase == 'planner':
+            before = records()
+            turn = ask('structured_credit', f"Propose a credit note for invoice {state['browser_invoice']}: SGD 0.10 before tax, SGD 0.00 tax. Reason: SYNTHETIC transport review. Do not confirm it.")
+            check(turn.get('action', {}).get('action') == 'credit_note.create' and bool(turn.get('review')), 'structured real model returns a reviewed credit proposal')
+            turn = ask('structured_reverse', f"Propose reversing credit note {state['stripe_credit']} in full. Reason: SYNTHETIC transport review. Do not confirm it.")
+            check(turn.get('action', {}).get('action') == 'credit_note.reverse' and bool(turn.get('review')), 'structured real model returns a reviewed reversal proposal')
+            turn = ask('structured_read', 'Show outstanding invoices for this patient.')
+            check(not turn.get('action') and state['manual_invoice'] in {r['id'] for r in turn.get('sources', [])}, 'structured real model retains invoice read behavior')
+            turn = ask('structured_reminder', 'Create a reminder titled SYNTHETIC transport proposal due on 2098-08-01 for this patient. Only propose it.')
+            check(turn.get('action', {}).get('action') == 'reminder.create' and bool(turn.get('review')), 'structured real model retains routine operation proposals')
+            check(records() == before, 'all structured collector calls are read-only until confirmation')
+        elif args.phase == 'readback':
             rows = records(); inv = rows[state['manual_invoice']]; d = inv['data']
             check(d['total_cents'] == 1090 and d['credited_cents'] == 0 and d['paid_cents'] == 763, 'fresh session retains original invoice and reversed credit balance')
             check(rows[state['manual_credit']]['data']['amount_cents'] == 327 and rows[state['manual_reversal']]['data']['credit_note_id'] == state['manual_credit'], 'immutable original note and linked reversal persist')
             for case in ('issue', 'reverse'):
                 turn = state['turns'][case]
                 saved = req('GET', 'assistant/conversations/' + turn['conversation_id'])
-                found = next(r for r in saved['turns'] if r['id'] == turn['turn_id'])
+                found = next(r for r in saved['turns'] if r['turn_id'] == turn['turn_id'])
                 expected_id = state['manual_credit' if case == 'issue' else 'manual_reversal']
                 check(found.get('execution', {}).get('id') == expected_id and found['review'] == turn['review'], case + ' saved review remains completed')
             response = client.get('credit-notes/export'); assert response.status_code == 200
