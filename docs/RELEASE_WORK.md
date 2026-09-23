@@ -31,3 +31,11 @@ recorded before its status is changed to complete.
 Do not label placeholders, a healthy deployment, test-mode money or an internal
 notification as verified live delivery, settlement, clinical acceptance or a V1
 cutover. See FEATURE_STATUS.md for the complete open requirement inventory.
+
+## Verified checkpoint — 24 September
+
+Stripe PR #9 is merged and deployed at `5d9f35d`. Hosted declined-card, successful SGD 1.00 payment, signed event receipt and SGD 0.40 partial refund were verified in the browser and against Stripe. Private evidence: `.local/stripe-hosted-results.json`. The ten hosted account/migration/ontology checks also passed; evidence: `.local/advanced-access-results.json`.
+
+Twilio trial account and WhatsApp sandbox are activated with explicit user approval. Recipient must send `join twilio-trial` to the trial sender shown in Twilio; a user-input request is pending. Native WhatsApp controls did not open its new-chat form. Do not claim delivery or backend integration complete. The earlier console-domain review rejection was resolved using official Twilio documentation.
+
+Assistant history implementation and tests are on `codex/assistant-history`. Finish its checked merge/deployment and hosted saved-history/confirmation acceptance before calling that release verified.
