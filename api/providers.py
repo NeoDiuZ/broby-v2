@@ -9,21 +9,21 @@ def available():
             'ai':enabled and bool(os.getenv('ANTHROPIC_API_KEY')) and bool(os.getenv('ANTHROPIC_MODEL')),
             'whatsapp':False,'payments':False,'labs':False}
 
-def transcribe(audio,mime,language='multi'):
+def transcribe(audio,mime,language='multi',diarize=True,allow_empty=False):
     if not available()['transcription']:raise ProviderError('Speech provider is not configured')
-    params={'model':os.getenv('DEEPGRAM_MODEL','nova-3'),'language':language,'utterances':'true','diarize':'true','smart_format':'true'}
+    params={'model':os.getenv('DEEPGRAM_MODEL','nova-3'),'language':language,'utterances':'true','diarize':str(diarize).lower(),'smart_format':'true'}
     try:
         with httpx.Client(timeout=httpx.Timeout(1500,connect=15)) as client:
             response=client.post('https://api.deepgram.com/v1/listen',params=params,headers={'Authorization':'Token '+os.environ['DEEPGRAM_API_KEY'],'Content-Type':mime},content=audio)
         if response.status_code!=200:raise ProviderError(f'Speech provider returned HTTP {response.status_code}; check its configuration and retry.')
         body=response.json();alternative=body['results']['channels'][0]['alternatives'][0]
         text=alternative.get('transcript','').strip()
-        if not text:raise ProviderError('No speech was recognized. The original audio has been preserved.')
+        if not text and not allow_empty:raise ProviderError('No speech was recognized. The original audio has been preserved.')
         utterances=[]
         for u in body['results'].get('utterances',[]):
             start=float(u['start']);end=float(u['end'])
             if not all(math.isfinite(x) for x in (start,end)) or start<0 or end<start:raise ProviderError('Speech provider returned invalid timestamps')
-            utterances.append({'start':start,'end':end,'speaker':u.get('speaker'),'text':u['transcript']})
+            utterances.append({'start':start,'end':end,'speaker':u.get('speaker') if diarize else None,'text':u['transcript']})
         return {'text':text,'utterances':utterances,'provider':'deepgram','request_id':body.get('metadata',{}).get('request_id')}
     except (httpx.HTTPError,KeyError,ValueError,TypeError) as exc:
         raise ProviderError('Transcription failed or returned an invalid response. Audio is preserved; retry from Sync & jobs.') from exc

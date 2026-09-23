@@ -1,6 +1,6 @@
 # Broby V2 backend setup and Railway deployment
 
-Updated 23 September 2026. The implemented handover workflows are running in an isolated **Broby New** project under **cxlabyky's Projects**. This is an authenticated, synthetic-data staging deployment. Railway's environment is named `production`; that name does not mean the unfinished whole product is approved for customer production use.
+Updated 24 September 2026. The implemented handover workflows are running in an isolated **Broby New** project under **cxlabyky's Projects**. This is an authenticated, synthetic-data staging deployment. Railway's environment is named `production`; that name does not mean the unfinished whole product is approved for customer production use.
 
 - Website: https://frontend-production-1283.up.railway.app
 - Clinic: https://frontend-production-1283.up.railway.app/app
@@ -42,7 +42,7 @@ Railway service configuration uses root directories and Dockerfile detection in 
 
 Only the two provider keys required by this code were copied. V1 database, Redis, JWT, storage, RunPod, OpenAI and messaging keys were not needed. Shared provider keys share existing provider billing/quota. Both copied values were verified to match V1 without displaying them, and both providers completed real requests with synthetic inputs.
 
-Staff sessions and saved owner cookies use Secure, HttpOnly and SameSite=Strict in hosted mode. Clinic reads and writes require membership. Foreign browser origins and cross-site mutations are rejected. Owner links remain revocable capabilities exposing approved content only. Staff invitations, password reset and MFA remain separate unfinished product work.
+Staff sessions and saved owner cookies use Secure, HttpOnly and SameSite=Strict in hosted mode. Clinic reads and writes require membership. Foreign browser origins and cross-site mutations are rejected. Owner links remain revocable capabilities exposing approved content only. Manual single-use staff invitations, password changes, TOTP and recovery codes are implemented. Email delivery/reset and the separately gated hosted synthetic-account acceptance exercise remain unfinished.
 
 ## Local development
 
@@ -69,7 +69,7 @@ CI runs the backend suite against disposable PostgreSQL 18, builds and starts th
 
 ## Verification performed
 
-- 58 backend tests pass, including real PostgreSQL acceptance tests and hosted login, cookie, origin, clinic isolation and readiness regressions.
+- Original deployment baseline: 58 backend tests passed, including real PostgreSQL acceptance tests and hosted login, cookie, origin, clinic isolation and readiness regressions.
 - TypeScript and production frontend build pass; GitHub CI also passed.
 - 33 live same-origin workflow checks pass: website routes, readiness, anonymous/forged/cross-clinic rejection, login/logout, patient projection, action/lab deduplication, lab flags/charts/source receipts, uploads, consultation/invoice PDFs, owner visibility/intake/revocation, live Anthropic excerpts and live Deepgram transcription through the job queue.
 - 17 live checks pass after backend redeployment, including SQLite patient, PostgreSQL lab, uploaded bytes and completed-job persistence.
@@ -90,8 +90,12 @@ Repeat only against an isolated demo deployment. The first command creates synth
 
 Daily Railway volume backups are enabled for both stores, with six-day retention. Initial snapshots completed on 23 September 2026: backend at 18:08 SGT (798 MB), PostgreSQL at 18:14 SGT (862 MB). PostgreSQL point-in-time recovery is not enabled. Scheduled snapshots are independent and are not synchronized between the two stores.
 
-One API process owns the in-process worker. Jobs persist in SQLite and running jobs are requeued at startup, but claims/retries are not designed for multiple workers. Do not increase replicas or worker count until the SQLite migration and independent worker design are complete. The mounted volume causes a short redeployment interruption.
+One API process owns the in-process worker. Jobs persist in SQLite with leases, heartbeat renewal and bounded provider retries. Speech jobs checkpoint each completed 25-minute window. The current file/store design is still one backend instance, despite job claim protection. Do not increase replicas or worker count until the SQLite migration and independent worker design are complete. The mounted volume causes a short redeployment interruption.
 
-Back up **both** PostgreSQL and the backend volume. The UI ZIP exports only legacy PMS data and files, not the PostgreSQL spine. Volume snapshots are separate recovery points; a consistent two-store restore requires stopping writes, choosing matching recovery points, and checking IDs, receipts, counts and job state. The local `scripts/backup-local.py` creates a coordinated backup only with the local API stopped. Redeploy persistence was verified; a complete cloud backup restoration drill remains outstanding.
+Back up **both** PostgreSQL and the backend volume. The UI ZIP includes PMS records/files and a clinic-scoped PostgreSQL archive in spine.json. The legacy restore utility refuses archives with native PostgreSQL events; use the coordinated server backup/restore workflow for a complete restore. Volume snapshots are separate recovery points; a consistent two-store restore requires stopping writes, choosing matching recovery points, and checking IDs, receipts, counts and job state. The local `scripts/backup-local.py` creates a coordinated backup only with the local API stopped. Redeploy persistence was verified; a complete cloud backup restoration drill remains outstanding.
 
-Before real customer use: finish the two-store reader/writer migration, independent worker/retries, staff account lifecycle/MFA, retention/restore operations and provider language/device evaluation. WhatsApp delivery, payment gateways, external laboratory feeds, native mobile and other features marked unfinished in `FEATURE_STATUS.md` are not implemented by this deployment work. No production domain cutover or V1 customer migration has been performed.
+Before real customer use: finish the two-store writer migration, independent workers, verified owner identity, operational alerting, retention/restore operations and provider language/device evaluation. WhatsApp delivery, payment gateways, external laboratory feeds, native mobile and other features marked unfinished in `FEATURE_STATUS.md` are not implemented by this deployment work. No production domain cutover or V1 customer migration has been performed.
+
+## 24 September audit and speech release
+
+The previous prose above was corrected for PR #5 account/backup/job features. The current 58-item product assessment is [FEATURE_STATUS.md](FEATURE_STATUS.md); the old deployment baseline test count is not the latest release count. This release packages FFmpeg in the API image for bounded audio decoding and 25-minute transcription. Local development requires FFmpeg on PATH. No new provider keys or Redis service are needed. See [SPEECH_WINDOWS_TESTING.md](SPEECH_WINDOWS_TESTING.md) for scope, tests and measured release evidence.

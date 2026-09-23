@@ -233,15 +233,21 @@ def test_ai_excerpts_reject_invented_facts(monkeypatch):
 def test_transcription_job_preserves_audio_and_appends_once(monkeypatch,tmp_path):
     import providers,json
     monkeypatch.setattr(providers,'available',lambda:{'transcription':True,'ai':False})
-    monkeypatch.setattr(providers,'transcribe',lambda *a:{'text':'Recorded finding.','utterances':[{'start':0,'end':1,'speaker':0,'text':'Recorded finding.'}],'provider':'mock','request_id':'test'})
+    monkeypatch.setattr(providers,'transcribe',lambda *a,**k:{'text':'Recorded finding.','utterances':[{'start':0,'end':1,'speaker':0,'text':'Recorded finding.'}],'provider':'mock','request_id':'test'})
     r=act('recording.create',dict(patient_id='luna',consultation_id='consult-luna'));client=TestClient(main.app)
-    client.put('/api/recordings/'+r['id']+'/chunks/0',content=b'test-audio')
+    from io import BytesIO
+    import wave
+    buf=BytesIO()
+    with wave.open(buf,'wb') as audio:
+        audio.setnchannels(1);audio.setsampwidth(2);audio.setframerate(16000);audio.writeframes(b'\0' * 32000)
+    original=buf.getvalue()
+    client.put('/api/recordings/'+r['id']+'/chunks/0',content=original)
     act('recording.complete',{'id':r['id'],'expected_chunks':1,'duration':1})
     job=act('recording.transcribe',{'id':r['id']});jobs.run_job(job['id']);jobs.run_job(job['id'])
     source_id=get(r['id'])['data']['transcript_source_id']
     assert get(source_id)['data']['utterances'][0]['end']==1
     assert get('consult-luna')['data']['source_ids']==[source_id]
-    assert client.get('/api/recordings/'+r['id']+'/audio').content==b'test-audio'
+    assert client.get('/api/recordings/'+r['id']+'/audio').content==original
 
 def test_password_mode_rejects_spoofed_actor_headers(monkeypatch):
     import auth
