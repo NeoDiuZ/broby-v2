@@ -7,6 +7,7 @@ from datetime import date
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from billing import CreditCreate, CreditTarget
 
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Text = Annotated[str, Field(min_length=1, max_length=1000)]
@@ -71,6 +72,8 @@ class PatientOwners(Versioned):
 
 
 CONTRACTS = {
+    'credit_note.create': (CreditCreate, 'Issue a credit against invoice id with current invoice version. Require explicit pre-tax net cents, tax cents (including explicit zero) and reason. Does not refund money or return stock; paid invoices may then have refund due.'),
+    'credit_note.reverse': (CreditTarget, 'Reverse one whole credit note: id is credit note id, version is current invoice version. Explicit reason required; restores the charge without moving money.'),
     'reminder.create': (ReminderCreate, 'Create a due reminder; does not send a message.'),
     'reminder.update': (ReminderUpdate, 'Replace title and due date of an open reminder. Preserve any field the operator did not ask to change. Cancels its old unsent draft.'),
     'reminder.cancel': (Versioned, 'Cancel an open reminder and its unsent draft.'),
@@ -118,7 +121,21 @@ def prepare(c, clinic, name, payload, patient_id=None):
             sources.append(r)
         return r
 
-    if name.startswith('reminder.'):
+    if name.startswith('credit_note.'):
+        from billing import preview, net_total, outstanding, refund_due
+        p, invoice, credit, changed, net, tax = preview(c, clinic, name, p)
+        ref(invoice['id'], 'invoice')
+        patient = ref(invoice['data']['patient_id'], 'patient')
+        title = 'Issue credit note' if name == 'credit_note.create' else 'Reverse credit note'
+        field('Patient', patient['data']['name']); field('Invoice', invoice['data']['number'])
+        if credit:
+            ref(credit['id'], 'credit_note'); field('Credit note', credit['data']['number'])
+        field('Credit before tax', f'SGD {net/100:.2f}'); field('Tax credit', f'SGD {tax/100:.2f}')
+        field('Total credit' if not credit else 'Charge restored', f'SGD {(net+tax)/100:.2f}')
+        field('Reason', p['reason']); field('Net invoice charge after confirmation', f'SGD {net_total(changed)/100:.2f}')
+        field('Outstanding after confirmation', f'SGD {outstanding(changed)/100:.2f}'); field('Refund due after confirmation', f'SGD {refund_due(changed)/100:.2f}')
+        effects = ['This changes the invoice charge only. No money will be refunded and no stock will be returned.', 'The original invoice and all credit/reversal records remain in the audit history.']
+    elif name.startswith('reminder.'):
         if name == 'reminder.create':
             patient = ref(p['patient_id'], 'patient')
             title = 'Create reminder'

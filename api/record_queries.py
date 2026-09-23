@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, ValidationError, model_validator
 from db import all_records, get, now
+from billing import outstanding
 
 RecordKind = Literal['patient','event','observation','medication','medication_history','invoice','payment','inventory','appointment','reminder','intake','outbox','consultation']
 READ_KINDS = set(RecordKind.__args__)
@@ -119,7 +120,7 @@ def select_records(c, clinic, query, records=None):
         if query.get('unit') and d.get('unit')!=query['unit']:continue
         if query.get('start') and day<query['start'] or query.get('end') and day>query['end']:continue
         if query.get('low_stock') and (d.get('unit')=='service' or d.get('stock',0)>d.get('reorder',0)):continue
-        if query.get('outstanding') and (d.get('status')=='void' or d.get('total_cents',0)-d.get('paid_cents',0)<=0):continue
+        if query.get('outstanding') and not outstanding(d):continue
         value=d.get('value')
         if 'value_equals' in query:
             expected=query['value_equals']

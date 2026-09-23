@@ -12,7 +12,8 @@ def dispatch(c,a,p,clinic,actor):
     if a=='test.payment.create':
         invoice=owned(c,require(p,'invoice_id'),clinic,'invoice')
         amount=integer(p.get('amount_cents'),'Amount',1)
-        if invoice['data']['status']=='void' or amount>invoice['data']['total_cents']-invoice['data']['paid_cents']:fail('Amount exceeds the invoice balance')
+        from billing import outstanding
+        if amount>outstanding(invoice['data']):fail('Amount exceeds the invoice balance')
         return record(c,'test_payment',clinic,{'patient_id':invoice['data']['patient_id'],'invoice_id':invoice['id'],'amount_cents':amount,'currency':'SGD','status':'pending','refunded_cents':0,'test_mode':True})
     if a=='test.payment.callback':
         r=owned(c,require(p,'id'),clinic,'test_payment');status=require(p,'status')

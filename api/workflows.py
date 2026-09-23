@@ -144,13 +144,15 @@ def dispatch(c,a,p,clinic,actor):
         already=sum(r['data']['amount_cents'] for r in all_records(c,clinic,'refund') if r['data']['payment_id']==payment['id'])
         if amount>payment['data']['amount_cents']-already:fail('Refund exceeds the unrefunded payment')
         refund=record(c,'refund',clinic,{'payment_id':payment['id'],'invoice_id':invoice['id'],'patient_id':invoice['data']['patient_id'],'amount_cents':amount,'reason':require(p,'reason'),'recorded_by':actor})
-        d=invoice['data'];d['paid_cents']-=amount;d['status']='partial' if d['paid_cents'] else 'issued';update(c,invoice,d)
+        from billing import invoice_status
+        d=invoice['data'];d['paid_cents']-=amount;d['status']=invoice_status(d);update(c,invoice,d)
         event(c,clinic,d['patient_id'],'payment','Refund recorded',f'SGD {amount/100:.2f} · {p["reason"]}')
         return refund
     if a=='invoice.void':
         r=owned(c,p['id'],clinic,'invoice');version(r,p)
         from stripe_payments import guard_invoice
         guard_invoice(c,clinic,r['id'])
+        if any(v['data']['invoice_id']==r['id'] for v in all_records(c,clinic,'credit_note')):fail('This invoice has credit-note history. Credit the remaining charge instead of voiding it.',409)
         if r['data']['paid_cents']:fail('Record any externally completed refunds before voiding')
         return update(c,r,{**r['data'],'status':'void','void_reason':require(p,'reason')})
     if a=='inventory.receive':

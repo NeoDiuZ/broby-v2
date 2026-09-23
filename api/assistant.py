@@ -6,6 +6,7 @@ from reads import period
 from record_queries import READ_KINDS, RecordQuery, select_records
 import providers
 import assistant_operations
+from billing import outstanding, refund_due
 ACTION_FIELDS={
  'lab.import':'patient_id, title, csv (name,value,unit,low,high)',
  'patient.create':'name, species, owner_id OR owner_name, breed?, sex?, weight?, age?',
@@ -57,7 +58,7 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     if providers.available()['ai']:
         from actions import allowed_actions
         allowed={a:ACTION_FIELDS[a] for a in allowed_actions(c,clinic,actor) if a in ACTION_FIELDS}
-        compact=[{'id':r['id'],'kind':r['kind'],'version':r['version'],'data':r['data']} for r in rs if r['kind'] in ('patient','owner','member','inventory','template','invoice','payment','consultation','appointment','reminder','outbox','intake','recording','settings','clinic','purchase_order')]
+        compact=[{'id':r['id'],'kind':r['kind'],'version':r['version'],'data':r['data']} for r in rs if r['kind'] in ('patient','owner','member','inventory','template','invoice','payment','consultation','appointment','reminder','outbox','intake','recording','settings','clinic','purchase_order','credit_note','credit_note_reversal')]
         # Selection metadata is enough for a handover proposal. Its nested clinical
         # snapshot is returned as a receipt for the operator's own review.
         compact.extend({'id':r['id'],'kind':r['kind'],'version':r['version'],'data':{k:r['data'].get(k) for k in ('title','date','acknowledged_by')}} for r in rs if r['kind']=='handover')
@@ -103,7 +104,7 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
         d=r['data'];label=d.get('title') or d.get('name') or d.get('number') or kind
         if kind=='observation':value=f"{d['value']} {d['unit']}"
         elif kind in ('medication','medication_history'):value=' · '.join(d.get(k,'') for k in ('dose','frequency','instructions'))
-        elif kind=='invoice':value=f"SGD {(d['total_cents']-d['paid_cents'])/100:.2f} outstanding · {d['status']}"
+        elif kind=='invoice':value=f"SGD {outstanding(d)/100:.2f} outstanding · SGD {refund_due(d)/100:.2f} refund due · {d['status']}"
         elif kind=='inventory':value=f"{d['stock']} {d['unit']} (reorder at {d['reorder']})"
         elif kind=='appointment':label=next((p['data']['name'] for p in patients if p['id']==d['patient_id']),'Patient');value=f"{d['date']} {d['time']} · {d['reason']} · {d['status']}"
         else:value=d.get('body') or d.get('text') or d.get('species') or d.get('status','')

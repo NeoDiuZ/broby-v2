@@ -70,8 +70,11 @@ PERMISSIONS.update(MIGRATION_PERMISSIONS)
 
 from stripe_payments import PERMISSIONS as STRIPE_PERMISSIONS
 PERMISSIONS.update(STRIPE_PERMISSIONS)
+from billing import PERMISSIONS as BILLING_PERMISSIONS
+PERMISSIONS.update(BILLING_PERMISSIONS)
 
 DEPENDENCIES={
+ 'credit_note.reverse':('credit_note.create',),
  'stripe.checkout':('payment.record',),'stripe.refund':('payment.refund',),
  'test.lab.receive':('clinical.ingest',),
  'clinical.ingest':('source.add',),
@@ -115,6 +118,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in BILLING_PERMISSIONS:
+        from billing import dispatch as billing_action
+        return billing_action(c,a,p,clinic,actor)
     if a in TWILIO_PERMISSIONS:
         from twilio_trial import dispatch as twilio_action
         return twilio_action(c,a,p,clinic,actor)
@@ -257,11 +263,12 @@ def dispatch(c,a,p,clinic,actor):
         guard_invoice(c,clinic,r['id'])
         if d['status']=='void': fail('Cannot pay a void invoice')
         amount=integer(require(p,'amount_cents'),'Amount',1)
-        if amount>d['total_cents']-d['paid_cents']: fail('Payment exceeds outstanding balance')
+        from billing import outstanding,invoice_status
+        if amount>outstanding(d): fail('Payment exceeds outstanding balance')
         method=require(p,'method')
         if method not in ('cash','card_external','bank_external'): fail('Invalid payment method')
         payment=record(c,'payment',clinic,{'invoice_id':r['id'],'patient_id':d['patient_id'],'amount_cents':amount,'method':method,'reference':p.get('reference',''),'recorded_by':actor})
-        d['paid_cents']+=amount; d['status']='paid' if d['paid_cents']==d['total_cents'] else 'partial'; update(c,r,d)
+        d['paid_cents']+=amount; d['status']=invoice_status(d); update(c,r,d)
         event(c,clinic,d['patient_id'],'payment','Payment recorded',f'SGD {amount/100:.2f} · {method}'); return payment
     if a=='inventory.create':
         return record(c,'inventory',clinic,{'name':require(p,'name'),'unit':require(p,'unit'),'stock':integer(p.get('stock',0),'Stock'),'reorder':integer(p.get('reorder',5),'Reorder level'),'price_cents':integer(p.get('price_cents',0),'Price')})
