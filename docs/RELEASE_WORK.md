@@ -43,3 +43,12 @@ Assistant history PR #10 is merged and deployed at `1a67908`. Eight hosted real-
 WhatsApp trial adapter and admin UI were merged in PR #11 and deployed at `628638c`, disabled pending provider setup. Twelve provider-mocked failure-path scenarios cover signatures, isolation, uncertain send recovery without resend, consent and polling bounds. See WHATSAPP_TRIAL.md. Recipient join, actual credentials/template configuration and real delivery remain pending; the user-input request is still open. Official trial restrictions prevent custom clinic messages before upgrade/registered sender.
 
 Continuous recording refinement PR #12 is merged and deployed at `7a87357`. The full 161-backend/14-frontend suite and CI passed. Hosted real-Deepgram acceptance passed eight preview checks and ten final checks, with identical preview/final decoded bytes, reused provider receipt, one source and original audio integrity. The browser showed the provisional preview outside Sources, then both final timestamped markers. An additional isolated real-browser MediaRecorder/IndexedDB test passed with 11 seconds of generated audio. See CONTINUOUS_SPEECH.md and `.local/continuous-hosted.json`. Physical long-session/device acceptance remains.
+
+## In progress — reviewed clinic-transfer release
+
+Implementing explicit optional audio/medication consent, receiving preview/digest,
+immutable origin revisions, subsequent-request deduplication, exact binary copies
+and rollback cleanup. Medication history cannot dispense or change stock. Private
+transcripts remain excluded. See CLINIC_TRANSFERS.md. Older accepted transfers
+without source manifests require a reviewed baseline; verified owner identity
+remains unfinished. No full-vision completion claim is made.

@@ -171,7 +171,8 @@ def test_owner_consented_transfer_checks_clinic_revocation_and_replay():
     err(404,lambda:act('transfer.accept',{'id':request['id']}))
     incoming=client.get('/api/transfers/incoming',headers={'x-clinic-id':'clinic-river'}).json()
     assert incoming[0]['patient_name']=='Luna'
-    result=act('transfer.accept',{'id':request['id']},clinic='clinic-river',actor='clinic-river-vet')
+    preview=client.get('/api/transfers/'+request['id']+'/preview',headers={'x-clinic-id':'clinic-river'}).json()
+    result=act('transfer.accept',{'id':request['id'],'expected_digest':preview['digest']},clinic='clinic-river',actor='clinic-river-vet')
     assert result['transferred_events']>=1
     assert act('transfer.accept',{'id':request['id']},clinic='clinic-river',actor='clinic-river-vet')==result
     assert client.delete(base+'/transfers/'+request['id']).status_code==409
