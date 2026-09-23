@@ -35,3 +35,5 @@ it through Saved conversations; ask for a synthetic consultation, confirm,
 reload and check the completed action opens that same consultation. Private
 API read/confirmation and mutation replay are checked separately. Release
 verification evidence is kept in the operator's ignored local evidence folder.
+
+Hosted verification on 24 September: PR #10 merged and both Railway services deployed `1a6790891aaba48592368b779c9a2578bf77f5ab`. Eight real hosted checks passed, including actual AI invoice retrieval/proposal, stable question replay, persisted confirmation and privacy against another authenticated synthetic user. Browser acceptance also created and confirmed a synthetic consultation, reloaded the page and restored its completed action. The synthetic privacy-test membership was deactivated afterward.
