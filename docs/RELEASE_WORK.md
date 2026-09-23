@@ -175,7 +175,17 @@ The missing-tax real-model case exposed an invalid JSON response twice. No clini
 records changed; its failed question remains retryable. The follow-up changes the
 assistant planner to a structured result collector, without executing model tools,
 and maps provider failures to a safe retryable HTTP response. Local acceptance for
-that fix passes 281 backend tests. Hosted clarification retry and bounded planner
-regression are pending its deployment. This remains a scoped billing release,
+that fix passes 281 backend tests. PR #21 deployed this fix at
+`62ab61895bbd5979f9a5ebc7432a5d5713ec7214`: Backend
+`edba1f0c-d89b-45ce-8558-93bc19a1251f`, Frontend
+`ebe37535-9187-42f6-9d83-d4b1d3a2c5f1`, both SUCCESS. PR/push CI
+`35928564045` / `35928533147` and main CI `35928865824` passed. The exact failed
+question recovered using the browser Retry button and its original saved turn.
+Four fresh real-model proposals/reads passed with identical before/after clinic
+record snapshots. The acceptance harness now retains both snapshots and excludes
+only independent Stripe poll timestamp/version metadata when comparing results.
+Fresh-session credit/export/payment readback was repeated on this revision.
+The report CSV was downloaded through the browser and reconciled to the hosted
+records (15657 cents net charges, 50 cents net credits, 873 cents net payments). This remains a scoped billing release,
 not a general ledger, approved clinic policy or completion of the 58 requirements.
 See CREDIT_NOTES.md and the ignored `.local/credit-hosted.json` evidence.
