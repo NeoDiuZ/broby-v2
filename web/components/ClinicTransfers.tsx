@@ -18,7 +18,12 @@ function TransferContent({kind,data}:{kind:string;data:any}){
 }
 function LocalCopy({record}:{record:any}){
  if(!record)return <p>The earlier local record is unavailable; its original accepted source information is retained above.</p>;
- const kind=({recording:'audio',attachment:'file',medication_history:'medication'} as Record<string,string>)[record.kind]||'event';
+ if(record.kind==='source')return <p className="preserve">{record.data.text}</p>;
+ if(record.kind==='observation')return <p>{record.data.name}: {String(record.data.value)} {record.data.unit} · supplied range {record.data.low??'—'}–{record.data.high??'—'}</p>;
+ if(record.kind==='consultation')return <><p>{record.data.title} · {record.data.status}</p>{record.data.summary?.map((s:any,i:number)=><p className="preserve" key={i}>{s.name}: {s.text}</p>)}</>;
+ if(record.kind==='attachment')return <p>Stored receiving file: {record.data.name} · {Math.ceil(record.data.size/1024)} KB. Open Documents to inspect its contents.</p>;
+ if(record.kind==='recording')return <p>Stored receiving voice note: {record.data.title||'Voice note'} · {record.data.status}. Open its visit to listen.</p>;
+ const kind=record.kind==='medication_history'?'medication':'event';
  return <><p>{record.data.title||record.data.name||'Earlier local copy'}</p><TransferContent kind={kind} data={record.data}/></>;
 }
 
@@ -30,18 +35,29 @@ export function IncomingTransfers(){
 
 function ReceivingQueue(){
  const w=useWorkspace();
- const [requests,setRequests]=useState<any[]>([]),[review,setReview]=useState<any>(null),[error,setError]=useState(''),[identity,setIdentity]=useState(false),[changes,setChanges]=useState(false);
+ const [requests,setRequests]=useState<any[]>([]),[review,setReview]=useState<any>(null),[error,setError]=useState(''),[identity,setIdentity]=useState(false),[changes,setChanges]=useState(false),[baseline,setBaseline]=useState(false),[reason,setReason]=useState('');
+ const loadReview=async(id:string)=>{setIdentity(false);setChanges(false);setBaseline(false);setReason('');setReview(await api('/transfers/'+id+'/preview'))};
  const refresh=async()=>{setRequests(await api('/transfers/incoming'))};
  useEffect(()=>{let active=true;void api('/transfers/incoming').then(r=>{if(active)setRequests(r)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[]);
  const run=async(work:()=>Promise<void>)=>{setError('');try{await work()}catch(e){setError((e as Error).message)}};
  return <section className="section-gap"><h3>Owner-consented incoming records</h3><p>Review identity and source changes before importing. Subsequent transfers use the source clinic’s patient ID. Records are never matched by name, and existing local records are preserved.</p>
   <BusyButton onClick={()=>run(refresh)}>Refresh transfer requests</BusyButton>
   {error&&!review&&<p role="alert" className="error">{error}</p>}
-  {requests.map(r=><div className="file-row" key={r.id}><span>{r.patient_name} · from {r.source_clinic}</span><BusyButton onClick={()=>run(async()=>{setIdentity(false);setChanges(false);setReview(await api('/transfers/'+r.id+'/preview'))})}>Review transfer</BusyButton></div>)}
+  {requests.map(r=><div className="file-row" key={r.id}><span>{r.patient_name} · from {r.source_clinic}</span><BusyButton onClick={()=>run(()=>loadReview(r.id))}>Review transfer</BusyButton></div>)}
   {review&&<Modal title="Review incoming records" wide onClose={()=>{setReview(null);setError('')}}><div className="modal-body">
    <h3>{review.patient.name} · {review.patient.species}</h3><p>From {review.source_clinic.name} · source patient {review.source_patient_id}</p>
    <p>Owner: {review.owner.name} · {review.owner.phone||'No phone'} · {review.owner.email||'No email'}</p>
    <p>{review.destination_patient?`Add to existing receiving record: ${review.destination_patient.data.name} (${review.destination_patient.id}).`:'Create a new patient and owner. Check for an existing local patient before proceeding.'}</p>
+   {review.destination_owner&&<details><summary>Current receiving owner details</summary><Facts data={review.destination_owner.data}/></details>}
+   {review.baseline_required&&<section className="panel">
+    <h3>Review earlier copies before starting a new baseline</h3>
+    <p>This patient was imported before exact source revisions were saved. We cannot prove which current facts match the earlier copies. Accepting will append all currently shared records to this same patient and may create duplicates. Every earlier copy and local edit will remain intact.</p>
+    <p>{review.baseline.earlier_requests.length} earlier accepted transfers · {review.baseline.existing_records.length} existing clinical records below. Future transfers will compare against the new baseline.</p>
+    {review.baseline.existing_records.map((record:any)=><details key={record.id}><summary>{record.kind} · {record.data.title||record.data.name||'Earlier record'}</summary><p>Receiving record {record.id} · version {record.version} · {record.updated_at}</p><LocalCopy record={record}/></details>)}
+    {!review.baseline.existing_records.length&&<p>No earlier clinical records are available for comparison. Check this receiving patient before continuing.</p>}
+    <label>Baseline review reason<textarea value={reason} onChange={e=>setReason(e.target.value)} minLength={10} maxLength={1000} placeholder="Explain why you are accepting the current source as a new baseline."/></label>
+    <label><input type="checkbox" checked={baseline} onChange={e=>setBaseline(e.target.checked)}/>I reviewed the earlier records and accept that this new baseline may duplicate them. Nothing earlier will be replaced or treated as a verified match.</label>
+   </section>}
    <p>{review.counts.new} new · {review.counts.changed} changed · {review.counts.unchanged} already copied · {review.media_bytes<1024*1024?Math.ceil(review.media_bytes/1024)+' KB':(review.media_bytes/1024/1024).toFixed(1)+' MB'}</p>
    <p>Medication history: {review.scope.medications?'included as externally recorded history; no stock movement or new prescription':'excluded'}. Original audio: {review.scope.audio?'included when finished and approved; private transcripts excluded':'excluded'}.</p>
    <p>Imported records and audio remain private to this clinic until separately approved for owner sharing. Changed records append a revision. Earlier copies and local edits remain intact; a source withdrawal does not erase accepted medical copies.</p>
@@ -49,8 +65,8 @@ function ReceivingQueue(){
    <label><input type="checkbox" checked={identity} onChange={e=>setIdentity(e.target.checked)}/>I checked the patient, owner and receiving record.</label>
    {!!review.counts.changed&&<label><input type="checkbox" checked={changes} onChange={e=>setChanges(e.target.checked)}/>I reviewed the changed information and understand it will be appended alongside earlier copies and local edits.</label>}
    {error&&<p role="alert" className="error">{error}</p>}
-   <BusyButton disabled={!identity||(!!review.counts.changed&&!changes)} onClick={()=>run(async()=>{const result=await w.act('transfer.accept',{id:review.id,expected_digest:review.digest,review_changes:changes});setReview(null);await refresh();w.notify('Reviewed records imported; earlier copies and clinic stock preserved');navigate('Patient',result.id)})}>Import reviewed records</BusyButton>
-   <BusyButton onClick={()=>run(async()=>{setIdentity(false);setChanges(false);setReview(await api('/transfers/'+review.id+'/preview'))})}>Reload preview</BusyButton>
+   <BusyButton disabled={!identity||(!!review.counts.changed&&!changes)||(review.baseline_required&&(!baseline||reason.trim().length<10))} onClick={()=>run(async()=>{const result=await w.act('transfer.accept',{id:review.id,expected_digest:review.digest,review_changes:changes,...(review.baseline_required?{establish_baseline:baseline,baseline_reason:reason}:{})});setReview(null);await refresh();w.notify('Reviewed records imported; earlier copies and clinic stock preserved');navigate('Patient',result.id)})}>{review.baseline_required?'Establish reviewed baseline':'Import reviewed records'}</BusyButton>
+   <BusyButton onClick={()=>run(()=>loadReview(review.id))}>Reload preview</BusyButton>
   </div></Modal>}
  </section>
 }

@@ -222,11 +222,10 @@ def plan(c, r):
     key = (r['source_clinic'], r['patient_id'], r['target_clinic'])
     mapped = c.execute('SELECT target_patient FROM transferred_patients WHERE source_clinic=? AND source_patient=? AND target_clinic=?', key).fetchone()
     target = owned(c, mapped[0], r['target_clinic'], 'patient') if mapped else None
-    # Old accepted copies did not persist their exact origin payload. Do not guess
-    # whether today's source matches the data accepted before revision tracking.
     revisions = list(c.execute('SELECT * FROM transfer_revisions WHERE source_clinic=? AND source_patient=? AND target_clinic=? ORDER BY revision', key))
-    if target and not revisions:
-        fail('This patient was imported before transfer revision tracking. A reviewed origin mapping is required before further imports.', 409)
+    # Historical payloads cannot be reconstructed reliably. A reviewed baseline
+    # appends today's approved facts; it never labels an old copy as equivalent.
+    baseline = legacy_review(c, r, target) if target and not revisions else None
     counts = {'new': 0, 'changed': 0, 'unchanged': 0}
     for item in items:
         fp = digest(item['payload'])
@@ -243,9 +242,35 @@ def plan(c, r):
     public = {'id': r['id'], 'source_clinic': {'id': r['source_clinic'], 'name': owned(c, r['source_clinic'], r['source_clinic'], 'clinic')['data']['name']},
               'source_patient_id': r['patient_id'], 'scope': json.loads(r['scope']), 'expires_at': r['expires_at'],
               'patient': identity['patient'], 'owner': identity['owner'], 'destination_patient': target,
+              'destination_owner': owned(c, target['data']['owner_id'], r['target_clinic'], 'owner') if target else None,
+              'baseline_required': baseline is not None, 'baseline': baseline,
               'counts': counts, 'media_bytes': total, 'items': items}
     public['digest'] = digest(public)
     return public, binaries
+
+
+def legacy_review(c, r, patient):
+    """Bounded receiving-side context. Only this patient's clinical records cross
+    the preview boundary; request capabilities and filesystem paths never do."""
+    kinds = {'event', 'source', 'attachment', 'observation', 'recording', 'medication_history', 'consultation'}
+    rows = c.execute("SELECT * FROM records WHERE clinic_id=? AND json_extract(data,'$.patient_id')=? ORDER BY kind,id LIMIT ?",
+                     (r['target_clinic'], patient['id'], MAX_ITEMS + 1)).fetchall()
+    if len(rows) > MAX_ITEMS:
+        fail('The receiving record exceeds the baseline review limit; arrange a reviewed archive reconciliation', 422)
+    from spine.reader import native_records
+    records = [db.unpack(row) for row in rows if row['kind'] in kinds]
+    records.extend(native_records(r['target_clinic'], patient['id']))
+    if len(records) > MAX_ITEMS:
+        fail('The receiving record exceeds the baseline review limit; arrange a reviewed archive reconciliation', 422)
+    records.sort(key=lambda x: (x['kind'], x['id']))
+    records = [{**x, 'data': {k: v for k, v in x['data'].items() if k != 'path'}} for x in records]
+    requests = [{'id': row['id'], 'status': row['status']} for row in c.execute(
+        "SELECT id,status FROM transfer_requests WHERE source_clinic=? AND patient_id=? AND target_clinic=? AND status='accepted' ORDER BY id LIMIT ?",
+        (r['source_clinic'], r['patient_id'], r['target_clinic'], MAX_ITEMS + 1))]
+    context = {'mode': 'append_current_source', 'existing_records': records, 'earlier_requests': requests}
+    if len(requests) > MAX_ITEMS or len(encoded(context).encode()) > 5 * 1024 * 1024:
+        fail('The receiving history exceeds the baseline review limit; arrange a reviewed archive reconciliation', 422)
+    return context
 
 
 @router.get('/api/transfers/{id}/preview')
@@ -302,6 +327,15 @@ def dispatch(c, a, p, clinic, actor):
         fail('Review the current transfer preview before accepting; source or receiving records may have changed', 409)
     if review['counts']['changed'] and p.get('review_changes') is not True:
         fail('Explicitly acknowledge changed origin records; earlier copies and local edits will be retained', 409)
+    baseline = review['baseline']
+    reason = p.get('baseline_reason')
+    if baseline:
+        if p.get('establish_baseline') is not True:
+            fail('Review the earlier receiving records and explicitly accept a new baseline; current source facts may duplicate earlier copies', 409)
+        if not isinstance(reason, str) or not 10 <= len(reason.strip()) <= 1000:
+            fail('Record a baseline review reason between 10 and 1000 characters', 422)
+    elif p.get('establish_baseline') or reason:
+        fail('This transfer no longer needs a baseline; reload its preview', 409)
     identity = next(x['payload'] for x in review['items'] if x['kind'] == 'identity')
     patient = review['destination_patient']
     if not patient:
@@ -309,6 +343,20 @@ def dispatch(c, a, p, clinic, actor):
         patient = record(c, 'patient', clinic, {**identity['patient'], 'owner_id': owner['id'],
                          'external_id': 'transfer:' + r['source_clinic'] + ':' + r['patient_id'], 'transfer_request_id': r['id']})
         c.execute('INSERT INTO transferred_patients VALUES(?,?,?,?)', (r['source_clinic'], r['patient_id'], clinic, patient['id']))
+    baseline_record = None
+    if baseline:
+        baseline_record = record(c, 'transfer_baseline', clinic, {
+            'patient_id': patient['id'], 'source_clinic_id': r['source_clinic'], 'source_patient_id': r['patient_id'],
+            'transfer_request_id': r['id'], 'mode': baseline['mode'], 'reason': reason.strip(),
+            'reviewed_by': actor, 'reviewed_at': now(), 'reviewed_digest': review['digest'],
+            'earlier_requests': baseline['earlier_requests'],
+            'preserved_records': [{'id': x['id'], 'kind': x['kind'], 'version': x['version'], 'fingerprint': digest(x)}
+                                  for x in [patient, review['destination_owner'], *baseline['existing_records']]],
+            'current_origins': [{'kind': x['kind'], 'origin_id': x['origin_id'], 'fingerprint': x['fingerprint']} for x in review['items']]})
+        text = ('Reviewed transfer baseline. Earlier source payloads are unknown. Current approved source facts were appended; '
+                'they may duplicate earlier copies. No earlier records or local edits were overwritten or marked equivalent.\n'
+                'Review reason: ' + reason.strip() + '\nReviewed by: ' + actor + '\nBaseline: ' + baseline_record['id'])
+        db.event(c, clinic, patient['id'], 'clinical', 'Reviewed transfer baseline', text)
     copied = {'event': 0, 'file': 0, 'medication': 0, 'audio': 0, 'identity': 0}
     consultation = None
     for item in review['items']:
@@ -320,6 +368,8 @@ def dispatch(c, a, p, clinic, actor):
                       'origin_clinic_name': review['source_clinic']['name'], 'origin_patient_id': r['patient_id'],
                       'origin_id': item['origin_id'], 'origin_kind': kind, 'origin_revision': item['revision'],
                       'origin_fingerprint': item['fingerprint'], 'origin_recorded_at': d.get('occurred_at', d.get('recorded_at'))}
+        if baseline_record:
+            provenance['transfer_baseline_id'] = baseline_record['id']
         text = receipt_text(item)
         title = d.get('title') or d.get('name') or ('Patient and owner details' if kind == 'identity' else 'Voice note')
         title = ('Transferred medication history · ' if kind == 'medication' else 'Transferred ') + title + (f" · source revision {item['revision']}" if item['revision'] > 1 else '')
@@ -368,7 +418,8 @@ def dispatch(c, a, p, clinic, actor):
     result = {'id': patient['id'], 'transfer_id': r['id'], 'transferred_events': copied['event'], 'files_copied': copied['file'],
               'audio_copied': copied['audio'], 'medication_histories': copied['medication'], 'counts': review['counts'],
               'consultation_id': consultation['id'] if consultation else None, 'reviewed_digest': review['digest'],
-              'reviewed_by': actor, 'accepted_at': now()}
+              'reviewed_by': actor, 'accepted_at': now(),
+              'baseline_id': baseline_record['id'] if baseline_record else None}
     c.execute("UPDATE transfer_requests SET status='accepted',result=? WHERE id=?", (encoded(result), r['id']))
     return result
 

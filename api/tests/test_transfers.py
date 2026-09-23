@@ -243,7 +243,7 @@ def test_failed_transaction_removes_only_new_binary_copies(monkeypatch):
         assert c.execute('SELECT status FROM transfer_requests WHERE id=?', (r['id'],)).fetchone()[0] == 'pending'
 
 
-def test_legacy_request_scope_migration_and_untracked_copies_blocked():
+def test_legacy_request_scope_migration_and_untracked_copies_require_review():
     client = TestClient(main.app)
     _, r = request(client)
     with db.connection(True) as c:
@@ -251,7 +251,8 @@ def test_legacy_request_scope_migration_and_untracked_copies_blocked():
         patient = db.record(c, 'patient', 'clinic-river', {'name': 'Earlier copied patient', 'species': 'Cat', 'owner_id': owner['id']})
         c.execute('INSERT INTO transferred_patients VALUES(?,?,?,?)', ('clinic-east', 'luna', 'clinic-river', patient['id']))
     response = client.get('/api/transfers/' + r['id'] + '/preview', headers=HEADERS)
-    assert response.status_code == 409 and 'origin mapping' in response.text
+    assert response.status_code == 200 and response.json()['baseline_required'] is True
+    err(409, lambda: accept(client, r))
     with db.connection(True) as c:
         c.execute('ALTER TABLE transfer_requests DROP COLUMN scope')
         transfers.setup(c)
