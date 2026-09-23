@@ -168,7 +168,7 @@ with httpx.Client(base_url=a.base_url.rstrip('/') + '/api/', timeout=120) as c:
             identities = [x for x in rs if x['kind'] == 'event' and x['data'].get('origin_kind') == 'identity' and x['data'].get('patient_id') == state['target_patient']]
             check(len(identities) == 2 and {x['data']['origin_revision'] for x in identities} == {1, 2}, 'both immutable identity revisions remain available')
             # The read API synchronizes and reads PostgreSQL, not just bootstrap SQLite.
-            timeline = req('GET', 'patients/' + state['target_patient'] + '/timeline').json()
+            timeline = req('GET', 'v2/patients/' + state['target_patient'] + '/timeline').json()
             state['timeline_keys'] = list(timeline)
             check('6.2' in json.dumps(timeline) and 'Externally recorded medication history' in json.dumps(timeline), 'PostgreSQL timeline contains typed lab and clearly labelled external medication history')
             if not state.get('grant_revoked'):
