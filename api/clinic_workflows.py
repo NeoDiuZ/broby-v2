@@ -135,7 +135,11 @@ def dispatch(c, action, p, clinic, actor):
         at = p.get('handover_at', '07:00')
         if not isinstance(at, str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', at): fail('Choose a valid handover time')
         return update(c, r, {**r['data'], 'auto_reminders': p['auto_reminders'], 'auto_handover': p['auto_handover'], 'handover_at': at, 'automation_actor': actor})
-    if action == 'handover.prepare': return prepare_handover(c, clinic)
+    if action == 'handover.prepare':
+        instant = clinic_today(c, clinic)
+        if p.get('expected_date') is not None and p['expected_date'] != instant.date().isoformat():
+            fail('The clinic date changed after this review. Prepare a new handover proposal.', 409)
+        return prepare_handover(c, clinic, instant)
     if action == 'handover.acknowledge':
         r = owned(c, p['id'], clinic, 'handover')
         acknowledgements = r['data'].get('acknowledged_by', [])
