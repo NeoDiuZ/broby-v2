@@ -4,5 +4,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+RUN python -c "import main; assert main.app"
 EXPOSE 8000
 CMD ["sh", "start-hosted.sh"]
