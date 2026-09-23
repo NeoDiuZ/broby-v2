@@ -152,12 +152,30 @@ Private fixtures/evidence: `.local/operations-hosted.json`,
 `.local/operations-hosted-readback.txt`. They contain synthetic data and a revoked
 owner capability; never copy credentials/capabilities into repository docs.
 
-## Credit-note release in progress
+## Credit notes — deployed core and acceptance follow-up
 
-Append-only credit notes and full reversals, explicit net/tax limits, separate
-outstanding/refund-due balances, credit-aware Stripe reservation/reconciliation,
-reviewed UI and assistant proposals, PDF notes and CSV credit register are ready
-for hosted acceptance. Local checks passed: 267 backend tests, 16 frontend tests,
-type checking and production build. No real tax/accounting policy was inferred.
-See CREDIT_NOTES.md and scripts/smoke-credit-notes.py. Commit, CI, hosted synthetic
-provider/browser acceptance and final deployment evidence are pending.
+PR #20 is merged at `080643d2de6d1a08e241e7899a340b5ee1ac1109`.
+Backend `7a03d686-49cc-4f1b-b6b6-39019f174fc4` and Frontend
+`52387d5f-bc3a-4a2d-89d7-37a12a51ded4` deployed successfully in Broby New.
+PR/push CI `35927255809` / `35927220173` passed. Local credit release checks
+passed 267 backend tests, 16 frontend tests, types and production build.
+
+Hosted synthetic acceptance verified real-model credit issue/reversal, no write
+before confirmation, replay, paid-credit refund due and external refund records.
+The browser issued a 218-cent credit, reloaded it and reversed it, restoring the
+1090-cent invoice with the full history retained. A real Stripe sandbox checkout
+charged 80 cents after a 20-cent credit. A subsequent 30-cent credit and verified
+Stripe refund left the original 100-cent invoice with 50 cents credited and
+50 cents paid. Stripe's API independently confirmed test mode, payment and exactly
+one successful 30-cent refund. A fresh app session verified balances, saved reviews,
+immutable notes/reversals, the CSV register and both PDFs, which were rendered and
+visually checked. No real money, V1 or customer message was involved.
+
+The missing-tax real-model case exposed an invalid JSON response twice. No clinic
+records changed; its failed question remains retryable. The follow-up changes the
+assistant planner to a structured result collector, without executing model tools,
+and maps provider failures to a safe retryable HTTP response. Local acceptance for
+that fix passes 281 backend tests. Hosted clarification retry and bounded planner
+regression are pending its deployment. This remains a scoped billing release,
+not a general ledger, approved clinic policy or completion of the 58 requirements.
+See CREDIT_NOTES.md and the ignored `.local/credit-hosted.json` evidence.
