@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import stripe
 from fastapi import APIRouter, Request
 from db import connection, record, get, update, all_records, now, uid
+from billing import outstanding, invoice_status
 
 PERMISSIONS = {'stripe.checkout': {'vet', 'admin'}, 'stripe.refresh': {'vet', 'admin'},
                'stripe.cancel': {'vet', 'admin'}, 'stripe.refund': {'admin'}}
@@ -83,7 +84,7 @@ def active_checkout(c, clinic, invoice_id):
 def guard_invoice(c, clinic, invoice_id):
     from actions import fail
     if active_checkout(c, clinic, invoice_id):
-        fail('An online checkout reserves this invoice. Cancel it and wait for Stripe confirmation before recording another payment or voiding.', 409)
+        fail('An online checkout reserves this invoice. Cancel it and wait for Stripe confirmation before changing charges, recording another payment or voiding.', 409)
 
 
 def dispatch(c, action, p, clinic, actor):
@@ -93,7 +94,7 @@ def dispatch(c, action, p, clinic, actor):
         invoice = owned(c, require(p, 'invoice_id'), clinic, 'invoice')
         version(invoice, p)
         d = invoice['data']
-        if d['status'] == 'void' or d['paid_cents'] >= d['total_cents']:
+        if not outstanding(d):
             fail('This invoice has no payable balance', 409)
         existing = active_checkout(c, clinic, invoice['id'])
         if existing:
@@ -103,7 +104,7 @@ def dispatch(c, action, p, clinic, actor):
             fail('This release supports SGD clinic invoices only')
         r = record(c, 'stripe_checkout', clinic, {
             'invoice_id': invoice['id'], 'patient_id': d['patient_id'],
-            'amount_cents': d['total_cents'] - d['paid_cents'], 'currency': currency,
+            'amount_cents': outstanding(d), 'currency': currency,
             'invoice_number': d['number'], 'status': 'creating', 'test_mode': True,
             'account_id': os.environ['BROBY_STRIPE_ACCOUNT_ID'], 'requested_by': actor,
             'expires_at': int(time.time()) + 3600, 'return_url': origin + '/app#Billing'})
@@ -194,7 +195,7 @@ def reconcile(checkout_id, session, refunds):
         if paid:
             if not payment:
                 # Never hide overpayments or void races as a normal paid invoice.
-                if data['status'] == 'void' or d['amount_cents'] > data['total_cents'] - data['paid_cents']:
+                if d['amount_cents'] > outstanding(data):
                     update(c, r, {**d, 'session_id': session['id'], 'payment_intent': payment_intent,
                                   'status': 'needs_review', 'error': 'Stripe received payment but the invoice balance changed. Reconcile this payment manually.'})
                     audit(c, clinic, 'stripe.balance_conflict', r['id'])
@@ -228,7 +229,7 @@ def reconcile(checkout_id, session, refunds):
                 data['paid_cents'] -= refund['amount']
                 audit(c, clinic, 'stripe.refund_verified', rid)
         if payment:
-            data['status'] = 'paid' if data['paid_cents'] == data['total_cents'] else 'partial' if data['paid_cents'] else 'issued'
+            data['status'] = invoice_status(data)
             if data != invoice['data']:
                 update(c, invoice, data)
         mapped = {v['id']: v for v in refunds}

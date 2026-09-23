@@ -62,7 +62,7 @@ review after reload and checked its exact title/date in Messages. PR #18 and
 the Railway release details are recorded in RELEASE_WORK.md; final acceptance
 follow-up evidence is in the ignored operator release report.
 
-There are now 59 advertised actions out of 89 shared operations. Ten use the
+There are now 61 advertised actions out of 91 shared operations. Twelve use the
 new strict proposal schemas; the other 49 retain their earlier field descriptions
 and executor-time validation. The remaining 30 advanced operations still need
 appropriate review contracts. This is not blanket coverage of all natural-language
@@ -70,3 +70,7 @@ intents, languages, clinical policies or ambiguous ownership instructions.
 Model interpretation remains fallible: the operator must inspect the exact review.
 The other offline, storage, accounting, provider and cutover gaps in FEATURE_STATUS
 remain open. No supplier message, customer send or real payment is part of this work.
+
+Credit-note issue and reversal add two strict contracts with explicit net/tax
+amounts, reasons, charge-only effects and resulting balances. See CREDIT_NOTES.md.
+Local regression is complete; hosted credit acceptance is pending.

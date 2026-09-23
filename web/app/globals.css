@@ -23,3 +23,4 @@ body{font-size:var(--text-body)}.sidebar{width:var(--sidebar-width);flex-basis:v
 
 .speech-progress{padding:12px 20px;border-top:1px solid var(--line);font-size:12px}.speech-progress p{margin-bottom:8px}.speech-progress article{padding:12px 0;border-top:1px solid var(--line)}.speech-progress summary{cursor:pointer;color:var(--teal-dark)}
 section.action-preview{font-size:13px;line-height:1.5;max-height:none;white-space:normal}section.action-preview dl{margin:12px 0}section.action-preview dl>div{margin:8px 0}section.action-preview dt{font-size:11px;color:var(--muted)}section.action-preview dd{margin:0;white-space:pre-wrap}section.action-preview p{margin:10px 0}
+.credit-review{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.credit-review dt{color:var(--muted)}.credit-review dd{margin:0;overflow-wrap:anywhere}

@@ -151,3 +151,13 @@ Private fixtures/evidence: `.local/operations-hosted.json`,
 `.local/operations-hosted-prepare.txt`, `.local/operations-hosted-evaluate.txt`,
 `.local/operations-hosted-readback.txt`. They contain synthetic data and a revoked
 owner capability; never copy credentials/capabilities into repository docs.
+
+## Credit-note release in progress
+
+Append-only credit notes and full reversals, explicit net/tax limits, separate
+outstanding/refund-due balances, credit-aware Stripe reservation/reconciliation,
+reviewed UI and assistant proposals, PDF notes and CSV credit register are ready
+for hosted acceptance. Local checks passed: 267 backend tests, 16 frontend tests,
+type checking and production build. No real tax/accounting policy was inferred.
+See CREDIT_NOTES.md and scripts/smoke-credit-notes.py. Commit, CI, hosted synthetic
+provider/browser acceptance and final deployment evidence are pending.
