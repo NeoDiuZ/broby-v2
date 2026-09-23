@@ -113,3 +113,8 @@ No V1 access, customer message or payment occurred. Evidence lives in
 `.local/query-hosted-refresh.txt` and the private query release report. This
 verification does not complete advanced action contracts, arbitrary joins,
 representative clinical/language evaluation or large-data performance.
+
+The acceptance follow-up also clears the previous view while a new selection loads
+and ignores late responses from a superseded selection/clinic. This prevents
+rapid selection changes from attaching the previous result to the new selection.
+Final follow-up revision/deployment and browser readback are recorded privately.
