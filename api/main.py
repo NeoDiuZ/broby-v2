@@ -71,7 +71,8 @@ def bootstrap(request:Request):
     clinic,actor=identity(request)
     with connection() as c:
         member=owned(c,actor,clinic,'member')
-        rs=all_records(c,clinic)
+        from spine.reader import native_records
+        rs=all_records(c,clinic)+native_records(clinic)
         if auth.enabled():
             sess=auth.session(request); clinics=[]
             for membership in c.execute('SELECT clinic_id,member_id FROM auth_memberships WHERE username=?',(sess['username'],)):
@@ -109,7 +110,7 @@ async def upload(request:Request,file:UploadFile=File(...),patient_id:str=Form(.
             if cr['data']['patient_id']!=patient_id: fail('Patient mismatch')
         id=uid(); path=DATA/'files'/id; path.parent.mkdir(exist_ok=True); path.write_bytes(content)
         r=record(c,'attachment',clinic,{'patient_id':patient_id,'consultation_id':consultation_id,'name':Path(file.filename or 'attachment').name,'mime':mime,'size':len(content),'path':str(path),'sha256':hashlib.sha256(content).hexdigest(),'approved':False},id)
-        event(c,clinic,patient_id,'document',r['data']['name'],'Document attached. Findings must be entered with a source reference.')
+        event(c,clinic,patient_id,'document',r['data']['name'],'Document attached. Findings must be entered with a source reference.',[id])
         return r
 @app.get('/api/files/{id}')
 def file(id:str,request:Request):
@@ -172,7 +173,8 @@ def export(request:Request):
     clinic,actor=identity(request)
     with connection() as c:
         if owned(c,actor,clinic,'member')['data']['role']!='admin': fail('Administrator access required',403)
-        rs=all_records(c,clinic)
+        from spine.reader import native_records
+        rs=all_records(c,clinic)+native_records(clinic)
     for r in rs: r['data'].pop('path',None)
     return Response(json.dumps({'schema_version':1,'exported_at':now(),'records':rs},indent=2),media_type='application/json',headers={'Content-Disposition':'attachment; filename="broby-clinic-export.json"'})
 class Chat(BaseModel):
@@ -195,3 +197,12 @@ app.include_router(export_router)
 
 from spine.routes import router as spine_router
 app.include_router(spine_router)
+
+from accounts import router as accounts_router
+app.include_router(accounts_router)
+
+from integration_hooks import router as hook_router
+app.include_router(hook_router)
+
+from transfers import router as transfers_router
+app.include_router(transfers_router)

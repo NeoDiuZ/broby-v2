@@ -31,12 +31,9 @@ def identity(request):
     return clinic,actor
 
 def can_write(clinic,actor):
-    import db
-    from actions import owned,fail,PERMISSIONS
-    with db.connection() as c:
-        member=owned(c,actor,clinic,'member');practice=owned(c,clinic,clinic,'clinic')
-        if not member['data'].get('active') or member['data']['role'] not in PERMISSIONS['source.add']:fail('Capture permission required',403)
-        if 'source.add' in practice['data'].get('locked_features',[]) and member['data']['role']!='admin':fail('Capture is locked by the administrator',403)
+    from db import connection
+    from actions import authorize
+    with connection() as c:authorize(c,clinic,actor,'clinical.ingest')
 @router.get('/patients')
 def patients(request:Request,q:str=Query('',max_length=200),limit:int=Query(50,ge=1,le=200),cursor:str=''):
     clinic,_=identity(request)
@@ -83,8 +80,12 @@ def source(id:str,request:Request):
 def lab(payload:LabInput,request:Request):
     clinic,actor=identity(request);can_write(clinic,actor)
     if not payload.observations:raise HTTPException(422,'Lab results require at least one measurement')
-    with database.session() as s,s.begin():return service.ingest(s,clinic,payload)
+    from actions import execute
+    import uuid
+    return execute('clinical.ingest',{**payload.model_dump(mode='json'),'event_type':'lab_result'},clinic,actor,str(uuid.uuid4()))
 @router.post('/events')
 def write_event(payload:EventInput,request:Request):
     clinic,actor=identity(request);can_write(clinic,actor)
-    with database.session() as s,s.begin():return service.ingest(s,clinic,payload,payload.event_type)
+    from actions import execute
+    import uuid
+    return execute('clinical.ingest',payload.model_dump(mode='json'),clinic,actor,str(uuid.uuid4()))

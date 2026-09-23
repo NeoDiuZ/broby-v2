@@ -1,5 +1,6 @@
 """Durable source-assembly jobs. No fabricated AI response when no model is connected."""
-import json, threading, time
+import json, threading, time, secrets
+from datetime import datetime,timezone,timedelta
 from pathlib import Path
 import providers
 from db import connection, get, update, now, unpack, uid
@@ -9,7 +10,47 @@ def authorize(c,clinic,actor,action):
     return check(c,clinic,actor,action)
 
 stop=threading.Event()
+def lease_time(seconds=90):return (datetime.now(timezone.utc)+timedelta(seconds=seconds)).isoformat()
+def claim_job(job_id):
+    with connection(True) as c:
+        job=c.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
+        if not job or job['status'] not in ('queued','running'):return None
+        old=c.execute('SELECT * FROM job_claims WHERE job_id=?',(job_id,)).fetchone()
+        if old and (old['lease_until']>now() or old['next_attempt']>now()):return None
+        token=secrets.token_hex(24);attempts=(old['attempts'] if old else 0)+1
+        c.execute('INSERT OR REPLACE INTO job_claims VALUES(?,?,?,?,?,?)',(job_id,token,lease_time(),attempts,'',None))
+        c.execute("UPDATE jobs SET status='running',updated_at=? WHERE id=?",(now(),job_id))
+        return token
+
+def owns_claim(c,job_id,token):
+    row=c.execute('SELECT token,lease_until FROM job_claims WHERE job_id=?',(job_id,)).fetchone()
+    return row and row['token']==token and row['lease_until']>now()
+
 def run_job(job_id):
+    token=claim_job(job_id)
+    if not token:return
+    done=threading.Event()
+    def heartbeat():
+        while not done.wait(20):
+            with connection(True) as c:
+                c.execute('UPDATE job_claims SET lease_until=? WHERE job_id=? AND token=?',(lease_time(),job_id,token))
+    keeper=threading.Thread(target=heartbeat,daemon=True);keeper.start()
+    try:return run_claimed(job_id,token)
+    except Exception as exc:
+        # Provider failures can recover; authorization/validation failures require attention.
+        with connection(True) as c:
+            if owns_claim(c,job_id,token):
+                attempts=c.execute('SELECT attempts FROM job_claims WHERE job_id=?',(job_id,)).fetchone()[0]
+                retry=isinstance(exc,providers.ProviderError) and attempts<3
+                error='Provider request failed; retry scheduled' if retry else 'Job failed; review permissions and provider configuration before retrying'
+                c.execute('UPDATE jobs SET status=?,error=?,updated_at=? WHERE id=?',('queued' if retry else 'failed',error,now(),job_id))
+                c.execute('UPDATE job_claims SET lease_until=?,next_attempt=?,last_error=? WHERE job_id=? AND token=?',('',lease_time(30*2**(attempts-1)) if retry else '',error,job_id,token))
+        raise
+    finally:
+        done.set();keeper.join(timeout=2)
+        with connection(True) as c:c.execute('UPDATE job_claims SET lease_until=? WHERE job_id=? AND token=?',('',job_id,token))
+
+def run_claimed(job_id,token):
     with connection(True) as c:
         job=unpack(c.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone())
         if not job or job['status'] not in ('queued','running'): return
@@ -18,7 +59,7 @@ def run_job(job_id):
         authorize(c,job['clinic_id'],snapshot.get('actor_id'),'recording.transcribe' if snapshot.get('kind')=='transcription' else 'summary.generate')
         sources=[get(c,id,job['clinic_id']) for id in snapshot.get('source_ids',[])]
     if snapshot.get('kind')=='transcription':
-        return run_transcription(job,snapshot)
+        return run_transcription(job,snapshot,token)
     # Conservative local mode: quote original text, retaining source receipts.
     # It does not infer facts, diagnoses, or treatments.
     sections=[]
@@ -32,6 +73,7 @@ def run_job(job_id):
     if snapshot.get('mode')=='ai':
         sections,omitted=providers.assemble(sources,snapshot['sections'],snapshot.get('retention','medical'));mode='source_verified_excerpts'
     with connection(True) as c:
+        if not owns_claim(c,job_id,token):return
         authorize(c,job['clinic_id'],snapshot.get('actor_id'),'summary.generate')
         consult=get(c,job['consultation_id'],job['clinic_id'])
         result={'summary':sections,'mode':mode,'omitted_sources':omitted,'source_ids':snapshot['source_ids'],'context_preference':snapshot.get('retention','medical')}
@@ -42,16 +84,15 @@ def run_job(job_id):
         update(c,consult,d)
         c.execute('UPDATE jobs SET status=?,result=?,updated_at=? WHERE id=?',('completed',json.dumps(result),now(),job_id))
 def loop():
-    with connection(True) as c: c.execute("UPDATE jobs SET status='queued' WHERE status='running'")
     while not stop.wait(.4):
-        with connection() as c: ids=[r[0] for r in c.execute("SELECT id FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 5")]
+        with connection() as c:
+            ids=[r[0] for r in c.execute("SELECT j.id FROM jobs j LEFT JOIN job_claims q ON j.id=q.job_id WHERE j.status IN ('queued','running') AND (q.job_id IS NULL OR (q.lease_until<=? AND q.next_attempt<=?)) ORDER BY j.created_at LIMIT 5",(now(),now()))]
         for id in ids:
-            try: run_job(id)
-            except Exception as e:
-                with connection(True) as c: c.execute('UPDATE jobs SET status=?,error=?,updated_at=? WHERE id=?',('failed',str(e),now(),id))
+            try:run_job(id)
+            except Exception:pass  # run_job persists the bounded, sanitized failure state.
 
 
-def run_transcription(job,payload):
+def run_transcription(job,payload,token):
     from actions import dispatch,owned,PERMISSIONS,fail
     with connection() as c:
         r=owned(c,payload['recording_id'],job['clinic_id'],'recording')
@@ -61,6 +102,8 @@ def run_transcription(job,payload):
         paths=[row[0] for row in c.execute('SELECT path FROM chunks WHERE recording_id=? ORDER BY chunk_index',(r['id'],))]
     output=providers.transcribe(b''.join(Path(x).read_bytes() for x in paths),r['data'].get('mime','audio/webm'),payload['language'])
     with connection(True) as c:
+        if not owns_claim(c,job['id'],token):return
+        authorize(c,job['clinic_id'],payload['actor_id'],'recording.transcribe')
         member=owned(c,payload['actor_id'],job['clinic_id'],'member')
         if not member['data']['active'] or member['data']['role'] not in PERMISSIONS['source.add']:fail('Requesting member no longer has capture permission',403)
         current=owned(c,r['id'],job['clinic_id'],'recording')

@@ -47,7 +47,27 @@ PERMISSIONS.update(MORE_PERMISSIONS)
 from clinic_workflows import PERMISSIONS as CLINIC_PERMISSIONS
 PERMISSIONS.update(CLINIC_PERMISSIONS)
 
+from advanced_workflows import PERMISSIONS as ADVANCED_PERMISSIONS
+PERMISSIONS.update(ADVANCED_PERMISSIONS)
+
+from test_adapters import PERMISSIONS as ADAPTER_PERMISSIONS
+PERMISSIONS.update(ADAPTER_PERMISSIONS)
+
+from organizations import PERMISSIONS as ORGANIZATION_PERMISSIONS
+PERMISSIONS.update(ORGANIZATION_PERMISSIONS)
+
+from ontology_workflow import PERMISSIONS as ONTOLOGY_PERMISSIONS
+PERMISSIONS.update(ONTOLOGY_PERMISSIONS)
+
+from transfers import PERMISSIONS as TRANSFER_PERMISSIONS
+PERMISSIONS.update(TRANSFER_PERMISSIONS)
+
+from migration_plan import PERMISSIONS as MIGRATION_PERMISSIONS
+PERMISSIONS.update(MIGRATION_PERMISSIONS)
+
 DEPENDENCIES={
+ 'test.lab.receive':('clinical.ingest',),
+ 'clinical.ingest':('source.add',),
  'recording.create':('source.add',),'recording.complete':('recording.create',),
  'recording.rename':('source.add',),'source.speakers':('source.add',),
  'recording.transcribe':('source.add',),'lab.import':('source.add',),
@@ -59,8 +79,10 @@ DEPENDENCIES={
 def allowed_actions(c,clinic,actor):
     member=owned(c,actor,clinic,'member')['data'];practice=owned(c,clinic,clinic,'clinic')['data']
     locked=set(practice.get('locked_features',[]))
+    from organizations import blocked
+    master_locks=blocked(c,clinic,actor)
     def allowed(action):
-        return member.get('active') and member['role'] in PERMISSIONS[action] and (member['role']=='admin' or action not in locked) and all(allowed(dep) for dep in DEPENDENCIES.get(action,()))
+        return action not in master_locks and member.get('active') and member['role'] in PERMISSIONS[action] and (member['role']=='admin' or action not in locked) and all(allowed(dep) for dep in DEPENDENCIES.get(action,()))
     return [a for a in PERMISSIONS if allowed(a)]
 
 def authorize(c,clinic,actor,action):
@@ -76,13 +98,34 @@ def execute(action,p,clinic,actor,key):
         if previous:
             if previous['payload_hash']!=fingerprint: fail('Idempotency key was reused with different input',409)
             return json.loads(previous['result'])
-        result=dispatch(c,action,p,clinic,actor)
+        from db import mutation_actor
+        token=mutation_actor.set(actor)
+        try:result=dispatch(c,action,p,clinic,actor)
+        finally:mutation_actor.reset(token)
         c.execute('INSERT INTO audit VALUES(?,?,?,?,?,?)',(uid(),clinic,actor,action,result.get('id',''),now()))
         c.execute('INSERT INTO mutations VALUES(?,?,?,?,?)',(clinic,actor,key,fingerprint,json.dumps(result)))
         return result
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in MIGRATION_PERMISSIONS:
+        from migration_plan import dispatch as migration
+        return migration(c,a,p,clinic,actor)
+    if a in TRANSFER_PERMISSIONS:
+        from transfers import dispatch as transfer
+        return transfer(c,a,p,clinic,actor)
+    if a in ONTOLOGY_PERMISSIONS:
+        from ontology_workflow import dispatch as ontology
+        return ontology(c,a,p,clinic,actor)
+    if a in ORGANIZATION_PERMISSIONS:
+        from organizations import dispatch as organization
+        return organization(c,a,p,clinic,actor)
+    if a in ADAPTER_PERMISSIONS:
+        from test_adapters import dispatch as adapter
+        return adapter(c,a,p,clinic,actor)
+    if a in ADVANCED_PERMISSIONS:
+        from advanced_workflows import dispatch as advanced
+        return advanced(c,a,p,clinic,actor)
     if a in CLINIC_PERMISSIONS:
         from clinic_workflows import dispatch as workflow
         return workflow(c,a,p,clinic,actor)
@@ -164,17 +207,23 @@ def dispatch(c,a,p,clinic,actor):
         date=require(p,'date'); time=require(p,'time'); duration=integer(p.get('duration',30),'Duration',5)
         try: start=datetime.fromisoformat(date+'T'+time)
         except ValueError: fail('Invalid date or time')
+        from operations_rules import schedule
+        schedule(c,clinic,clinician,start,duration,p.get('room',''))
         for r in all_records(c,clinic,'appointment'):
             d=r['data']
             if d['clinician']!=clinician or d['status'] in ('cancelled','completed'): continue
             other=datetime.fromisoformat(d['date']+'T'+d['time'])
             if start<other+timedelta(minutes=d['duration']) and other<start+timedelta(minutes=duration): fail('This clinician already has an appointment at that time',409)
-        return record(c,'appointment',clinic,{'patient_id':p['patient_id'],'date':date,'time':time,'duration':duration,'reason':require(p,'reason'),'clinician':clinician,'status':'scheduled'})
+        return record(c,'appointment',clinic,{'patient_id':p['patient_id'],'date':date,'time':time,'duration':duration,'reason':require(p,'reason'),'clinician':clinician,'room':p.get('room',''),'status':'scheduled'})
     if a=='appointment.update':
         r=owned(c,p['id'],clinic,'appointment'); version(r,p)
         if p.get('status') not in ('scheduled','arrived','completed','cancelled'): fail('Invalid appointment status')
         if p['status'] in ('scheduled','arrived'):
             d=r['data']; start=datetime.fromisoformat(d['date']+'T'+d['time'])
+            from operations_rules import schedule
+            update(c,r,{**d,'status':'cancelled'})
+            schedule(c,clinic,d['clinician'],start,d['duration'],d.get('room',''))
+            r=get(c,r['id'],clinic)
             for other in all_records(c,clinic,'appointment'):
                 o=other['data']
                 if other['id']==r['id'] or o['clinician']!=d['clinician'] or o['status'] in ('cancelled','completed'): continue
@@ -185,8 +234,9 @@ def dispatch(c,a,p,clinic,actor):
         check_patient(c,p,clinic); items=[]
         for item in p.get('items',[]): items.append({'name':require(item,'name'),'quantity':integer(item.get('quantity',1),'Quantity',1),'price_cents':integer(item.get('price_cents'),'Price')})
         if not items: fail('Add at least one invoice item')
-        total=sum(x['quantity']*x['price_cents'] for x in items)
-        r=record(c,'invoice',clinic,{'patient_id':p['patient_id'],'items':items,'total_cents':total,'paid_cents':0,'status':'issued','number':'INV-'+str(1001+len(all_records(c,clinic,'invoice')))})
+        from operations_rules import totals
+        amounts=totals(items,p);total=amounts['total_cents']
+        r=record(c,'invoice',clinic,{'patient_id':p['patient_id'],'items':items,**amounts,'paid_cents':0,'status':'issued','number':'INV-'+str(1001+len(all_records(c,clinic,'invoice')))})
         event(c,clinic,p['patient_id'],'invoice',r['data']['number'],f'SGD {total/100:.2f} invoiced'); return r
     if a=='payment.record':
         r=owned(c,p['id'],clinic,'invoice'); version(r,p); d=r['data'];
@@ -201,12 +251,17 @@ def dispatch(c,a,p,clinic,actor):
     if a=='inventory.create':
         return record(c,'inventory',clinic,{'name':require(p,'name'),'unit':require(p,'unit'),'stock':integer(p.get('stock',0),'Stock'),'reorder':integer(p.get('reorder',5),'Reorder level'),'price_cents':integer(p.get('price_cents',0),'Price')})
     if a=='inventory.adjust':
-        r=owned(c,p['id'],clinic,'inventory'); version(r,p); d=r['data']; d['stock']=integer(p.get('stock'),'Stock'); reason=require(p,'reason'); record(c,'stock_adjustment',clinic,{'inventory_id':r['id'],'new_stock':d['stock'],'reason':reason,'actor':actor}); return update(c,r,d)
+        r=owned(c,p['id'],clinic,'inventory'); version(r,p)
+        from operations_rules import adjust
+        stock=adjust(c,clinic,actor,r,p,integer(p.get('stock',r['data']['stock']),'Stock'))
+        return update(c,r,{**r['data'],'stock':stock})
     if a=='medication.dispense':
         check_patient(c,p,clinic); stock=owned(c,p['inventory_id'],clinic,'inventory'); version(stock,p)
         q=integer(require(p,'quantity'),'Quantity',1)
         if q>stock['data']['stock']: fail('Insufficient stock',409)
-        d={'patient_id':p['patient_id'],'inventory_id':stock['id'],'name':stock['data']['name'],'quantity':q,'dose':require(p,'dose'),'frequency':require(p,'frequency'),'instructions':require(p,'instructions'),'prescribed_by':actor}
+        from operations_rules import dispense
+        allocations=dispense(c,clinic,stock,q)
+        d={'lots':allocations,'patient_id':p['patient_id'],'inventory_id':stock['id'],'name':stock['data']['name'],'quantity':q,'dose':require(p,'dose'),'frequency':require(p,'frequency'),'instructions':require(p,'instructions'),'prescribed_by':actor}
         r=record(c,'medication',clinic,d); update(c,stock,{**stock['data'],'stock':stock['data']['stock']-q})
         event(c,clinic,p['patient_id'],'medication',d['name'],f'{d["dose"]} · {d["frequency"]}. {d["instructions"]}',approved=True); return r
     if a=='template.save':

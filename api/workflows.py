@@ -75,7 +75,8 @@ def dispatch(c,a,p,clinic,actor):
     if a=='observation.record':
         patient=owned(c,p['patient_id'],clinic,'patient');src=owned(c,require(p,'source_id'),clinic,'source')
         if src['data']['patient_id']!=patient['id']:fail('Source belongs to another patient')
-        term=c.execute('SELECT * FROM ontology WHERE code=?',(require(p,'code'),)).fetchone()
+        from ontology_workflow import lookup
+        term=lookup(c,clinic,require(p,'code'))
         if not term:fail('Choose an observation definition')
         typ=term['value_type'];value=p.get('value')
         if typ=='number':
@@ -116,6 +117,7 @@ def dispatch(c,a,p,clinic,actor):
         r=c.execute('SELECT * FROM jobs WHERE id=? AND clinic_id=?',(p['id'],clinic)).fetchone()
         if not r:fail('Job not found',404)
         if r['status']!='failed':fail('Only failed jobs can be retried. Regenerate conflicting documents from current sources.',409)
+        c.execute('DELETE FROM job_claims WHERE job_id=?',(r['id'],))
         c.execute("UPDATE jobs SET status='queued',error=NULL,updated_at=? WHERE id=?",(now(),r['id']))
         return {'id':r['id'],'status':'queued'}
     if a=='reminder.queue_due':
@@ -146,7 +148,9 @@ def dispatch(c,a,p,clinic,actor):
         if p.get('expiry'):
             try:datetime.fromisoformat(p['expiry'])
             except ValueError:fail('Invalid expiry date')
-        delivery=record(c,'stock_receipt',clinic,{'inventory_id':r['id'],'quantity':q,'batch':require(p,'batch'),'expiry':p.get('expiry',''),'supplier':require(p,'supplier'),'received_by':actor})
+        from operations_rules import receive
+        lot=receive(c,clinic,actor,r,p,q)
+        delivery=record(c,'stock_receipt',clinic,{'lot_id':lot['id'],'purchase_order_id':p.get('purchase_order_id'),'inventory_id':r['id'],'quantity':q,'batch':require(p,'batch'),'expiry':p.get('expiry',''),'supplier':require(p,'supplier'),'received_by':actor})
         update(c,r,{**r['data'],'stock':r['data']['stock']+q});return delivery
     if a=='import.records':
         # Explicit structured import; reject missing references before committing anything.

@@ -18,7 +18,10 @@ def source(s,source_id):
     r=s.get(Source,source_id) if source_id else None
     if not r:return None
     return {'kind':r.kind,'id':r.reference_id,'receipt_id':r.id,**{k:getattr(r,k) for k in ('page','start_ms','end_ms') if getattr(r,k) is not None}}
+def observation_value(o):
+    return o.text_value if o.value_type=='text' else o.boolean_value if o.value_type=='boolean' else o.value
 def flag(o):
+    if o.value_type!='number':return None
     if o.ref_low is not None and o.value<o.ref_low:return 'low'
     if o.ref_high is not None and o.value>o.ref_high:return 'high'
     return None
@@ -31,7 +34,7 @@ def event_view(s,e):
         term=s.get(Concept,o.concept_id);f=flag(o)
         if f:flags.append({'type':'out_of_range','observation_id':o.id})
         if not o.source_id:flags.append({'type':'missing_source','observation_id':o.id})
-        values.append({'id':o.id,'concept':term.code,'name':term.name,'value':o.value,'unit':term.unit,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':f,'source':source(s,o.source_id)})
+        values.append({'id':o.id,'concept':term.code,'name':term.name,'value':observation_value(o),'value_type':o.value_type,'unit':term.unit,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':f,'source':source(s,o.source_id)})
     return {'id':e.id,'event_type':canonical(e.event_type),'occurred_at':utc(e.occurred_at),'summary':e.summary,'actor':e.actor,'source':source(s,e.source_id),'body':e.body,'flags':flags,'observations':values}
 
 def add_source(s,clinic,pid,value,id=None):
@@ -41,10 +44,13 @@ def add_source(s,clinic,pid,value,id=None):
 
 def ingest(s,clinic,p,event_type='lab_result'):
     patient(s,p.patient_id,clinic)
-    payload={'event_type':event_type,**p.model_dump(mode='json')};fingerprint=hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
+    payload={'event_type':event_type,**p.model_dump(mode='json')}
+    for value in payload['observations']:
+        if value.get('value_type')=='number':value.pop('value_type')
+    fingerprint=hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
     # Unique constraint plus ON CONFLICT makes dedupe safe across actors/processes.
     eid=str(uuid.uuid4())
-    result=s.execute(insert(Event).values(id=eid,clinic_id=clinic,patient_id=p.patient_id,event_type=event_type,occurred_at=p.occurred_at,summary=p.summary,actor=p.actor.model_dump(),body=p.body,dedupe_key=p.dedupe_key,payload_hash=fingerprint).on_conflict_do_nothing(index_elements=['clinic_id','dedupe_key']).returning(Event.id)).scalar_one_or_none()
+    result=s.execute(insert(Event).values(id=eid,clinic_id=clinic,patient_id=p.patient_id,event_type=event_type,occurred_at=p.occurred_at,summary=p.summary,actor=p.actor.model_dump(),body={k:v for k,v in p.body.items() if k not in ('owner_approved','approved_by','approved_at')},dedupe_key=p.dedupe_key,payload_hash=fingerprint).on_conflict_do_nothing(index_elements=['clinic_id','dedupe_key']).returning(Event.id)).scalar_one_or_none()
     if result is None:
         e=s.scalar(select(Event).where(Event.clinic_id==clinic,Event.dedupe_key==p.dedupe_key))
         if e.payload_hash!=fingerprint:fail('Dedupe key was reused with changed content',409)
@@ -52,11 +58,11 @@ def ingest(s,clinic,p,event_type='lab_result'):
     e=s.get(Event,eid);e.source_id=add_source(s,clinic,p.patient_id,p.source)
     for m in p.observations:
         cid=str(uuid.uuid5(uuid.NAMESPACE_URL,'broby:concept:'+m.concept+':'+m.unit))
-        s.execute(insert(Concept).values(id=cid,code=m.concept,name=m.name,unit=m.unit).on_conflict_do_nothing(index_elements=['code','unit']))
+        s.execute(insert(Concept).values(id=cid,code=m.concept,name=m.name,unit=m.unit,value_type=m.value_type).on_conflict_do_nothing(index_elements=['code','unit']))
         existing=s.get(Concept,cid)
-        if existing.name!=m.name:fail('Concept name conflicts with its existing definition',409)
+        if existing.name!=m.name or existing.value_type!=m.value_type:fail('Concept name conflicts with its existing definition',409)
         sid=add_source(s,clinic,p.patient_id,m.source) if m.source else e.source_id
-        s.add(Observation(id=str(uuid.uuid4()),event_id=eid,concept_id=cid,observed_at=p.occurred_at,value=m.value,ref_low=m.ref_low,ref_high=m.ref_high,source_id=sid))
+        s.add(Observation(id=str(uuid.uuid4()),event_id=eid,concept_id=cid,observed_at=p.occurred_at,value=m.value if m.value_type=='number' else None,value_type=m.value_type,text_value=m.value if m.value_type=='text' else None,boolean_value=m.value if m.value_type=='boolean' else None,ref_low=m.ref_low,ref_high=m.ref_high,source_id=sid))
     s.flush();return {'id':eid,'event':event_view(s,e),'duplicate':False}
 
 def cursor_encode(scope,values):return base64.urlsafe_b64encode(json.dumps({'scope':scope,'values':values}).encode()).decode()
@@ -99,7 +105,7 @@ def timeline(s,clinic,pid,limit,cursor,category='',q='',start=None,end=None):
 def concepts(s,clinic,pid):
     patient(s,pid,clinic)
     terms=s.scalars(select(Concept).join(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid).distinct().order_by(Concept.name,Concept.unit)).all()
-    return [{'id':r.id,'name':r.name,'code':r.code,'unit':r.unit} for r in terms]
+    return [{'id':r.id,'name':r.name,'code':r.code,'unit':r.unit,'value_type':r.value_type} for r in terms]
 def series(s,clinic,pid,code):
     patient(s,pid,clinic)
     terms=s.scalars(select(Concept).where(or_(Concept.id==code,Concept.code==code))).all()
@@ -107,4 +113,4 @@ def series(s,clinic,pid,code):
     if len(terms)>1:fail('This concept has multiple units; select its exact concept ID')
     term=terms[0]
     rows=s.scalars(select(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid,Observation.concept_id==term.id).order_by(Observation.observed_at,Observation.id)).all()
-    return {'concept':{'id':term.id,'name':term.name,'unit':term.unit},'series':[{'observed_at':utc(o.observed_at),'value':o.value,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':flag(o),'event_id':o.event_id,'source':source(s,o.source_id)} for o in rows]}
+    return {'concept':{'id':term.id,'name':term.name,'unit':term.unit,'value_type':term.value_type},'series':[{'observed_at':utc(o.observed_at),'value':observation_value(o),'value_type':o.value_type,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':flag(o),'event_id':o.event_id,'source':source(s,o.source_id)} for o in rows]}

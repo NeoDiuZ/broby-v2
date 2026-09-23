@@ -9,6 +9,7 @@ def restore(archive,destination):
         if sum(x.file_size for x in z.infolist())>500*1024*1024:raise ValueError('Backup exceeds 500 MB')
         m=json.loads(z.read('manifest.json'))
         if m.get('version')!=1:raise ValueError('Unsupported backup version')
+        if m.get('native_event_count',0):raise ValueError('This archive contains native PostgreSQL facts. Use a coordinated SQLite and PostgreSQL restore; the legacy-only restore cannot preserve them.')
         files={}
         for f in m['files']:
             path=Path(f['path'])

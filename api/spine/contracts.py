@@ -21,13 +21,22 @@ class Actor(Strict):
 class Measurement(Strict):
     concept:str=Field(min_length=1,max_length=100,pattern=r'^[a-z][a-z0-9_]*$')
     name:str=Field(min_length=1,max_length=200)
-    value:float=Field(allow_inf_nan=False)
-    unit:str=Field(min_length=1,max_length=80)
+    value:float|str|bool
+    value_type:Literal['number','text','boolean']='number'
+    unit:str=Field(default='',max_length=80)
     ref_low:float|None=Field(default=None,allow_inf_nan=False)
     ref_high:float|None=Field(default=None,allow_inf_nan=False)
     source:SourceInput|None=None
     @model_validator(mode='after')
     def interval(self):
+        import math
+        if self.value_type=='number':
+            if type(self.value) not in (int,float) or not math.isfinite(self.value):raise ValueError('A finite numeric value is required')
+            if not self.unit:raise ValueError('Numeric measurements require a unit')
+        elif self.value_type=='text':
+            if type(self.value) is not str or not self.value.strip() or len(self.value)>10000:raise ValueError('A nonempty text value of at most 10000 characters is required')
+        elif type(self.value) is not bool:raise ValueError('A boolean value is required')
+        if self.value_type!='number' and (self.ref_low is not None or self.ref_high is not None):raise ValueError('Only numeric observations can have reference ranges')
         if self.ref_low is not None and self.ref_high is not None and self.ref_low>self.ref_high:raise ValueError('Reference minimum exceeds maximum')
         return self
 class LabInput(Strict):

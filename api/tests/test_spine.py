@@ -120,7 +120,7 @@ def test_source_positions_and_permission_locks(client):
 
 def test_alembic_revision_and_jsonb_tables(client):
     with database.engine().connect() as c:
-        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one()=='0002'
+        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one()=='0003'
         assert c.execute(text("SELECT data_type FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='events' AND column_name='body'")).scalar_one()=='jsonb'
 
 
@@ -163,3 +163,69 @@ def test_upgrade_from_existing_0001_preserves_patient_events(client):
     current=client.get('/api/v2/patients/milo/events/'+eid).json()
     assert current['observations'][0]['value']==5.8
     assert client.get('/api/v2/patients/milo').json()['owner']['id']=='owner-milo'
+
+@pytest.mark.parametrize('value,value_type,code', [('No growth','text','culture_finding'),(False,'boolean','parasites_seen')])
+def test_typed_native_facts_reach_assistant_saved_view_and_approved_owner(client,monkeypatch,value,value_type,code):
+    import providers
+    monkeypatch.setattr(providers,'available',lambda:{'ai':False})
+    p=result(dedupe_key='typed:'+code,observations=[{'concept':code,'name':code,'value':value,'value_type':value_type,'unit':''}])
+    response=ingest(client,p);assert response.status_code==200,response.text
+    e=response.json()['event'];assert e['observations'][0]['value']==value and e['observations'][0]['value_type']==value_type
+    assert any(r['kind']=='observation' and r['data'].get('native_spine') and r['data']['value']==value for r in client.get('/api/bootstrap').json()['records'])
+    assistant=client.post('/api/assistant',json={'message':'Show observations','patient_id':'milo'}).json()
+    assert any(r['data']['value']==value and r['data'].get('native_spine') for r in assistant['sources'])
+    view=actions.execute('dashboard.save',{'name':'Typed facts','query':{'kind':'observation','patient_id':'milo'}},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    assert any(r['data']['value']==value for r in client.get('/api/dashboards/'+view['id']).json()['result']['records'])
+    grant=actions.execute('share.create',{'patient_id':'milo'},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    assert not any(r['id']==e['id'] for r in client.get('/api/owner/'+grant['id']).json()['events'])
+    actions.execute('clinical.approve',{'id':e['id'],'approved':True},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    owner=client.get('/api/owner/'+grant['id']).json()
+    event=next(r for r in owner['events'] if r['id']==e['id'])
+    assert event['data']['observations'][0]['value']==value
+    assert 'source' not in event['data']['observations'][0] and 'receipt' not in event['data']
+    assert client.get('/api/dashboards/'+view['id'],headers={'x-clinic-id':'clinic-river'}).status_code==404
+
+
+def test_typed_values_reject_ranges_coercion_and_concept_type_changes(client):
+    for value,typ in [('5.8','number'),(1,'boolean'),(True,'number'),('', 'text')]:
+        p=result(observations=[{'concept':'typed','name':'Typed','value':value,'value_type':typ,'unit':'unit'}])
+        assert ingest(client,p).status_code==422
+    p=result(observations=[{'concept':'text_entry','name':'Text','value':'present','value_type':'text','unit':'','ref_low':0}])
+    assert ingest(client,p).status_code==422
+    assert ingest(client).status_code==200
+    p=result(dedupe_key='changed-type',observations=[{'concept':'potassium','name':'Potassium','value':'positive','value_type':'text','unit':'mmol/L'}])
+    assert ingest(client,p).status_code==409
+
+
+def test_ingest_cannot_self_approve_and_shared_action_is_audited(client):
+    p=result(event_type='lab_result',body={'owner_approved':True,'approved_by':'forged'})
+    r=client.post('/api/actions',json={'action':'clinical.ingest','payload':p,'key':'shared-ingest-key'});assert r.status_code==200,r.text
+    assert not r.json()['event']['body'].get('owner_approved')
+    with db.connection() as c:assert c.execute("SELECT count(*) FROM audit WHERE action='clinical.ingest'").fetchone()[0]==1
+
+
+def test_legacy_text_and_boolean_observations_are_projected(client):
+    source=actions.execute('source.add',{'patient_id':'milo','text':'Synthetic no growth'},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    actions.execute('observation.record',{'patient_id':'milo','source_id':source['id'],'code':'cytology_finding','value':'Synthetic no growth'},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    events=client.get('/api/v2/patients/milo/timeline').json()['items']
+    assert any(o['value']=='Synthetic no growth' and o['value_type']=='text' for e in events for o in e['observations'])
+
+
+def test_clinic_archive_preserves_native_facts_and_blocks_partial_restore(client,tmp_path):
+    import io,json,zipfile
+    from restore_backup import restore
+    eid=ingest(client).json()['id']
+    admin={'x-actor-id':'clinic-east-admin'}
+    assert any(r['id']==eid for r in client.get('/api/export',headers=admin).json()['records'])
+    r=client.get('/api/backup',headers=admin);assert r.status_code==200
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        manifest=json.loads(z.read('manifest.json'));spine=json.loads(z.read('spine.json'))
+    assert manifest['native_event_count']==1
+    assert any(e['id']==eid and e['dedupe_key']=='lab:report-001' for e in spine['tables']['events'])
+    assert all(e['clinic_id']=='clinic-east' for e in spine['tables']['events'])
+    assert any(o['event_id']==eid and o['value']==5.8 for o in spine['tables']['observations'])
+    other=client.get('/api/backup',headers={'x-clinic-id':'clinic-river','x-actor-id':'clinic-river-admin'})
+    with zipfile.ZipFile(io.BytesIO(other.content)) as z:
+        assert not json.loads(z.read('spine.json'))['tables']['events']
+    archive=tmp_path/'native.zip';archive.write_bytes(r.content)
+    with pytest.raises(ValueError,match='coordinated'):restore(archive,tmp_path/'restore')

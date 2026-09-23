@@ -40,7 +40,8 @@ ACTION_FIELDS={
 }
 READ_KINDS={'patient','event','observation','medication','invoice','payment','inventory','appointment','reminder','intake','outbox','consultation'}
 def answer(c,clinic,actor,message,patient_id=None,history=None):
-    q=message.lower();rs=all_records(c,clinic);patients=[r for r in rs if r['kind']=='patient']
+    from spine.reader import native_records
+    q=message.lower();rs=all_records(c,clinic)+native_records(clinic,patient_id);patients=[r for r in rs if r['kind']=='patient']
     patient=owned(c,patient_id,clinic,'patient') if patient_id else None
     # Match token boundaries; names are never identity keys.
     matches=[p for p in patients if re.search(r'(?<!\w)'+re.escape(p['data']['name'].lower())+r'(?!\w)',q)]
@@ -98,4 +99,4 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
         label=r['data'].get('category') or r['data'].get('status') or r['data'].get('species') or kind;groups[label]=groups.get(label,0)+1
     navigation={'invoice':'Billing','inventory':'Inventory','appointment':'Appointments','patient':'Patients','intake':'Handover','reminder':'Messages','outbox':'Messages'}
     return {'text':(f"{len(selected)} matching records"+(f" · {start or 'earliest'} to {end or 'latest'}" if start or end else '')+'.\n\n'+'\n\n'.join(line(r) for r in selected[:12])) if selected else 'No matching facts are recorded for this scope and date range.',
-       'sources':selected[:30],'patient_id':patient['id'] if patient else None,'navigate':navigation.get(kind),'dashboard':{'clinic_id':clinic,'title':f'{kind.title()} records','groups':[{'label':k,'count':v} for k,v in groups.items()],'count':len(selected),'start':start,'end':end,'source_ids':[r['id'] for r in selected]}}
+       'sources':selected[:30],'patient_id':patient['id'] if patient else None,'navigate':navigation.get(kind),'dashboard':{'clinic_id':clinic,'title':f'{kind.title()} records','groups':[{'label':k,'count':v} for k,v in groups.items()],'count':len(selected),'start':start,'end':end,'source_ids':[r['id'] for r in selected],'query':{'kind':kind,'patient_id':patient['id'] if patient else None,'start':start,'end':end,'category':read.get('category','')}}}

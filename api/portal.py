@@ -39,9 +39,13 @@ def grant(c,token,allow_expired=False):
     return g
 
 def view(c,g):
-    patient=owned(c,g['patient_id'],g['clinic_id'],'patient');rs=all_records(c,g['clinic_id'])
+    from spine.reader import native_records
+    patient=owned(c,g['patient_id'],g['clinic_id'],'patient');rs=all_records(c,g['clinic_id'])+native_records(g['clinic_id'],g['patient_id'])
     selected=[r for r in rs if r['data'].get('patient_id')==patient['id']]
-    def safe(r):return {**r,'data':{k:v for k,v in r['data'].items() if k not in ('path','source_ids','source_id','owner_id','additional_owner_ids','owner_access','fingerprint','edit_key','edit_fingerprint')}}
+    def safe(r):
+        r={**r,'data':dict(r['data'])}
+        if 'observations' in r['data']:r['data']['observations']=[{k:v for k,v in o.items() if k!='source'} for o in r['data']['observations']]
+        return {**r,'data':{k:v for k,v in r['data'].items() if k not in ('path','source_ids','source_id','owner_id','additional_owner_ids','owner_access','fingerprint','edit_key','edit_fingerprint','receipt')}}
     selected.sort(key=lambda r:r['data'].get('occurred_at',r['created_at']),reverse=True)
     return {'patient':safe(patient),'events':[safe(r) for r in selected if r['kind']=='event' and r['data'].get('approved')],
             'medications':[safe(r) for r in selected if r['kind']=='medication'],'reminders':sorted([safe(r) for r in selected if r['kind']=='reminder'],key=lambda r:r['data']['due']),
@@ -93,6 +97,9 @@ def intake(token:str,p:Intake):
             return {'id':existing['id'],'status':'received'}
         text='\n\n'.join(f'{label}: {value}' for label,value in [('Reason for visit',p.reason),('Appetite / drinking',p.appetite),('Current medication reported by owner',p.medications),('Questions',p.questions)] if value)
         r=record(c,'intake',g['clinic_id'],{'patient_id':g['patient_id'],'text':text,'status':'new','urgent':p.urgent,'fingerprint':fingerprint,'origin':'owner_portal','fields':p.model_dump(exclude={'key'}),'owner_access':hashlib.sha256(g['token'].encode()).hexdigest()},key)
+        if p.urgent:
+            from test_adapters import escalate
+            escalate(c,g['clinic_id'],g['patient_id'],r['id'])
         event(c,g['clinic_id'],g['patient_id'],'owner','Owner submitted pre-consult information',text,[r['id']])
         return {'id':r['id'],'status':'received'}
 @router.post('/api/owner/{token}/claim')
