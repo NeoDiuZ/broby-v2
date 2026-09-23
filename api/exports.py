@@ -13,7 +13,7 @@ from fastapi import APIRouter,Request,Response
 from db import connection,get
 from actions import owned,fail
 router=APIRouter()
-font=Path(__file__).parent.parent/'web/public/fonts/PlusJakartaSans-Variable.ttf'
+font=Path(__file__).parent/'assets/PlusJakartaSans-Variable.ttf'
 pdfmetrics.registerFont(TTFont('Broby',str(font)))
 pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
 styles=getSampleStyleSheet()

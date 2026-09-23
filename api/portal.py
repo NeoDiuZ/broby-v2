@@ -1,5 +1,6 @@
 """Owner capability access, intake, approved audio and onward sharing."""
 import hashlib,secrets,json
+import runtime
 from datetime import datetime,timezone,timedelta
 from fastapi import APIRouter,Request,Response
 from fastapi.responses import FileResponse
@@ -77,7 +78,7 @@ def claim(token:str,response:Response):
     with connection(True) as c:
         g=grant(c,token);secret=secrets.token_urlsafe(32);expiry=(datetime.now(timezone.utc)+timedelta(days=90)).isoformat()
         c.execute('INSERT INTO owner_claims VALUES(?,?,?)',(hashlib.sha256(secret.encode()).hexdigest(),token,expiry))
-    response.set_cookie('broby_owner',secret,httponly=True,samesite='strict',max_age=90*86400,secure=False,path='/api/owner-account')
+    response.set_cookie('broby_owner',secret,httponly=True,samesite='strict',max_age=90*86400,secure=runtime.hosted(),path='/api/owner-account')
     return {'saved':True,'expires_at':expiry}
 @router.get('/api/owner-account')
 def account(request:Request):

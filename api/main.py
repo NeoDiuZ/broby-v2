@@ -1,4 +1,4 @@
-"""Local-only preview API. Synthetic data; no production connection or credentials."""
+"""Broby API with isolated local and authenticated hosted deployment modes."""
 import csv, hashlib, io, json, os, re, threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -15,16 +15,21 @@ except ImportError:
 
 from db import init, connection, all_records, get, record, update, event, uid, now, unpack, DATA
 from actions import execute, owned, fail, PERMISSIONS
-import jobs,auth,providers
+import jobs,auth,providers,runtime
 
 @asynccontextmanager
 async def lifespan(app):
-    init(); auth.setup_tables();
+    runtime.validate()
+    init(seed=os.getenv('BROBY_SEED_DEMO', '1') == '1'); auth.setup_tables();
+    runtime.provision_admin()
     from spine.projection import setup_queue
     setup_queue(); jobs.stop.clear(); thread=threading.Thread(target=jobs.loop,daemon=True); thread.start()
     yield
     jobs.stop.set(); thread.join(timeout=3)
-app=FastAPI(title='Broby local workspace',lifespan=lifespan)
+app=FastAPI(title='Broby V2',lifespan=lifespan,
+            docs_url=None if runtime.hosted() else '/docs',
+            redoc_url=None if runtime.hosted() else '/redoc',
+            openapi_url=None if runtime.hosted() else '/openapi.json')
 
 def identity(request):
     if auth.enabled(): return auth.resolve(request)
@@ -35,17 +40,30 @@ def identity(request):
         if not member['data'].get('active'): fail('Member is inactive',403)
     return clinic,actor
 @app.middleware('http')
-async def local_boundary(request,call_next):
-    # Local preview is not an internet-facing authentication deployment.
+async def browser_boundary(request,call_next):
     origin=request.headers.get('origin','')
-    if origin and origin not in ('http://127.0.0.1:3100','http://localhost:3100','http://127.0.0.1:8100') and not origin.startswith('chrome-extension://'):
+    if origin and origin not in runtime.allowed_origins():
         return Response('Origin not allowed',status_code=403)
+    if request.method not in ('GET','HEAD','OPTIONS') and request.headers.get('sec-fetch-site') == 'cross-site':
+        return Response('Cross-site request not allowed',status_code=403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['Cache-Control']='no-store'
     return response
 @app.get('/api/health')
-def health(): return {'status':'ok','mode':'local-demo'}
+def health(): return {'status':'ok','mode':'password' if auth.enabled() else 'local-demo'}
+@app.get('/api/ready')
+def ready():
+    try:
+        with connection() as c: c.execute('SELECT COUNT(*) FROM records').fetchone()
+        from sqlalchemy import text
+        from spine.database import engine
+        with engine().connect() as c: c.execute(text('SELECT version_num FROM alembic_version')).one()
+        probe=DATA/'.readiness'
+        probe.write_text('ok'); probe.unlink(missing_ok=True)
+    except Exception:
+        return Response('Storage unavailable',status_code=503)
+    return {'status':'ready','stores':['postgresql','sqlite','files']}
 @app.get('/api/bootstrap')
 def bootstrap(request:Request):
     clinic,actor=identity(request)

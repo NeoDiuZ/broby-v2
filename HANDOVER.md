@@ -4,7 +4,7 @@
 
 This repository contains the complete v2 source workspace, including the active combined frontend, Python API, schema migrations, tests, scripts, and preserved website reference. Dependencies, generated builds, actual local databases/uploads, credentials and the separately extracted v1 checkout are intentionally excluded. Recreate synthetic data using the seed scripts; this is not a backup of runtime data.
 
-**Do not modify or redeploy v1.** The customer's existing Railway Broby project, production domains, PostgreSQL, Redis, volumes and GitHub deployment source are outside this handover. Create a separate Railway project and separate PostgreSQL service for v2. Do not copy production credentials, connect to its database, or switch DNS. Supabase has been dropped from the plan; do not configure Supabase dependencies or delete its existing project as part of this handover.
+**Do not modify or redeploy v1.** The customer's existing Railway Broby project, production domains, PostgreSQL, Redis, volumes and GitHub deployment source are outside this handover. Create a separate Railway project and separate PostgreSQL service for v2. Do not connect to its database or switch DNS. For the September 23 setup, the user explicitly authorized copying the existing Anthropic and Deepgram provider keys to the isolated V2 backend; no V1 database, Redis, session-signing, or storage credentials were reused. Supabase has been dropped from the plan; do not configure Supabase dependencies or delete its existing project as part of this handover.
 
 ## Read in this order
 
@@ -17,6 +17,10 @@ This repository contains the complete v2 source workspace, including the active 
 
 Specification: https://docs.google.com/document/d/1Oca1mRqo32iZ7OjH_nz24OjChAuxAUo369uWJmq1kR0/edit
 The document describes both a broad 58-item product and a narrower FIRST BUILD. The patient foundation is substantially implemented; the complete product is not finished. Extra PMS screens were preserved at the owner's request despite the first-build scope excluding them. Referenced mockups at ~/broby-v2-mockups were unavailable. Native mobile and the extension are deferred; radiology/differential/general-knowledge agents are excluded.
+
+## Hosted setup update — 23 September 2026
+
+The Railway setup adds a working isolated deployment, password access, persistent storage, Docker builds, PostgreSQL CI, and live synthetic workflow verification. The release branch is `main`; both application services deploy from it. See [DEPLOYMENT.md](docs/DEPLOYMENT.md). The unfinished product scope below remains unfinished; hosting does not complete it.
 
 ## Implemented
 

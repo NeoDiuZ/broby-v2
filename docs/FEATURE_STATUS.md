@@ -1,5 +1,7 @@
 # Full-product status — 23 September 2026
 
+**Hosted setup:** The implemented workflows now run in the isolated, password-protected Railway **Broby New** project. See [DEPLOYMENT.md](DEPLOYMENT.md) for configuration and live verification. The status below describes the original product scope; hosting does not complete the remaining items.
+
 **Update:** The exact first-build implementation and acceptance results are now tracked in [FIRST_BUILD.md](FIRST_BUILD.md). The PostgreSQL spine, v2 contracts, paged patient screens, missing-source flags and reference-band charts are implemented. The older whole-product workflows below are still in transition; native v2 events are not yet consumed by every older module.
 
 Scope: preserve the v1 website/interface direction and core web workflows, add the v2 patient-record/PMS/owner workflows, and remove autonomous radiology, differential diagnosis and general-knowledge clinical agents. Native mobile and the extension are deferred by the user. This is a substantial local implementation, not a finished production replacement.
@@ -29,11 +31,11 @@ Scope: preserve the v1 website/interface direction and core web workflows, add t
 
 ## Validation performed
 
-- 51 backend tests, including 12 PostgreSQL acceptance tests plus the earlier coverage: concurrency/idempotency, patient/clinic boundaries, role/locks, source receipts, transactional stock/payments/refunds/imports, calendar collisions/series, record history, owner intake/grants/saved media, AI excerpt rejection and provider HTTP contracts, backup/restore and PDF responses.
+- 58 backend tests, including 12 PostgreSQL acceptance tests, 7 hosted security/readiness tests, plus the earlier coverage: concurrency/idempotency, patient/clinic boundaries, role/locks, source receipts, transactional stock/payments/refunds/imports, calendar collisions/series, record history, owner intake/grants/saved media, AI excerpt rejection and provider HTTP contracts, backup/restore and PDF responses.
 - TypeScript and both Next.js production builds pass.
 - Browser: all earlier navigation/document workflows; new calendar booking; owner pre-visit submission → Handover → accepted patient receipt; laboratory CSV → two stored observations and source; visual calendar check.
 - Consultation and invoice PDFs rendered and visually inspected.
-- Live microphone, external providers and real multi-device capture have not been exercised. Provider tests use mock HTTP transports; no production data/messages/payments were sent.
+- Live Anthropic excerpt selection and Deepgram transcription passed against synthetic text/audio on Railway. Live microphone and real multi-device capture have not been exercised. No customer data/messages/payments were sent.
 
 ## Remaining web work in priority order
 
