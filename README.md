@@ -1,6 +1,6 @@
 # Broby v2 — development handover
 
-The patient-record foundation now uses **FastAPI, SQLAlchemy 2.0, Alembic and PostgreSQL**, with Next.js/React/TypeScript and Tailwind on the frontend. The original production checkout is untouched. This remains a local synthetic-data preview, not a production replacement.
+The patient-record foundation now uses **FastAPI, SQLAlchemy 2.0, Alembic and PostgreSQL**, with Next.js/React/TypeScript and Tailwind on the frontend. The original production checkout is untouched. An isolated, authenticated synthetic-data deployment is now running in Railway **Broby New**. It is not a replacement for V1.
 
 Handover review: [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1). The complete source is on `codex/v2-handover` until that PR is merged; `main` initially contains only the repository scaffold. Clone with `git clone --branch codex/v2-handover https://github.com/NeoDiuZ/broby-v2.git`.
 
@@ -12,7 +12,7 @@ Handover review: [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1). The comple
 
 Website and app now share port **3100**. `/` serves the preserved website, `/app` the clinic workspace, `/owner` the owner portal, and `/api/*` proxies the internal API on 8100. Port 3101 is no longer needed. `web/` is the active combined frontend; `website/` is retained as the original reference.
 
-Start with [HANDOVER.md](HANDOVER.md), then [Railway deployment plan](docs/DEPLOYMENT.md) and [database migration plan](docs/DATABASE_HANDOVER.md). The target is a **new, isolated Railway project with Railway PostgreSQL**. Supabase and Sites are no longer deployment targets. No cloud deployment has been performed.
+Start with [HANDOVER.md](HANDOVER.md), then [Railway deployment plan](docs/DEPLOYMENT.md) and [database migration plan](docs/DATABASE_HANDOVER.md). The target is a **new, isolated Railway project with Railway PostgreSQL**. Supabase and Sites are no longer deployment targets. The deployed branch is `codex/railway-setup`. See [backend setup and verification](docs/DEPLOYMENT.md) for the live URL, service configuration, test evidence, and remaining release boundaries.
 
 ## Run and test
 
@@ -33,7 +33,7 @@ The local PostgreSQL runtime is installed on this Mac. A fresh machine needs Pos
 
 Lab results now enter an independent patient-scoped event, with one observation per measurement and a receipt on every supplied source. Clinic-wide dedupe prevents duplicate events across senders/retries. Missing sources are visibly flagged. Only laboratory-supplied ranges drive high/low flags; no AI judges results. Cursor-based APIs feed the patient directory, day-grouped timeline and reference-band chart. Chart points open their originating event and positioned source.
 
-The [API contract](docs/V2_CONTRACT.md) is explicit and the first schema is a frozen Alembic migration. **51 tests pass**, including real PostgreSQL acceptance tests for all five required first-build behaviours. The unified frontend production build passes. The browser flow and PostgreSQL backup restoration were checked.
+The [API contract](docs/V2_CONTRACT.md) is explicit and the first schema is a frozen Alembic migration. **58 tests pass**, including real PostgreSQL acceptance tests for all five required first-build behaviours. The unified frontend production build passes. The browser flow and PostgreSQL backup restoration were checked.
 
 ## Important transition boundary
 

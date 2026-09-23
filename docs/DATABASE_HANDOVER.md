@@ -1,5 +1,7 @@
 # Database handover — Railway PostgreSQL target
 
+**23 September 2026 deployment update:** An isolated PostgreSQL service and persistent backend volume now exist in Railway **Broby New**. Synthetic lab ingestion, cross-clinic isolation and data persistence after redeployment passed live. See [DEPLOYMENT.md](DEPLOYMENT.md) for the current configuration, backups and remaining release work.
+
 ## Current state: TWO stores, not one
 
 | Store | Location/config | Owns |
@@ -14,7 +16,7 @@ The SQLite change sequence/triggers in `spine/projection.py` project legacy pati
 
 ## Moving the existing spine to a NEW Railway database
 
-1. Provision a PostgreSQL service in the new v2 Railway project, never the v1 service. Check the provider version against migrations/tests; local version is 18.6, but portability has not yet been validated on Railway.
+1. Provision a PostgreSQL service in the new v2 Railway project, never the v1 service. PostgreSQL 18 is now validated on Railway; the local version is 18.6. Check future version changes against migrations/tests.
 2. Store the database URL only in Railway backend environment variables. SQLAlchemy uses psycopg 3: use the `postgresql+psycopg://` driver scheme, preserving credentials/host/options. Do not expose it via NEXT_PUBLIC variables or commit it. Use the provider's internal networking where appropriate and validate TLS requirements for any external connection.
 3. From the API directory run `python -m spine.migrate` once as a controlled migration step, before serving traffic. Do not run the Mac-specific local PostgreSQL installer/start script in Railway.
 4. For staging only, seed synthetic history with `python -m spine.seed`. Confirm the accompanying SQLite synthetic seed/projection is initialized; consult seed.py. Native v2 reads still depend on the legacy bridge at this stage.
@@ -32,11 +34,11 @@ Changing BROBY_SPINE_URL moves ONLY the PostgreSQL portion. It does not migrate 
 - Move all writers AND readers to PostgreSQL, including legacy assistant, PDFs, reports and approved owner views. Remove the projection triggers/checkpoints only when no reader needs the bridge; leave a documented rollback route.
 - Separate jobs into a durable worker with claims, retries and idempotency. `main.py` currently starts an in-process thread; scaling API instances requires redesign, not simply increasing replicas.
 
-For a temporary single-instance staging build, SQLite/files could live on an isolated persistent Railway volume. This is a transitional option, not the desired all-PostgreSQL completion. No such volume or cloud service has been created.
+The current single-instance staging build stores SQLite/files on an isolated persistent Railway volume at `/data`. This is a transitional option, not the desired all-PostgreSQL completion.
 
 ## Files, identity and backups
 
-PostgreSQL is not the file store. Choose private object storage or a deliberately managed Railway volume for recordings/uploads; implement authorized access and retention. Supabase Auth/Storage are not part of the new plan. Existing demo headers and optional local password sessions are not production-ready identity; complete authentication and verified clinic authorization separately.
+PostgreSQL is not the file store. Recordings/uploads currently use the private backend volume with authorized access. Retention operations remain unfinished. Supabase Auth/Storage are not part of the new plan. Hosted mode requires secure password sessions and verified clinic membership; demo actor headers are rejected. Invitations, password reset and MFA remain unfinished.
 
 The UI ZIP is a LEGACY PMS backup: it does NOT contain PostgreSQL. `scripts/backup-local.py` coordinates a local PostgreSQL dump plus SQLite/files with the API stopped. It is not a scheduled Railway backup system. A production plan must cover database, files, consistent restore points, retention and restore drills; browser-only unsent drafts are not in server backups.
 
