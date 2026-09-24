@@ -1,7 +1,8 @@
-"""Local SQLite store. Every mutation is transactional, versioned and clinic-scoped."""
-import json, os, sqlite3, uuid
+"""Transactional clinic store with explicit SQLite and PostgreSQL backends."""
+import json, os, sqlite3, uuid, re
 from contextvars import ContextVar
 mutation_actor=ContextVar('mutation_actor',default=None)
+store_override=ContextVar('store_override',default=None)
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
@@ -20,6 +21,34 @@ def unpack(row):
 class TransactionConnection(sqlite3.Connection):
     """Track newly created binary files until their owning transaction commits."""
     rollback_files: list
+    dialect='sqlite'
+
+def store():
+    value=store_override.get() or os.getenv('BROBY_PMS_STORE','sqlite')
+    if value not in ('sqlite','postgres'):raise ValueError('Unknown BROBY_PMS_STORE')
+    return value
+
+def identifier(value):
+    if not re.fullmatch(r'[a-z][a-z0-9_]*',value):raise ValueError('Invalid database identifier')
+    return value
+
+def upsert(con,table,data,keys,ignore=False):
+    table=identifier(table);columns=[identifier(k) for k in data];keys=[identifier(k) for k in keys]
+    sql='INSERT INTO '+table+'('+','.join(columns)+') VALUES('+','.join('?' for _ in columns)+')'
+    if ignore:sql+=' ON CONFLICT DO NOTHING'
+    else:sql+=' ON CONFLICT('+','.join(keys)+') DO UPDATE SET '+','.join(k+'=excluded.'+k for k in columns if k not in keys)
+    return con.execute(sql,tuple(data.values()))
+
+def columns(con,table):
+    table=identifier(table)
+    if con.dialect=='postgres':
+        return [r[0] for r in con.execute('SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=? ORDER BY ordinal_position',(table,))]
+    return [r[1] for r in con.execute('PRAGMA table_info('+table+')')]
+
+def json_text(con,column,*path):
+    column=identifier(column);path=[identifier(p) for p in path]
+    if con.dialect=='postgres':return column+"::jsonb #>> '{"+','.join(path)+"}'"
+    return "json_extract("+column+",'$."+'.'.join(path)+"')"
 
 def transaction_file(con, path, content):
     if not con.in_transaction:
@@ -33,14 +62,23 @@ def transaction_file(con, path, content):
         os.fsync(output.fileno())
 
 @contextmanager
-def connection(write=False):
-    con = sqlite3.connect(DB, timeout=20, factory=TransactionConnection)
-    con.rollback_files = []
-    DB.chmod(0o600)
-    con.row_factory = sqlite3.Row
-    con.execute('PRAGMA foreign_keys=ON')
+def connection(write=False,*,snapshot=False):
+    postgres=store()=='postgres'
+    if postgres:
+        from pms_postgres import Connection
+        con=Connection()
+    else:
+        if DB.with_suffix('.cutover.json').exists():
+            raise RuntimeError('This PMS database has entered PostgreSQL cutover; SQLite fallback is disabled')
+        con = sqlite3.connect(DB, timeout=20, factory=TransactionConnection)
+        con.rollback_files = []
+        DB.chmod(0o600)
+        con.row_factory = sqlite3.Row
+        con.execute('PRAGMA foreign_keys=ON')
     try:
-        if write: con.execute('BEGIN IMMEDIATE')
+        if postgres:con.begin(write,snapshot=snapshot)
+        elif write: con.execute('BEGIN IMMEDIATE')
+        elif snapshot:con.execute('BEGIN')
         yield con
         if write: con.commit()
     except Exception:
@@ -73,8 +111,12 @@ def event(con,clinic,patient_id,category,title,body,source_ids=None,approved=Fal
         source_ids=[receipt['id']]
     return record(con,'event',clinic,{'patient_id':patient_id,'category':category,'title':title,'body':body,'source_ids':source_ids or [],'approved':approved,'occurred_at':now()})
 def init(seed=True):
-    with connection() as c:
-        c.execute('PRAGMA journal_mode=WAL')
+    if store()=='postgres':
+        from pms_postgres import create_schema
+        create_schema()
+    else:
+        with connection() as c:c.execute('PRAGMA journal_mode=WAL')
+    with connection(True) as c:
         c.executescript('''
         CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,kind TEXT NOT NULL,clinic_id TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS records_scope ON records(clinic_id,kind);
@@ -85,7 +127,12 @@ def init(seed=True):
         CREATE TABLE IF NOT EXISTS chunks(recording_id TEXT,chunk_index INTEGER,path TEXT,sha256 TEXT,PRIMARY KEY(recording_id,chunk_index));
         ''')
     from schema import migrate
-    with connection() as c: migrate(c); c.commit()
+    with connection(True) as c:migrate(c)
+    if store()=='postgres':
+        from pms_postgres import projection_queue
+        from pms_migrate import promote_if_needed
+        with connection(True) as c:projection_queue(c)
+        promote_if_needed()
     if not seed:return
     with connection(True) as c:
         if c.execute('SELECT COUNT(*) FROM records').fetchone()[0]: return

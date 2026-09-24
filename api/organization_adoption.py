@@ -91,7 +91,8 @@ def list_route(request:Request):
         org=policy(c,clinic)
         # No global clinic directory or patient/owner data is exposed.
         if org and master(c,org,actor):
-            ids=[r[0] for r in c.execute("SELECT id FROM records WHERE kind='organization_adoption' AND json_extract(data,'$.consent.organization_id')=? ORDER BY created_at DESC LIMIT 100",(org['id'],))]
+            from db import json_text
+            ids=[r[0] for r in c.execute("SELECT id FROM records WHERE kind='organization_adoption' AND "+json_text(c,'data','consent','organization_id')+"=? ORDER BY created_at DESC LIMIT 100",(org['id'],))]
             return [summary(c,get(c,id)) for id in ids]
         return [summary(c,r) for r in all_records(c,clinic,'organization_adoption')][:100]
 

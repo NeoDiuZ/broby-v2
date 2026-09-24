@@ -233,7 +233,8 @@ def test_failed_transaction_removes_only_new_binary_copies(monkeypatch):
     existing_files = {p for p in db.DATA.rglob('*') if p.is_file()}
     with db.connection(True) as c:
         # Failure after dispatch has written copies, during the shared action audit.
-        c.execute("CREATE TRIGGER transfer_failure BEFORE INSERT ON audit WHEN NEW.action='transfer.accept' BEGIN SELECT RAISE(ABORT, 'injected commit-boundary failure'); END")
+        from db_faults import reject_transfer_audit
+        reject_transfer_audit(c,'transfer_failure','injected commit-boundary failure')
     with pytest.raises(Exception, match='injected commit-boundary failure'):
         act('transfer.accept', {'id': r['id'], 'expected_digest': plan['digest']}, **TARGET)
     assert {p for p in db.DATA.rglob('*') if p.is_file()} == existing_files

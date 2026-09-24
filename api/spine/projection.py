@@ -12,6 +12,10 @@ def stamp(value):
 
 def setup_queue():
     with db.connection(True) as c:
+        if c.dialect=='postgres':
+            from pms_postgres import projection_queue
+            projection_queue(c)
+            return
         c.executescript('''CREATE TABLE IF NOT EXISTS spine_changes(sequence INTEGER PRIMARY KEY AUTOINCREMENT,clinic_id TEXT);
         CREATE TRIGGER IF NOT EXISTS spine_insert AFTER INSERT ON records BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_insert AFTER INSERT ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
@@ -25,8 +29,7 @@ def sync(clinic):
         # Serialize the bridge per clinic across API workers. Native ingest is independent.
         s.execute(text('SELECT pg_advisory_xact_lock(hashtext(:name))'),{'name':'broby-projection:'+clinic})
         checkpoint=s.get(Projection,clinic)
-        with db.connection() as c:
-            c.execute('BEGIN')
+        with db.connection(snapshot=True) as c:
             seq=c.execute('SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id=?',(clinic,)).fetchone()[0]
             if checkpoint and checkpoint.sequence==seq:return
             records=db.all_records(c,clinic)

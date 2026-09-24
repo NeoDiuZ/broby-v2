@@ -71,7 +71,8 @@ def ready():
         probe.write_text('ok'); probe.unlink(missing_ok=True)
     except Exception:
         return Response('Storage unavailable',status_code=503)
-    return {'status':'ready','stores':['postgresql','sqlite','files']}
+    from db import store
+    return {'status':'ready','stores':['postgresql','files'] if store()=='postgres' else ['postgresql','sqlite','files'],'pms_store':store()}
 @app.get('/api/bootstrap')
 def bootstrap(request:Request):
     clinic,actor=identity(request)

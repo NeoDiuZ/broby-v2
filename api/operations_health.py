@@ -43,7 +43,7 @@ class Supervisor:
     def history(self, name, failed):
         try:
             with db.connection(True) as c:
-                c.execute('INSERT OR IGNORE INTO worker_history(name) VALUES(?)', (name,))
+                c.execute('INSERT INTO worker_history(name) VALUES(?) ON CONFLICT DO NOTHING', (name,))
                 if failed:
                     c.execute('UPDATE worker_history SET failures=failures+1,last_failure_at=? WHERE name=?', (db.now(), name))
                 else:
@@ -174,8 +174,9 @@ def queue_summary(c, clinic, instant=None):
     pp = (instant.timestamp(), instant.timestamp(), cutoff, clinic)
     payment_counts = {r['state']:r['count'] for r in c.execute('SELECT state,COUNT(*) count FROM ('+payment_query+') GROUP BY state', pp)}
     payment_issues = [dict(r) for r in c.execute('SELECT * FROM ('+payment_query+") WHERE state IN ('failed','overdue') ORDER BY created_at DESC,id LIMIT 20", pp)]
-    message_counts = {r['state']: r['count'] for r in c.execute("SELECT json_extract(data,'$.status') state,COUNT(*) count FROM records WHERE clinic_id=? AND kind='whatsapp_trial' GROUP BY state", (clinic,))}
-    message_issues = [dict(r) for r in c.execute("SELECT id,created_at,updated_at,json_extract(data,'$.status') state FROM records WHERE clinic_id=? AND kind='whatsapp_trial' AND json_extract(data,'$.status') IN ('failed','undelivered','canceled','uncertain','needs_review','blocked') ORDER BY created_at DESC,id LIMIT 20", (clinic,))]
+    status=db.json_text(c,'data','status')
+    message_counts = {r['state']: r['count'] for r in c.execute(f"SELECT {status} state,COUNT(*) count FROM records WHERE clinic_id=? AND kind='whatsapp_trial' GROUP BY state", (clinic,))}
+    message_issues = [dict(r) for r in c.execute(f"SELECT id,created_at,updated_at,{status} state FROM records WHERE clinic_id=? AND kind='whatsapp_trial' AND {status} IN ('failed','undelivered','canceled','uncertain','needs_review','blocked') ORDER BY created_at DESC,id LIMIT 20", (clinic,))]
     return [{'name':'documents','label':'Documents and speech','counts':counts,'issues':recent},
             {'name':'payments','label':'Stripe test tasks','counts':payment_counts,'issues':payment_issues},
             {'name':'messaging','label':'WhatsApp trial attempts','counts':message_counts,'issues':message_issues}]
@@ -186,11 +187,10 @@ def health(request: Request):
     from main import identity
     from actions import owned, fail
     clinic, actor = identity(request)
-    with db.connection() as c:
+    with db.connection(snapshot=True) as c:
         member = owned(c, actor, clinic, 'member')
         if not member['data'].get('active') or member['data']['role'] != 'admin':
             fail('Administrator access required', 403)
-        c.execute('BEGIN')
         queues = queue_summary(c, clinic)
         history = {r['name']:dict(r) for r in c.execute('SELECT * FROM worker_history')}
     monitor = getattr(request.app.state, 'workers', None)
