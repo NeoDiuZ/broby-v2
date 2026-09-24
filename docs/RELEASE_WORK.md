@@ -313,3 +313,39 @@ cold reload/draft recovery passed twice. See OFFLINE_DEVICE.md for boundaries;
 full physical-device/crash/eviction acceptance remains open. The hosted release
 receipt is `.local/reports/broby-offline-release-2026-09-24.md`; a local pass alone
 does not establish deployment. V1, provider configuration and real data stay untouched.
+
+
+## Acceptance — dated financial register, 24 September
+
+Reports now separates dated financial movements from clinical counts. The
+administrator register uses clinic-local inclusive date periods and keeps original
+invoices, cash records, credits, reversals and voids distinct. New voids append a
+receipt atomically; same-key replay is idempotent and a second void is rejected.
+Earlier void dates require a recorded audit receipt. Missing history, malformed
+movements and invoice-balance differences are shown and block CSV export.
+Known tax and unknown tax are distinct; provider test entries retain their labels.
+See FINANCIAL_REGISTER.md for the recorded-date basis and accounting limits.
+
+Seventeen new regression cases cover the financial boundaries. Isolated
+production-browser acceptance verified May's original charge and June's later
+void, opening/closing reconciliation, expanded source receipts, and a deliberately
+introduced one-cent discrepancy that disabled export; the fixture was restored.
+The browser export reached the correct endpoint (HTTP 200); the automation's blob
+file-download event was unavailable, so the CSV body is verified separately by API.
+Exact final test totals, commit/deployment IDs and hosted acceptance are recorded
+in `.local/reports/broby-financial-release-2026-09-24.md` after release verification.
+
+## WhatsApp own-number receipt — 24 September, 12:38 SGT
+
+The user authorized native WhatsApp and explicit visible-window inspection for
+this test. The exact join phrase was sent to the currently displayed Twilio trial
+sender. Twilio logs show inbound Received at 12:38:37 SGT and its automatic reply
+Delivered at 12:38:39; native WhatsApp also shows that reply. This confirms the
+own-number exchange, not a Broby-originated message.
+
+Twilio's setup UI still displays Link your device after the received join, refresh
+and reopening from Messaging. The supplied ContentSid/template and inbound hook
+controls remain unavailable. Templates navigation leads to a paid-upgrade gate,
+which was not accepted. No Twilio token was copied and Backend sending remains
+disabled. Do not repeat join messages merely to refresh this provider UI. The
+private `.local/WHATSAPP_NEXT.md` records the exact account, sender and evidence.

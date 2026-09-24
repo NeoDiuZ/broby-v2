@@ -150,11 +150,14 @@ def dispatch(c,a,p,clinic,actor):
         return refund
     if a=='invoice.void':
         r=owned(c,p['id'],clinic,'invoice');version(r,p)
+        if r['data']['status']=='void':fail('This invoice has already been voided',409)
         from stripe_payments import guard_invoice
         guard_invoice(c,clinic,r['id'])
         if any(v['data']['invoice_id']==r['id'] for v in all_records(c,clinic,'credit_note')):fail('This invoice has credit-note history. Credit the remaining charge instead of voiding it.',409)
         if r['data']['paid_cents']:fail('Record any externally completed refunds before voiding')
-        return update(c,r,{**r['data'],'status':'void','void_reason':require(p,'reason')})
+        reason=require(p,'reason')
+        record(c,'invoice_void',clinic,{'invoice_id':r['id'],'patient_id':r['data']['patient_id'],'amount_cents':r['data']['total_cents'],'tax_cents':r['data'].get('tax_cents'),'reason':reason,'recorded_by':actor})
+        return update(c,r,{**r['data'],'status':'void','void_reason':reason})
     if a=='inventory.receive':
         r=owned(c,p['id'],clinic,'inventory');version(r,p);q=integer(require(p,'quantity'),'Quantity',1)
         if p.get('expiry'):

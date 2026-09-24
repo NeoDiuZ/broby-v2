@@ -238,3 +238,6 @@ app.include_router(scheduling_router)
 
 from operations_health import router as operations_router
 app.include_router(operations_router)
+
+from financial_reports import router as financial_router
+app.include_router(financial_router)
