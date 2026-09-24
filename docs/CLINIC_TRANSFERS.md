@@ -16,7 +16,9 @@ preview digest. Changed source data requires a further explicit acknowledgement.
 A changed source, consent, approval, or receiving copy invalidates an old preview.
 All imports pass through the shared role/feature-lock, audit and idempotency layer.
 
-The first transfer creates a patient/primary owner, never a name-based merge.
+The first transfer defaults to creating a patient/primary owner. Receiving staff
+can instead explicitly select and review an independently created clinic patient
+using the procedure below. Names alone never establish a match.
 Later transfers use the source-clinic/source-patient/receiving-clinic mapping.
 Identical origin payloads are skipped, including files and observations. New facts
 append. Changes append an immutable origin revision and a new receiving record;
@@ -73,9 +75,31 @@ reconciliation. Existing receiving media is listed by stored metadata; only newl
 copied source binaries are checksum-verified during acceptance. Request tokens and
 filesystem paths are not displayed.
 
-Verified owner login/identity and reconciliation of independently created
-destination patients remain separate unfinished requirements. This release uses
-revocable owner capability links, not proof of legal identity.
+## Link an independently created receiving patient
+
+For an unmapped first transfer, search by patient, owner or reference, select the
+receiving patient and load its review. The preview includes source identity,
+current receiving identity, every receiving owner and the existing clinical
+history, including native PostgreSQL facts and recorded dispensing. Staff must
+confirm the patient identity, acknowledge possible duplicate facts and enter a
+10–1,000 character reason. Changing the selection or reloading clears approvals.
+Changes to reviewed source, patient, owner links or history invalidate acceptance.
+
+Acceptance preserves the existing patient, owners, local records, media and stock.
+It appends the currently consented records and creates an immutable identity-link
+receipt containing the reviewer, reason, digest and preserved record fingerprints.
+A private timeline entry explains the decision. Future transfers use the saved
+origin mapping and skip unchanged origins. The operation and copied files roll
+back on a handled failure; competing destination choices cannot both succeed.
+
+Known species mismatches and a receiving patient already linked to a different
+patient at the same source clinic are rejected. Established mappings cannot be
+retargeted through this workflow. A correction/relink procedure, clinical-fact
+equivalence review and verified owner login/identity remain unfinished. This is a
+staff assertion of animal identity, not an owner merge or proof of legal identity.
+The owner consent mechanism still uses revocable capability links. Existing media
+is listed by metadata; newly copied source binaries are checksum-verified. The
+same 1,000-record / 5 MB receiving-context review limits apply.
 
 ## Verification
 
@@ -98,3 +122,15 @@ old file bytes, one baseline, unchanged records/stock and the next deduplicated
 transfer. No old-format mapping is present in the current hosted synthetic fixture;
 that historical path is verified in the isolated local database, with hosted
 normal-transfer regression checked separately.
+
+`api/tests/test_patient_links.py` adds 31 cases covering explicit selection,
+all-owner/history preservation, strict acknowledgements, stale reviews, species
+and origin conflicts, clinic/role isolation, consent, replay, concurrency and
+file/database rollback. `test_spine.py` also verifies native PostgreSQL changes
+invalidate the review, and preserved owner links and native history survive the
+accepted import. The isolated production browser checks selection gating, stale
+additional-owner rejection, reload/reset, acceptance into the same patient and
+persistence. Sixteen API/database checks verify unchanged receiving records,
+immutable receipt, exact media, private copies, no new stock/dispensing, repeat
+deduplication and retained copies after source revocation. Hosted release evidence
+is recorded in the private patient-link release report.

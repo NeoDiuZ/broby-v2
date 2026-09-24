@@ -40,3 +40,5 @@ section.action-preview{font-size:13px;line-height:1.5;max-height:none;white-spac
 .rota-exception>label{display:block;margin-bottom:12px}.rota-exception>label input{display:block;width:100%}
 .rota-review li{margin:10px 0}.rota-editor>.actions{margin-top:20px;flex-wrap:wrap}
 @media(max-width:650px){.rota-week-editor{grid-template-columns:1fr}.rota-exception .section-heading{align-items:start;flex-direction:column}}
+.transfer-destination{border:1px solid var(--border,#ddd);border-radius:10px;padding:18px;margin:18px 0;min-width:0}
+.transfer-destination>label{display:block;margin:14px 0}.transfer-destination input:not([type=checkbox]),.transfer-destination select,.transfer-destination textarea{display:block;width:100%;margin-top:6px}.transfer-destination input[type=checkbox]{width:auto;margin-right:8px}

@@ -240,3 +240,28 @@ The report CSV was downloaded through the browser and reconciled to the hosted
 records (15657 cents net charges, 50 cents net credits, 873 cents net payments). This remains a scoped billing release,
 not a general ledger, approved clinic policy or completion of the 58 requirements.
 See CREDIT_NOTES.md and the ignored `.local/credit-hosted.json` evidence.
+
+## Reviewed links to existing receiving patients
+
+A receiving vet or administrator can select an independently created clinic
+patient for an unmapped incoming transfer. Acceptance requires a fresh review of
+source and receiving identities, all receiving owners and existing history, a
+recorded reason and explicit duplicate-risk acknowledgement. It preserves local
+records, creates an immutable link receipt and uses that mapping on future
+transfers. Known species/origin conflicts and changed previews are rejected.
+This does not prove owner identity, equate independent clinical facts or provide
+a correction/relink workflow. See CLINIC_TRANSFERS.md for the exact boundary.
+
+Local verification passed 357 backend tests (31 patient-link cases and a native
+PostgreSQL integration scenario), 16 frontend tests, TypeScript and the production
+build. The production browser rehearsal verified disabled acceptance before
+review, stale additional-owner rejection, reset after reload, acceptance into the
+same patient and persistence. Sixteen API/database checks passed, including exact
+file/audio bytes, all preexisting records unchanged, private copies, stock
+invariance, replay, subsequent-request deduplication and source revocation.
+Providers were disabled in the isolated local fixture.
+
+The hosted synthetic acceptance fixture is prepared in Broby New. Deployment
+revision, CI, hosted browser/API results and final readback are recorded after
+release in `.local/reports/broby-patient-link-release-2026-09-24.md`. No V1 data,
+active WhatsApp connection, customer message or real payment is involved.

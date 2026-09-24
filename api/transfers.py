@@ -217,15 +217,54 @@ def snapshot(c, r):
     return sorted(items, key=lambda x: (x['kind'], x['origin_id'])), binaries, total
 
 
-def plan(c, r):
+def selected_patient(value):
+    if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 200):
+        fail('Choose a valid receiving patient')
+    return value
+
+
+def receiving_owners(c, patient):
+    from clinic_workflows import owner_ids
+    return [owned(c, id, patient['clinic_id'], 'owner') for id in owner_ids(patient)]
+
+
+def patient_link(c, r, target):
+    if not target:
+        return None
+    row = c.execute("""SELECT * FROM records WHERE kind='transfer_patient_link' AND clinic_id=?
+        AND json_extract(data,'$.source_clinic_id')=? AND json_extract(data,'$.source_patient_id')=?
+        AND json_extract(data,'$.patient_id')=? ORDER BY created_at DESC LIMIT 1""",
+        (r['target_clinic'], r['source_clinic'], r['patient_id'], target['id'])).fetchone()
+    return db.unpack(row)
+
+
+def plan(c, r, target_patient_id=None):
     items, binaries, total = snapshot(c, r)
     key = (r['source_clinic'], r['patient_id'], r['target_clinic'])
     mapped = c.execute('SELECT target_patient FROM transferred_patients WHERE source_clinic=? AND source_patient=? AND target_clinic=?', key).fetchone()
-    target = owned(c, mapped[0], r['target_clinic'], 'patient') if mapped else None
+    target_patient_id = selected_patient(target_patient_id)
+    if mapped and target_patient_id and target_patient_id != mapped[0]:
+        fail('This source patient is already linked to another receiving record; its destination cannot be changed through a transfer', 409)
+    target_id = mapped[0] if mapped else target_patient_id
+    target = owned(c, target_id, r['target_clinic'], 'patient') if target_id else None
+    matching = target is not None and mapped is None
+    if matching:
+        another = c.execute('SELECT source_patient FROM transferred_patients WHERE source_clinic=? AND target_clinic=? AND target_patient=? AND source_patient<>?',
+                            (r['source_clinic'], r['target_clinic'], target['id'], r['patient_id'])).fetchone()
+        if another:
+            fail('The selected receiving patient is already linked to a different patient at this source clinic. Resolve that identity conflict before importing.', 409)
+        source_identity = next(x['payload']['patient'] for x in items if x['kind'] == 'identity')
+        source_species = str(source_identity.get('species', '')).strip().casefold()
+        target_species = str(target['data'].get('species', '')).strip().casefold()
+        if source_species and target_species and source_species != target_species:
+            fail('Source and receiving species differ. Correct the patient records or choose another receiving patient before linking.', 409)
     revisions = list(c.execute('SELECT * FROM transfer_revisions WHERE source_clinic=? AND source_patient=? AND target_clinic=? ORDER BY revision', key))
     # Historical payloads cannot be reconstructed reliably. A reviewed baseline
     # appends today's approved facts; it never labels an old copy as equivalent.
-    baseline = legacy_review(c, r, target) if target and not revisions else None
+    baseline = legacy_review(c, r, target) if mapped and not revisions else None
+    existing_review = legacy_review(c, r, target, mode='link_existing_patient') if matching else None
+    owners = receiving_owners(c, target) if target else []
+    link = patient_link(c, r, target) if mapped else None
     counts = {'new': 0, 'changed': 0, 'unchanged': 0}
     for item in items:
         fp = digest(item['payload'])
@@ -242,17 +281,20 @@ def plan(c, r):
     public = {'id': r['id'], 'source_clinic': {'id': r['source_clinic'], 'name': owned(c, r['source_clinic'], r['source_clinic'], 'clinic')['data']['name']},
               'source_patient_id': r['patient_id'], 'scope': json.loads(r['scope']), 'expires_at': r['expires_at'],
               'patient': identity['patient'], 'owner': identity['owner'], 'destination_patient': target,
-              'destination_owner': owned(c, target['data']['owner_id'], r['target_clinic'], 'owner') if target else None,
+              'destination_owner': owners[0] if owners else None, 'destination_owners': owners,
+              'destination_mode': 'existing' if matching else 'linked' if mapped else 'new',
+              'existing_patient_review_required': matching, 'existing_patient_review': existing_review,
+              'patient_link': {'id': link['id'], **fields(link['data'], ('reviewed_by', 'reviewed_at', 'reason'))} if link else None,
               'baseline_required': baseline is not None, 'baseline': baseline,
               'counts': counts, 'media_bytes': total, 'items': items}
     public['digest'] = digest(public)
     return public, binaries
 
 
-def legacy_review(c, r, patient):
+def legacy_review(c, r, patient, mode='append_current_source'):
     """Bounded receiving-side context. Only this patient's clinical records cross
     the preview boundary; request capabilities and filesystem paths never do."""
-    kinds = {'event', 'source', 'attachment', 'observation', 'recording', 'medication_history', 'consultation'}
+    kinds = {'event', 'source', 'attachment', 'observation', 'recording', 'medication', 'medication_history', 'consultation'}
     rows = c.execute("SELECT * FROM records WHERE clinic_id=? AND json_extract(data,'$.patient_id')=? ORDER BY kind,id LIMIT ?",
                      (r['target_clinic'], patient['id'], MAX_ITEMS + 1)).fetchall()
     if len(rows) > MAX_ITEMS:
@@ -267,14 +309,14 @@ def legacy_review(c, r, patient):
     requests = [{'id': row['id'], 'status': row['status']} for row in c.execute(
         "SELECT id,status FROM transfer_requests WHERE source_clinic=? AND patient_id=? AND target_clinic=? AND status='accepted' ORDER BY id LIMIT ?",
         (r['source_clinic'], r['patient_id'], r['target_clinic'], MAX_ITEMS + 1))]
-    context = {'mode': 'append_current_source', 'existing_records': records, 'earlier_requests': requests}
+    context = {'mode': mode, 'existing_records': records, 'earlier_requests': requests}
     if len(requests) > MAX_ITEMS or len(encoded(context).encode()) > 5 * 1024 * 1024:
         fail('The receiving history exceeds the baseline review limit; arrange a reviewed archive reconciliation', 422)
     return context
 
 
 @router.get('/api/transfers/{id}/preview')
-def preview(id: str, request: Request):
+def preview(id: str, request: Request, target_patient_id: str | None = None):
     from main import identity
     from actions import authorize
     clinic, actor = identity(request)
@@ -284,7 +326,7 @@ def preview(id: str, request: Request):
         r = pending(c, id, clinic)
         if r['status'] == 'accepted':
             fail('This request was already accepted', 409)
-        result, _ = plan(c, r)
+        result, _ = plan(c, r, target_patient_id)
         # Do not expose local media paths in previews. The full copy participates in
         # the digest so a receiving edit invalidates an earlier review.
         for item in result['items']:
@@ -321,8 +363,12 @@ def dispatch(c, a, p, clinic, actor):
     from actions import require
     r = pending(c, require(p, 'id'), clinic)
     if r['status'] == 'accepted':
-        return json.loads(r['result'])
-    review, binaries = plan(c, r)
+        result = json.loads(r['result'])
+        target_id = selected_patient(p.get('target_patient_id'))
+        if target_id and target_id != result['id']:
+            fail('This request was already imported into a different receiving patient', 409)
+        return result
+    review, binaries = plan(c, r, p.get('target_patient_id'))
     if p.get('expected_digest') != review['digest']:
         fail('Review the current transfer preview before accepting; source or receiving records may have changed', 409)
     if review['counts']['changed'] and p.get('review_changes') is not True:
@@ -336,6 +382,15 @@ def dispatch(c, a, p, clinic, actor):
             fail('Record a baseline review reason between 10 and 1000 characters', 422)
     elif p.get('establish_baseline') or reason:
         fail('This transfer no longer needs a baseline; reload its preview', 409)
+    matching = review['existing_patient_review_required']
+    match_reason = p.get('patient_match_reason')
+    if matching:
+        if p.get('link_existing_patient') is not True or p.get('acknowledge_existing_history') is not True:
+            fail('Confirm this is the same patient and acknowledge that current source facts may duplicate the existing history', 409)
+        if not isinstance(match_reason, str) or not 10 <= len(match_reason.strip()) <= 1000:
+            fail('Record a patient-match review reason between 10 and 1000 characters', 422)
+    elif p.get('link_existing_patient') or p.get('acknowledge_existing_history') or match_reason:
+        fail('This preview does not create a patient link; reload and review the current destination', 409)
     identity = next(x['payload'] for x in review['items'] if x['kind'] == 'identity')
     patient = review['destination_patient']
     if not patient:
@@ -343,6 +398,23 @@ def dispatch(c, a, p, clinic, actor):
         patient = record(c, 'patient', clinic, {**identity['patient'], 'owner_id': owner['id'],
                          'external_id': 'transfer:' + r['source_clinic'] + ':' + r['patient_id'], 'transfer_request_id': r['id']})
         c.execute('INSERT INTO transferred_patients VALUES(?,?,?,?)', (r['source_clinic'], r['patient_id'], clinic, patient['id']))
+    link_id = review['patient_link']['id'] if review['patient_link'] else None
+    if matching:
+        context = review['existing_patient_review']
+        linked = record(c, 'transfer_patient_link', clinic, {
+            'patient_id': patient['id'], 'source_clinic_id': r['source_clinic'], 'source_patient_id': r['patient_id'],
+            'transfer_request_id': r['id'], 'reason': match_reason.strip(), 'reviewed_by': actor,
+            'reviewed_at': now(), 'reviewed_digest': review['digest'], 'source_identity': identity,
+            'preserved_records': [{'id': x['id'], 'kind': x['kind'], 'version': x['version'], 'fingerprint': digest(x)}
+                                  for x in [patient, *review['destination_owners'], *context['existing_records']]],
+            'acknowledged_possible_duplicates': True})
+        link_id = linked['id']
+        c.execute('INSERT INTO transferred_patients VALUES(?,?,?,?)', (r['source_clinic'], r['patient_id'], clinic, patient['id']))
+        db.event(c, clinic, patient['id'], 'clinical', 'Reviewed existing-patient link',
+                 'Receiving staff confirmed that this source patient matches the selected local patient. '
+                 'Existing patient, owner and clinical records were preserved. Current approved source facts were appended '
+                 'and may duplicate independently recorded history; no clinical facts were marked equivalent.\n'
+                 'Review reason: ' + match_reason.strip() + '\nReviewed by: ' + actor + '\nPatient link: ' + link_id)
     baseline_record = None
     if baseline:
         baseline_record = record(c, 'transfer_baseline', clinic, {
@@ -368,6 +440,8 @@ def dispatch(c, a, p, clinic, actor):
                       'origin_clinic_name': review['source_clinic']['name'], 'origin_patient_id': r['patient_id'],
                       'origin_id': item['origin_id'], 'origin_kind': kind, 'origin_revision': item['revision'],
                       'origin_fingerprint': item['fingerprint'], 'origin_recorded_at': d.get('occurred_at', d.get('recorded_at'))}
+        if link_id:
+            provenance['transfer_patient_link_id'] = link_id
         if baseline_record:
             provenance['transfer_baseline_id'] = baseline_record['id']
         text = receipt_text(item)
@@ -419,7 +493,7 @@ def dispatch(c, a, p, clinic, actor):
               'audio_copied': copied['audio'], 'medication_histories': copied['medication'], 'counts': review['counts'],
               'consultation_id': consultation['id'] if consultation else None, 'reviewed_digest': review['digest'],
               'reviewed_by': actor, 'accepted_at': now(),
-              'baseline_id': baseline_record['id'] if baseline_record else None}
+              'baseline_id': baseline_record['id'] if baseline_record else None, 'patient_link_id': link_id}
     c.execute("UPDATE transfer_requests SET status='accepted',result=? WHERE id=?", (encoded(result), r['id']))
     return result
 
