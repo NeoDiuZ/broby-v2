@@ -188,3 +188,20 @@ def test_retry_waits_for_other_active_question_and_history_is_bounded(monkeypatc
     monkeypatch.setattr(assistant,'answer',lambda *a:{'text':'Answer','sources':[]})
     for i in range(98):ask('Bounded',conversation=first['conversation_id'],key='bounded-'+str(i))
     err(409,lambda:ask('Over limit',conversation=first['conversation_id'],key='over-limit-question'))
+
+
+@pytest.mark.parametrize('result',[{'guide':'stripe.refund'},{'guide':['stripe.refund']},{'guide':'unknown'}])
+def test_planner_guidance_uses_permission_filtered_enum(monkeypatch,result):
+    import httpx,providers
+    monkeypatch.setattr(providers,'available',lambda:{'ai':True})
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic');monkeypatch.setenv('ANTHROPIC_MODEL','synthetic')
+    original=httpx.Client
+    def respond(request):
+        body=json.loads(request.content)
+        assert body['tools'][0]['input_schema']['properties']['guide']['enum']==['stripe.refund']
+        return httpx.Response(200,json={'stop_reason':'tool_use','content':[{'type':'tool_use','name':'submit_clinic_intent','input':result}]})
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    payload={'allowed_actions':{},'guided_actions':{'stripe.refund':['Billing','Review provider receipt']},'read_contract':{}}
+    if result=={'guide':'stripe.refund'}:assert providers.model_json('system',payload)==result
+    else:
+        with pytest.raises(providers.ProviderError):providers.model_json('system',payload)

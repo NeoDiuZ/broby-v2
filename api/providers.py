@@ -34,12 +34,14 @@ def model_json(system,payload):
     request={'model':os.environ['ANTHROPIC_MODEL'],'max_tokens':6000,'system':system,'messages':[{'role':'user','content':json.dumps(payload,ensure_ascii=False)}]}
     if planner:
         # A transport-only result collector, never an executable clinic action.
-        request['system'] += ' Submit exactly one read, action, or clarify result through submit_clinic_intent. Missing information must be {"clarify":true}, not a prose question. This tool only returns a proposal; it cannot change records.'
+        request['system'] += ' Submit exactly one read, action, guide, or clarify result through submit_clinic_intent. Missing information must be {"clarify":true}, not a prose question. This tool only returns a proposal; it cannot change records.'
         request['tools']=[{'name':'submit_clinic_intent','description':'Return one structured clinic request interpretation. Use read for a supported record question, action for a complete proposed operation, or clarify=true for missing information. This only collects a result and does not execute an action. Clinic scope, permissions, references and values are validated separately before any confirmation.',
             'input_schema':{'type':'object','properties':{'read':{'type':'object','description':'The read_contract fields and optional scope patient or clinic.'},'action':{'type':'object','properties':{'action':{'type':'string','enum':list(payload['allowed_actions'])},'payload':{'type':'object'}},'required':['action','payload'],'additionalProperties':False},'clarify':{'type':'boolean'}},'additionalProperties':False}}]
         request['tool_choice']={'type':'tool','name':'submit_clinic_intent','disable_parallel_tool_use':True}
         if not payload['allowed_actions']:
             request['tools'][0]['input_schema']['properties'].pop('action')
+        if payload.get('guided_actions'):
+            request['tools'][0]['input_schema']['properties']['guide']={'type':'string','enum':list(payload['guided_actions'])}
     try:
         with httpx.Client(timeout=httpx.Timeout(180,connect=15)) as client:
             response=client.post('https://api.anthropic.com/v1/messages',headers={'x-api-key':os.environ['ANTHROPIC_API_KEY'],'anthropic-version':'2023-06-01'},json=request)
@@ -51,7 +53,7 @@ def model_json(system,payload):
             if body.get('stop_reason')!='tool_use' or len(calls)!=1 or calls[0].get('name')!='submit_clinic_intent':
                 raise ProviderError('AI did not return one structured clinic intent; no record was changed.')
             result=calls[0].get('input')
-            if not isinstance(result,dict) or len(result)!=1 or not set(result)<= {'read','action','clarify'} or ('clarify' in result and result['clarify'] is not True):
+            if not isinstance(result,dict) or len(result)!=1 or not set(result)<= {'read','action','guide','clarify'} or ('clarify' in result and result['clarify'] is not True) or ('guide' in result and (not isinstance(result['guide'],str) or result['guide'] not in payload.get('guided_actions',{}))):
                 raise ProviderError('AI returned an invalid clinic intent; no record was changed.')
         else:
             text=''.join(x.get('text','') for x in body['content'] if x['type']=='text').strip()

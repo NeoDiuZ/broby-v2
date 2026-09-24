@@ -122,6 +122,7 @@ def confirm(id:str,turn_id:str,request:Request):
         if not proposal:fail('This answer has no action to confirm',409)
     # The shared action executor rechecks today's permissions and record versions.
     # A retry after a lost response uses the same mutation key, even after reload.
-    execution=execute(proposal['action'],proposal['payload'],clinic,actor,'assistant-confirm:'+turn_id)
+    execution=execute(proposal['action'],proposal['payload'],clinic,actor,'assistant-confirm:'+turn_id,
+                      expected_versions=result.get('review_versions'))
     with connection(True) as c:c.execute('UPDATE assistant_turns SET execution=? WHERE id=?',(json.dumps(execution),turn_id))
     return execution

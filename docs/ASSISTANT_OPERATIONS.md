@@ -1,5 +1,45 @@
 # Reviewed assistant operations
 
+## Current coverage — 24 September completion release
+
+All 67 directly proposed assistant operations now have strict typed contracts,
+read-only preparation and labelled deterministic reviews. This replaces the old
+49 untyped field descriptions and adds ten routine operations: speaker labels,
+automation settings, save/archive dashboards, recall preference/cancellation,
+leave request/review/withdrawal and discharge draft preparation. Every one of the
+105 shared operations is explicitly classified: 67 reviewed proposals, 32 routed
+to their dedicated review screen, and six internal test-adapter operations that
+are never advertised to the model. Guided operations are not direct AI execution.
+
+Four formerly advertised low-level operations (raw imports and binary recording
+creation/finalization) now route to the existing import/recorder screens, where
+the source file, manifest and migration review can actually be inspected. Stripe,
+Twilio, clinic transfer/adoption, complex rota changes and owner-conversation
+replies similarly retain their purpose-built reviews. No arbitrary untyped
+mutation fallback remains.
+
+New reviews validate exact clinic and patient references, calendar dates, finite
+values, explicit tax/discount fields, replacement contact fields and workflow
+states. Confirmation checks every referenced record version under the shared
+writer lock. A concurrent contact/patient/stock change requires a fresh review.
+An already completed confirmation still replays its original receipt exactly,
+including after the response was lost. Permission checks remain authoritative.
+
+Intent input is bounded to 250 selection records and 140,000 record characters.
+Exact referenced IDs/names, the selected patient and referenced dependencies take
+priority. Large fields are omitted explicitly, never truncated into apparent
+complete source facts. This is not a limit on factual queries: deterministic
+reads still count/filter the complete authorized clinic dataset. Missing context
+requires exact identification or clarification, not guessed IDs or facts.
+
+New acceptance covers all 55 expanded contracts through saved proposal, actual
+confirmation, persisted result and replay, plus invalid values, unknown fields,
+patient isolation, reference changes and permission revocation. The hosted
+real-model scenario is repeatable with scripts/smoke-assistant-completion.py.
+Real-model intent accuracy remains an acceptance boundary beyond schema validity.
+
+## Earlier release history
+
 Ask Broby can now propose eight additional operations: edit/cancel a reminder,
 create/cancel a purchase order, rename a recording, update a patient's complete
 owner list, prepare a clinic handover and acknowledge a selected handover.
@@ -62,14 +102,9 @@ review after reload and checked its exact title/date in Messages. PR #18 and
 the Railway release details are recorded in RELEASE_WORK.md; final acceptance
 follow-up evidence is in the ignored operator release report.
 
-There are now 61 advertised actions out of 105 shared operations. Twelve use the
-new strict proposal schemas; the other 49 retain their earlier field descriptions
-and executor-time validation. The remaining 44 advanced operations still need
-appropriate review contracts. This is not blanket coverage of all natural-language
-intents, languages, clinical policies or ambiguous ownership instructions.
-Model interpretation remains fallible: the operator must inspect the exact review.
-The other offline, storage, accounting, provider and cutover gaps in FEATURE_STATUS
-remain open. No supplier message, customer send or real payment is part of this work.
+The earlier 61-action/12-schema limitation has been superseded by the coverage
+and explicit routing above. Clinical interpretation, languages and provider
+acceptance still require separate evidence.
 
 Credit-note issue and reversal add two strict contracts with explicit net/tax
 amounts, reasons, charge-only effects and resulting balances. See CREDIT_NOTES.md.
