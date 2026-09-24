@@ -42,8 +42,10 @@ def present(turn):
 def ask(clinic, actor, message, patient_id, conversation_id, key):
     """Persist intent before an external model request, then fence its result."""
     from assistant import answer
+    from read_access import require, ALL
     fingerprint = hashlib.sha256(json.dumps([message,patient_id],ensure_ascii=False).encode()).hexdigest()
     with connection(True) as c:
+        require(c,clinic,actor,ALL)
         if not owned(c,actor,clinic,'member')['data'].get('active'):fail('Membership is inactive',403)
         if patient_id: owned(c,patient_id,clinic,'patient')
         previous=c.execute('SELECT * FROM assistant_turns WHERE clinic_id=? AND actor_id=? AND request_key=?',(clinic,actor,key)).fetchone()
@@ -77,6 +79,7 @@ def ask(clinic, actor, message, patient_id, conversation_id, key):
     try:
         with connection() as c: result=answer(c,clinic,actor,message,patient_id,history)
         with connection(True) as c:
+            require(c,clinic,actor,ALL)
             if not owned(c,actor,clinic,'member')['data'].get('active'):fail('Membership is inactive',403)
             changed=c.execute("UPDATE assistant_turns SET response=?,status='completed',lease_until=0 WHERE id=? AND token=?",(json.dumps(result),turn_id,token))
             if changed.rowcount!=1:fail('Another request replaced this response; reload the conversation',409)

@@ -42,6 +42,8 @@ ACTION_FIELDS={
 }
 ACTION_FIELDS.update(assistant_operations.catalogue())
 def answer(c,clinic,actor,message,patient_id=None,history=None):
+    from read_access import require, ALL
+    require(c,clinic,actor,ALL)
     from spine.reader import native_records
     from clinic_workflows import clinic_today
     q=message.lower();rs=all_records(c,clinic)+native_records(clinic);patients=[r for r in rs if r['kind']=='patient']
