@@ -431,3 +431,24 @@ invoice. Direct API/data checks passed 16 cases and verified 65 unrelated origin
 records, plus restrictions after service restart. Exact CI, merge and Railway
 receipts are recorded after release; these local results alone do not prove live
 rollout or the remaining external integrations.
+
+## Persistent owner conversation, review and internal escalation
+
+The owner portal now saves questions and staff replies. Optional model intent
+classification can select approved care, recorded medication instructions or due
+reminders; deterministic code supplies the quotations and receipts. Private facts,
+revoked links and changed approvals are enforced on readback. Durable message
+claims and retry keys prevent duplicate submissions, and interrupted retrieval
+enters the internal attention queue rather than disappearing.
+
+The staff handover screen provides versioned reply/acknowledgement/closure and
+verbatim conversation receipts. A new owner message blocks a stale review.
+An optional clinic-defined acknowledgement target creates one internal overdue
+alert; no provider dispatch or monitoring promise is implied. Browser acceptance
+found and fixed draft loss across explicit conversation refresh. See
+OWNER_CONVERSATIONS.md for the full scope and remaining external channel boundary.
+
+Full local validation: 567 backend tests, 40 frontend tests, TypeScript and build.
+Two-sided production-browser acceptance, a real scheduled timeout, 17 API checks
+and unchanged-record checks passed with synthetic data. Hosted provider/deployment
+receipts are recorded separately after release.

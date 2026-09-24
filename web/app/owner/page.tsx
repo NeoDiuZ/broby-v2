@@ -2,16 +2,17 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {CalendarBlank,Pill,FileText,ShieldCheck,Microphone,LinkSimple} from '@phosphor-icons/react';
 import {PatientMark,Badge} from '@/components/ui';
+import {OwnerConversation} from '@/components/OwnerConversation';
 import {OwnerTransfer} from '@/components/OwnerTransfer';
 import {patientAge} from '@/lib/types';
 
 export default function Owner(){
  const [data,setData]=useState<any>(null),[error,setError]=useState(''),[token,setToken]=useState<string|null>(null),[petId,setPetId]=useState('');
- const [tab,setTab]=useState('Records'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[share,setShare]=useState(''),[question,setQuestion]=useState(''),[answer,setAnswer]=useState<any>(null),[editing,setEditing]=useState<any>(null),[revision,setRevision]=useState(0);
+ const [tab,setTab]=useState('Records'),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[share,setShare]=useState(''),[editing,setEditing]=useState<any>(null),[revision,setRevision]=useState(0);
  const submission=useRef({body:'',key:''});
  useEffect(()=>setToken(new URLSearchParams(location.search).get('token')||''),[]);
  const base=token?'/api/owner/'+encodeURIComponent(token):'/api/owner-account'+(petId?'/pets/'+encodeURIComponent(petId):'');
- useEffect(()=>{if(token===null)return;let live=true;setError('');setData(null);setEditing(null);setAnswer(null);setShare('');
+ useEffect(()=>{if(token===null)return;let live=true;setError('');setData(null);setEditing(null);setShare('');
   fetch(base).then(async r=>{const b=await r.json();if(!r.ok)throw new Error(typeof b.detail==='string'?b.detail:'Open a valid clinic link to continue.');if(live)setData(b)}).catch(e=>{if(live)setError(e.message)});
   return()=>{live=false};
  },[base,token,revision]);
@@ -54,7 +55,7 @@ export default function Owner(){
    </form>
    <div className="document-list"><h3>Your submissions</h3>{data.intakes?.map((r:any)=><article key={r.id} className="intake-card"><Badge>{r.data.status==='new'?'Awaiting review':r.data.status}</Badge><p className="preserve">{r.data.text}</p>{r.data.status==='new'&&<button className="secondary" onClick={()=>setEditing(r)}>Edit submission</button>}</article>)}</div>
   </section>}
-  {tab==='Ask the clinic'&&<section className="panel"><div className="panel-heading"><h2>Saved care instructions</h2></div><div className="form"><p>Retrieve medication instructions and reminders already recorded by your clinic.</p><form onSubmit={async e=>{e.preventDefault();setBusy(true);try{setAnswer(await send('/help',{message:question}))}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}}}><label>Your question<input value={question} onChange={e=>setQuestion(e.target.value)} required maxLength={2000} placeholder="What medication instructions were shared?"/></label><button className="primary" disabled={busy}>Show saved information</button></form>{answer&&<><p className="preserve">{answer.text}</p><p className="integration-note">{answer.notice}</p>{answer.emergency_phone&&<a href={'tel:'+answer.emergency_phone}>Call clinic: {answer.emergency_phone}</a>}</>}</div></section>}
+  {tab==='Ask the clinic'&&<OwnerConversation key={base} base={base}/>}
   <p className="owner-footnote">{data.saved_access?'Saved access':'This private link'} expires {new Date(data.expires_at).toLocaleDateString('en-SG')}. Access may be revoked by the clinic. Contact your clinic for medical questions.</p>
  </>}</main>;
 }

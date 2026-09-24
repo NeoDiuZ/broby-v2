@@ -116,6 +116,7 @@ ROUTES = {
         '/api/assistant/conversations', '/api/assistant/conversations/{id}',
         '/api/assistant/conversations/{id}/turns/{turn_id}/confirm',
         '/api/organization/join-preview', '/api/organization/adoptions', '/api/organization/adoption-preview',
+        '/api/owner-conversations/{id}',
     )},
 }
 PUBLIC = {
