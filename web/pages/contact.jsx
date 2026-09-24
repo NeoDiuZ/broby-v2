@@ -115,8 +115,8 @@ export default function Contact() {
                   Response Time
                 </h3>
                 <p className="text-text-secondary">
-                  We typically respond within 24 business hours. For urgent inquiries,
-                  please indicate in your message.
+                  Our team reviews enquiries during business hours. This form is
+                  not monitored for medical emergencies.
                 </p>
               </div>
             </div>
@@ -235,7 +235,7 @@ export default function Contact() {
                   </div>
                 </div>
                 <p className="text-text-secondary text-sm">
-                  © 2025 Broby Vets. All rights reserved.
+                  © 2026 Broby Vets. All rights reserved.
                 </p>
               </div>
 
