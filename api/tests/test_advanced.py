@@ -141,6 +141,23 @@ def test_ai_adapter_classifies_http_failure_without_provider_body(monkeypatch,st
     assert caught.value.service=='ai' and caught.value.status_code==status
     assert 'private' not in str(caught.value) and 'private' not in caught.value.safe_job_error(False)
 
+@pytest.mark.parametrize('message,reason',[
+    ('You have reached your specified API usage limits. private account details','account or workspace spend limit'),
+    ('You have reached your specified workspace API usage limits. private workspace details','account or workspace spend limit'),
+    ('Invalid model parameter: private value','request'),
+])
+def test_ai_adapter_recognizes_spend_limit_without_storing_provider_message(monkeypatch,message,reason):
+    import httpx
+    monkeypatch.setenv('BROBY_ENABLE_AI','1')
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic-key')
+    monkeypatch.setenv('ANTHROPIC_MODEL','synthetic-model')
+    original=httpx.Client
+    def respond(request):return httpx.Response(400,json={'error':{'type':'invalid_request_error','message':message}})
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    with pytest.raises(providers.ProviderError) as caught:providers.model_json('test',{})
+    safe=caught.value.safe_job_error(False)
+    assert reason in safe and 'private' not in safe and 'private' not in str(caught.value)
+
 def test_invitation_single_use_and_mfa_replay(monkeypatch):
     auth.setup_tables();client=TestClient(main.app);admin={'x-actor-id':'clinic-east-admin'}
     member=act('member.save',{'name':'Synthetic user','role':'nurse'},actor='clinic-east-admin')

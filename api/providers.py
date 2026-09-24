@@ -3,12 +3,13 @@ import os,json,math
 import httpx
 
 class ProviderError(Exception):
-    def __init__(self, message, *, service=None, status_code=None):
+    def __init__(self, message, *, service=None, status_code=None, reason_code=None):
         super().__init__(message)
         # Only the adapter supplies these bounded facts. Never persist provider
         # response bodies, request headers, or arbitrary exception messages.
         self.service = service if service in ('ai', 'speech') else None
         self.status_code = status_code if type(status_code) is int and 400 <= status_code <= 599 else None
+        self.reason_code = reason_code if reason_code in ('spend_limit',) else None
 
     @property
     def retryable(self):
@@ -17,13 +18,31 @@ class ProviderError(Exception):
     def safe_job_error(self, retry):
         if self.service and self.status_code:
             status = self.status_code
-            reason = ('credentials' if status == 401 else 'billing or credits' if status == 402
+            reason = ('account or workspace spend limit' if self.reason_code == 'spend_limit'
+                      else 'credentials' if status == 401 else 'billing or credits' if status == 402
                       else 'access' if status == 403 else 'model or endpoint' if status == 404
                       else 'rate limit' if status == 429 else 'request' if status < 500 and status != 408
                       else 'temporary availability')
             action = 'Automatic retry scheduled.' if retry else 'Review the provider connection before retrying.'
             return f'{self.service.upper()} provider HTTP {status} ({reason}). {action}'
         return 'Provider request failed; retry scheduled' if retry else 'Job failed; review permissions and provider configuration before retrying'
+
+def ai_http_error(response):
+    reason_code = None
+    if response.status_code == 400:
+        try:
+            body = response.json()
+            error = body.get('error', {}) if isinstance(body, dict) else {}
+            message = error.get('message', '') if isinstance(error, dict) else ''
+            if isinstance(message, str) and message.startswith((
+                'You have reached your specified API usage limits',
+                'You have reached your specified workspace API usage limits',
+            )):
+                reason_code = 'spend_limit'
+        except (ValueError, TypeError):
+            pass
+    return ProviderError('AI provider request failed; no document was changed.',
+                         service='ai', status_code=response.status_code, reason_code=reason_code)
 
 def available():
     enabled=os.getenv('BROBY_ENABLE_AI','0')=='1'
@@ -67,7 +86,7 @@ def model_json(system,payload):
     try:
         with httpx.Client(timeout=httpx.Timeout(180,connect=15)) as client:
             response=client.post('https://api.anthropic.com/v1/messages',headers={'x-api-key':os.environ['ANTHROPIC_API_KEY'],'anthropic-version':'2023-06-01'},json=request)
-        if response.status_code!=200:raise ProviderError('AI provider request failed; no document was changed.',service='ai',status_code=response.status_code)
+        if response.status_code!=200:raise ai_http_error(response)
         body=response.json()
         if body.get('stop_reason')=='max_tokens':raise ProviderError('AI output was incomplete; reduce the source selection and retry.')
         if planner:
