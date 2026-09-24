@@ -171,6 +171,8 @@ def tick(instant=None):
     with connection(True) as c:
         clinics = [r[0] for r in c.execute("SELECT id FROM records WHERE kind='clinic'")]
         for clinic in clinics:
+            from owner_conversations import tick as conversation_tick
+            conversation_tick(c,clinic,instant)
             settings = get(c, 'settings-' + clinic, clinic)
             if not settings: continue
             d = settings['data']; actor = d.get('automation_actor')
