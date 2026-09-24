@@ -244,3 +244,6 @@ app.include_router(financial_router)
 
 from recalls import router as recalls_router
 app.include_router(recalls_router)
+
+from organization_adoption import router as adoption_router
+app.include_router(adoption_router)

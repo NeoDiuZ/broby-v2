@@ -76,6 +76,8 @@ from scheduling import PERMISSIONS as SCHEDULING_PERMISSIONS
 PERMISSIONS.update(SCHEDULING_PERMISSIONS)
 from recalls import PERMISSIONS as RECALL_PERMISSIONS
 PERMISSIONS.update(RECALL_PERMISSIONS)
+from organization_adoption import PERMISSIONS as ADOPTION_PERMISSIONS
+PERMISSIONS.update(ADOPTION_PERMISSIONS)
 
 DEPENDENCIES={
  'recall.prepare':('message.queue',), 'recall.cancel':('message.cancel',),
@@ -124,6 +126,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in ADOPTION_PERMISSIONS:
+        from organization_adoption import dispatch as adoption_action
+        return adoption_action(c,a,p,clinic,actor)
     if a in RECALL_PERMISSIONS:
         from recalls import dispatch as recall_action
         return recall_action(c,a,p,clinic,actor)
