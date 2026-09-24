@@ -133,6 +133,29 @@ def test_public_enquiry_validates_and_limits_repeated_contact(hosted):
     assert hosted.get('/api/marketing/leads').json()['outstanding'] == 3
 
 
+def test_site_owner_can_page_through_every_enquiry(hosted):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    started = datetime(2026, 9, 24, tzinfo=timezone.utc)
+    with db.connection(True) as connection:
+        for index in range(101):
+            connection.execute('''INSERT INTO marketing_leads
+              (id,submission_key,payload_hash,contact_name,clinic_name,country,
+               contact_channel,contact_handle,contact_key,subject,message,created_at)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+              (str(uuid.uuid4()), str(uuid.uuid4()), 'synthetic', f'Synthetic {index}',
+               'Test clinic', 'SG', 'email', f'{index}@example.invalid',
+               f'synthetic-{index}', '', '', (started + timedelta(seconds=index)).isoformat()))
+    hosted.post('/api/login', json={'username': 'admin', 'password': 'synthetic-test-password'})
+    first = hosted.get('/api/marketing/leads?offset=0').json()
+    second = hosted.get('/api/marketing/leads?offset=100').json()
+    assert first['total'] == second['total'] == first['outstanding'] == 101
+    assert len(first['leads']) == 100 and len(second['leads']) == 1
+    assert {lead['id'] for lead in first['leads']}.isdisjoint({lead['id'] for lead in second['leads']})
+    assert second['leads'][0]['contact_name'] == 'Synthetic 0'
+    assert hosted.get('/api/marketing/leads?offset=-1').status_code == 422
+
+
 def test_clinic_staff_cannot_read_or_acknowledge_site_enquiries(hosted):
     import uuid
     payload = {'submission_key': str(uuid.uuid4()), 'contact_name': 'Dr Test',
