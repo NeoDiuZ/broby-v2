@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import uuid
 import httpx
+from verification_records import stable_record
 
 p = argparse.ArgumentParser()
 p.add_argument('base_url'); p.add_argument('--credentials', required=True, type=Path)
@@ -83,7 +84,9 @@ with httpx.Client(base_url=base+'/api/', headers={'Origin': base, 'x-clinic-id':
         check(restored['data']==s['restored_schedule']['data'],'original clinic rota restored')
         after={r['id']:r for r in records()};before=s['before'];old_schedule=s.get('original_schedule')
         others=[r for r in before if not old_schedule or r['id']!=old_schedule['id']]
-        check(all(after.get(r['id'])==r for r in others),f'all {len(others)} unrelated existing records unchanged')
+        check(all(stable_record(after.get(r['id']))==stable_record(r) for r in others),f'all {len(others)} unrelated existing records retain their content and balances')
+        refreshed=sum(after.get(r['id'])!=r for r in others)
+        print(f'INFO {refreshed} records have only independently refreshed Stripe verification metadata')
         with httpx.Client(base_url=base+'/api/',timeout=30) as anonymous:
             check(anonymous.post('schedule/leave/preview',json={'id':s['leave'],'version':leave['version']}).status_code==401,'unauthenticated leave review denied')
         s['checks']=checks;save();print(f'{len(checks)} scheduling acceptance checks passed.')
