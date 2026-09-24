@@ -245,3 +245,46 @@ def test_clinic_archive_preserves_native_facts_and_blocks_partial_restore(client
         assert not json.loads(z.read('spine.json'))['tables']['events']
     archive=tmp_path/'native.zip';archive.write_bytes(r.content)
     with pytest.raises(ValueError,match='coordinated'):restore(archive,tmp_path/'restore')
+
+
+def test_existing_patient_link_preserves_native_history_and_owner_projection(client):
+    """Exercise the receiving record review and transfer across both real stores."""
+    from fastapi import HTTPException
+    import transfers
+    river={'x-clinic-id':'clinic-river','x-actor-id':'clinic-river-vet'}
+    def act(name,p,clinic='clinic-river'):
+        return actions.execute(name,p,clinic,clinic+'-vet',str(uuid.uuid4()))
+    patient=act('patient.create',{'name':'SYNTHETIC independent Luna','species':'Cat','owner_name':'Receiving owner'})
+    extra=act('owner.create',{'name':'Receiving additional owner'})
+    patient=act('patient.owners',{'id':patient['id'],'version':patient['version'],'owner_id':patient['data']['owner_id'],'additional_owner_ids':[extra['id']]})
+    target_lab=client.post('/api/v2/ingest/lab',json=result(patient_id=patient['id'],dedupe_key='link:receiving',summary='Independent receiving lab'),headers=river)
+    assert target_lab.status_code==200,target_lab.text
+    target_id=target_lab.json()['id']
+    source_lab=ingest(client,result(patient_id='luna',dedupe_key='link:source',summary='Approved source lab')).json()
+    act('clinical.approve',{'id':source_lab['id'],'approved':True},'clinic-east')
+    grant=act('share.create',{'patient_id':'luna'},'clinic-east')
+    request=client.post('/api/owner/'+grant['id']+'/transfers',json={'target_clinic':'clinic-river','consent':True}).json()
+    route='/api/transfers/'+request['id']+'/preview'
+    def review():
+        response=client.get(route,params={'target_patient_id':patient['id']},headers=river)
+        assert response.status_code==200,response.text
+        return response.json()
+    first=review()
+    assert any(x['id']==target_id and x['data']['native_spine'] for x in first['existing_patient_review']['existing_records'])
+    p={'id':request['id'],'target_patient_id':patient['id'],'expected_digest':first['digest'],'link_existing_patient':True,'acknowledge_existing_history':True,'patient_match_reason':'Checked synthetic patient identity and independently recorded lab history.'}
+    act('clinical.approve',{'id':target_id,'approved':True})
+    with pytest.raises(HTTPException) as exc:act('transfer.accept',p)
+    assert exc.value.status_code==409
+    current=review()
+    result_=act('transfer.accept',{**p,'expected_digest':current['digest']})
+    assert result_['id']==patient['id']
+    timeline=client.get('/api/v2/patients/'+patient['id']+'/timeline',headers=river).json()['items']
+    assert any(e['id']==target_id for e in timeline)
+    assert any(e['summary']=='Reviewed existing-patient link' and e['source'] for e in timeline)
+    with database.session() as s:
+        assert s.get(Event,target_id).body['owner_approved'] is True
+        assert s.scalar(select(func.count()).select_from(Patient).where(Patient.clinic_id=='clinic-river'))==1
+        assert {link.owner_id for link in s.scalars(select(OwnerPatient).where(OwnerPatient.patient_id==patient['id']))}=={patient['data']['owner_id'],extra['id']}
+        assert s.get(Patient,patient['id']).name=='SYNTHETIC independent Luna'
+        assert s.get(Owner,patient['data']['owner_id']).name=='Receiving owner'
+    with db.connection() as c:assert db.get(c,patient['id'])==patient
