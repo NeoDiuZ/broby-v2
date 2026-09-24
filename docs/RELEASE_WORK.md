@@ -448,7 +448,12 @@ alert; no provider dispatch or monitoring promise is implied. Browser acceptance
 found and fixed draft loss across explicit conversation refresh. See
 OWNER_CONVERSATIONS.md for the full scope and remaining external channel boundary.
 
-Full local validation: 567 backend tests, 40 frontend tests, TypeScript and build.
+Full local validation: 569 backend tests, 40 frontend tests, TypeScript and build.
 Two-sided production-browser acceptance, a real scheduled timeout, 17 API checks
 and unchanged-record checks passed with synthetic data. Hosted provider/deployment
 receipts are recorded separately after release.
+
+Each human conversation message also has one patient-timeline event with its
+exact source receipt. Duplicate submissions cannot duplicate timeline entries,
+and these messages are not automatically approved as clinical instructions.
+The dedicated PostgreSQL acceptance case verifies timeline and source isolation.

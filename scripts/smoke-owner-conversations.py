@@ -53,6 +53,10 @@ with httpx.Client(base_url=base+'/api/',headers={'Origin':base,'x-clinic-id':'cl
   thread=req('GET','owner-conversations/'+s['thread']);check(thread['data']['status']=='closed' and len(thread['turns'])==3,'both owner messages and staff reply survive readback')
   if a.require_ai:check(thread['turns'][0]['data'].get('retrieval')=='model_intent','real configured model selected retrieval without authoring the care facts')
   check(len({x['id'] for x in thread['turns']})==3,'no duplicate message records')
+  timeline=req('GET','v2/patients/'+s['patient']+'/timeline?category=message')['items']
+  check({e['id'] for e in timeline}=={'conversation-event:'+t['id'] for t in thread['turns']},'each human message appears exactly once on the PostgreSQL patient timeline')
+  messages={t['id']:t['data']['message'] for t in thread['turns']}
+  check(all(req('GET','v2/sources/'+e['source']['receipt_id'])['text']==messages[e['id'].removeprefix('conversation-event:')] for e in timeline),'timeline source receipts preserve the exact owner and clinic words')
   req('GET','owner/'+s['grant']+'/conversations/'+s['thread'],404);check(True,'revoked owner link cannot reopen the history')
   alerts=[r for r in rs() if r['kind']=='escalation' and r['data'].get('owner_thread_id')==s['thread']]
   check(len(alerts)==1 and alerts[0]['data']['status']=='acknowledged' and alerts[0]['data']['delivery']=='disabled','one internal urgent alert is retained and acknowledged without external delivery')

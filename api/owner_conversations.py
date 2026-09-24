@@ -65,6 +65,21 @@ def owned_thread(c, g, id):
 def turns(c, thread):
     return sorted([r for r in all_records(c,thread['clinic_id'],'owner_turn') if r['data']['thread_id']==thread['id']],key=lambda r:(r['created_at'],r['id']))
 
+def timeline_receipt(c, turn):
+    """Keep the exact human message on the patient timeline, never the AI answer."""
+    d=turn['data'];clinic=turn['clinic_id'];source_id='conversation-source:'+turn['id']
+    author='Owner via private portal link'
+    if d['speaker']=='clinic':
+        member=get(c,d['actor_id'],clinic)
+        author=member['data']['name'] if member else 'Clinic staff'
+    title='Owner portal question' if d['speaker']=='owner' else 'Clinic portal reply'
+    record(c,'source',clinic,{'patient_id':d['patient_id'],'title':title,'text':d['message'],
+                             'category':'message','section':'Subjective','author':author,
+                             'owner_turn_id':turn['id'],'actor_id':d.get('actor_id')},source_id)
+    record(c,'event',clinic,{'patient_id':d['patient_id'],'category':'message','title':title,
+                            'body':d['message'],'source_ids':[source_id],'approved':False,
+                            'occurred_at':turn['created_at'],'owner_turn_id':turn['id']},'conversation-event:'+turn['id'])
+
 def present(c, g, thread):
     from portal import view
     data=view(c,g)
@@ -123,6 +138,7 @@ def send(token, p):
             if len(existing)>=100:fail('Start a new conversation after 100 messages',409)
             if any(r['data'].get('state')=='pending' for r in existing):fail('Wait for the current question to finish or recover before sending another',409)
             old=record(c,'owner_turn',g['clinic_id'],{'patient_id':g['patient_id'],'thread_id':thread['id'],'speaker':'owner','message':p.message,'fingerprint':fingerprint,'state':'pending'},turn_id)
+            timeline_receipt(c,old)
         if any(r['id']!=old['id'] and r['data'].get('state')=='pending' for r in turns(c,thread)):
             fail('Wait for the current question before retrying this one',409)
         claim=secrets.token_hex(16)
@@ -229,8 +245,9 @@ def dispatch(c,a,p,clinic,actor):
         if len(turns(c,r))>=100:fail('This conversation reached 100 messages; acknowledge or close it',409)
         text=require(p,'message')
         if len(text)>4000:fail('Use a reply of at most 4000 characters')
-        record(c,'owner_turn',clinic,{'patient_id':r['data']['patient_id'],'thread_id':r['id'],
-                                    'speaker':'clinic','actor_id':actor,'message':text,'state':'completed'})
+        turn=record(c,'owner_turn',clinic,{'patient_id':r['data']['patient_id'],'thread_id':r['id'],
+                                         'speaker':'clinic','actor_id':actor,'message':text,'state':'completed'})
+        timeline_receipt(c,turn)
         return update(c,r,{**r['data'],'last_reply_at':now(),'last_reply_by':actor})
     if a in ('conversation.acknowledge','conversation.close'):
         reason=require(p,'reason')

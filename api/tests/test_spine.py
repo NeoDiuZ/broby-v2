@@ -44,6 +44,25 @@ def test_lab_without_visit_is_one_patient_event(client):
     with db.connection() as c:assert len(db.all_records(c,'clinic-east','consultation'))==before
     with database.session() as s:assert s.scalar(select(func.count()).select_from(Event).where(Event.dedupe_key=='lab:report-001'))==1
 
+def test_portal_conversation_projects_exact_human_receipts_to_patient_timeline(client,monkeypatch):
+    import owner_conversations as chat
+    monkeypatch.setattr(chat,'topic',lambda message:('staff','rules'))
+    token=actions.execute('share.create',{'patient_id':'milo'},'clinic-east','clinic-east-vet',str(uuid.uuid4()))['id']
+    question=chat.Message(message='SYNTHETIC owner question without a visit',key='timeline-question')
+    result=chat.send(token,question);chat.send(token,question)
+    with db.connection() as c:thread=db.get(c,result['id'])
+    actions.execute('conversation.reply',{'id':thread['id'],'version':thread['version'],'last_owner_turn':thread['data']['last_owner_turn'],'message':'SYNTHETIC clinic reply'},'clinic-east','clinic-east-vet',str(uuid.uuid4()))
+    timeline=client.get('/api/v2/patients/milo/timeline?category=message').json()['items']
+    assert len(timeline)==2
+    texts=[]
+    for event in timeline:
+        assert event['event_type']=='message' and event['source']['kind']=='human'
+        receipt=client.get('/api/v2/sources/'+event['source']['receipt_id'])
+        assert receipt.status_code==200
+        texts.append(receipt.json()['text'])
+    assert set(texts)=={'SYNTHETIC owner question without a visit','SYNTHETIC clinic reply'}
+    assert client.get('/api/v2/patients/luna/timeline?category=message').json()['items']==[]
+
 def test_same_result_across_actors_and_concurrent_requests_creates_one(client):
     with ThreadPoolExecutor(max_workers=4) as pool:
         responses=list(pool.map(lambda n:ingest(client,headers={'x-actor-id':'clinic-east-vet' if n%2 else 'clinic-east-nurse'}),range(4)))

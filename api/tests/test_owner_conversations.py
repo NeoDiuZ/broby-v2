@@ -25,6 +25,22 @@ def test_saved_question_quotes_only_approved_records_and_retry_is_exact():
     assert len(rows('owner_thread'))==1 and len(rows('owner_turn'))==1
     err(409,lambda:question(token,key=key,message='Changed question'))
 
+def test_human_messages_have_one_exact_timeline_receipt_without_auto_approval():
+    token=grant();result=question(token,key='one-timeline-question')
+    question(token,key='one-timeline-question')
+    transition(result,'conversation.reply',message='SYNTHETIC exact clinic reply')
+    messages=rows('owner_turn')
+    events=[r for r in rows('event') if r['data'].get('owner_turn_id')]
+    assert len(events)==len(messages)==2
+    for turn in messages:
+        event=get('conversation-event:'+turn['id']);source=get(event['data']['source_ids'][0])
+        assert event['data']['body']==source['data']['text']==turn['data']['message']
+        assert event['data']['patient_id']==source['data']['patient_id']=='luna'
+        assert event['data']['approved'] is False
+    from portal import view,grant as load_grant
+    with db.connection() as c:
+        assert not any(r['data'].get('owner_turn_id') for r in view(c,load_grant(c,token))['events'])
+
 def test_separate_grants_same_patient_cannot_read_each_others_messages():
     first=grant();other=grant();result=question(first)
     assert chat.listing(other)==[]

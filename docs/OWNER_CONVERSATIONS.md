@@ -5,7 +5,9 @@ access. A conversation is scoped to that exact grant and pet; a separate link,
 even for the same pet, cannot read its messages. A revoked link loses access.
 The existing first-tap flow and approved record vault remain available.
 
-Questions, quoted source receipts and staff replies are persisted. When enabled,
+Questions, quoted source receipts and staff replies are persisted. Each human
+message also appears once on the patient's PostgreSQL timeline with its exact
+source text; it does not become an approved care instruction automatically. When enabled,
 the model only chooses medications, reminders, approved care or staff review.
 It receives the question, not the clinic record set. Deterministic code returns
 exact shared facts; neither model-authored care advice nor an invented dose can
@@ -40,11 +42,12 @@ the live queue shows later changes. They do not manufacture an AI clinical summa
 
 ## Acceptance and remaining channel boundary
 
-31 dedicated regression cases cover approved-only retrieval, link/patient scope,
+32 dedicated regression cases cover approved-only retrieval, link/patient scope,
 revocation during provider processing, changed sources, stale reviews, duplicate
 messages, provider outage/invalid intent, expired worker claims, saved browser
 access, immutable handover receipts, timeouts and access-policy enforcement.
-The full suite passed 567 backend tests, with 40 frontend tests, TypeScript and a
+An additional real-PostgreSQL case verifies message timeline/source projection.
+The full suite passed 569 backend tests, with 40 frontend tests, TypeScript and a
 production build for the combined release.
 
 Local two-sided browser acceptance uses password authentication, real PostgreSQL
