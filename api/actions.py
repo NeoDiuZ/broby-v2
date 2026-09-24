@@ -74,8 +74,11 @@ from billing import PERMISSIONS as BILLING_PERMISSIONS
 PERMISSIONS.update(BILLING_PERMISSIONS)
 from scheduling import PERMISSIONS as SCHEDULING_PERMISSIONS
 PERMISSIONS.update(SCHEDULING_PERMISSIONS)
+from recalls import PERMISSIONS as RECALL_PERMISSIONS
+PERMISSIONS.update(RECALL_PERMISSIONS)
 
 DEPENDENCIES={
+ 'recall.prepare':('message.queue',), 'recall.cancel':('message.cancel',),
  'leave.review':('schedule.configure',),
  'credit_note.reverse':('credit_note.create',),
  'stripe.checkout':('payment.record',),'stripe.refund':('payment.refund',),
@@ -121,6 +124,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in RECALL_PERMISSIONS:
+        from recalls import dispatch as recall_action
+        return recall_action(c,a,p,clinic,actor)
     if a in SCHEDULING_PERMISSIONS:
         from scheduling import dispatch as scheduling_action
         return scheduling_action(c,a,p,clinic,actor)
@@ -316,6 +322,8 @@ def dispatch(c,a,p,clinic,actor):
     if a=='message.complete':
         r=owned(c,p['id'],clinic,'outbox'); version(r,p)
         if r['data']['status']!='pending': fail('Only pending messages can be marked sent',409)
+        from recalls import validate_draft
+        validate_draft(c,r)
         result=update(c,r,{**r['data'],'status':'sent_manually','sent_at':now()})
         event(c,clinic,r['data']['patient_id'],'message','Owner communication',r['data']['body']); return result
     if a=='share.create':
