@@ -121,3 +121,11 @@ appointments, deactivates its test member and restores the previous clinic rota.
 It checks that every other existing record is unchanged. If a run fails, inspect
 its saved phase/IDs before acting; it refuses to recreate an existing state file.
 The leave and cancelled appointment history remain as acceptance evidence.
+
+During later read-only checks, Stripe's independent workers can advance the
+verification timestamps/versions of existing checkout/refund receipts. The
+scheduling harness retains its original raw snapshot and ignores only checkout
+`verified_at` plus checkout/refund `version`/`updated_at` when comparing them. It
+reports the number of such refreshes; amounts, statuses, invoice links, creation
+timestamps and every non-Stripe record still compare exactly. Regression tests
+ensure genuine financial changes or missing records fail this comparison.
