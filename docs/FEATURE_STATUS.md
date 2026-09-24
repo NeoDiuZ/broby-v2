@@ -1,5 +1,8 @@
 # Broby V2 requirements audit — 24 September 2026
 
+For the concise launch classification and release gates, see
+[the 24 September launch audit](LAUNCH_AUDIT_2026-09-24.md).
+
 Source: [Broby V2 Google Doc](https://docs.google.com/document/d/1Oca1mRqo32iZ7OjH_nz24OjChAuxAUo369uWJmq1kR0/edit), both tabs re-read on 24 September. The 58-item **THE VISION** tab is the full scope. **FIRST BUILD** describes an earlier, smaller milestone; completing it does not complete the product.
 
 This replaces the obsolete status table, which incorrectly continued to list features shipped in PR #5 as missing. The first-build PostgreSQL contract is implemented. The whole vision is **not ready for a real-clinic cutover**. Broby New is a live, authenticated deployment with synthetic data. Stripe sandbox checkout/refunds are deployed and verified; WhatsApp trial activation and an own-number join/reply exchange are verified; the provider setup screen still withholds the supplied template controls, and backend configuration remains pending. Lab feeds remain simulations. “Implemented” below describes the named capability in that agreed release scope, not a guarantee of clinical accuracy or an end-to-end production certification.

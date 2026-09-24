@@ -90,3 +90,55 @@ def test_device_access_uses_actual_session_deadline_and_never_exposes_secrets(ho
     assert response.headers['cache-control'] == 'no-store'
     hosted.post('/api/logout')
     assert hosted.get('/api/session').json()['expires_at'] is None
+
+
+def test_public_enquiry_is_durable_private_and_replay_safe(hosted):
+    import uuid
+    payload = {'submission_key': str(uuid.uuid4()), 'contact_name': 'Dr Test',
+               'clinic_name': 'Synthetic Clinic', 'country': 'SG',
+               'contact_channel': 'email', 'contact_handle': 'test@example.invalid'}
+    first = hosted.post('/api/marketing/leads/submit', json=payload)
+    assert first.status_code == 201 and first.json()['received']
+    assert hosted.post('/api/marketing/leads/submit', json=payload).json() == first.json()
+    assert hosted.post('/api/marketing/leads/submit', json={**payload, 'clinic_name': 'Changed'}).status_code == 409
+    assert hosted.get('/api/marketing/leads').status_code == 401
+    hosted.post('/api/login', json={'username': 'admin', 'password': 'synthetic-test-password'})
+    result = hosted.get('/api/marketing/leads')
+    assert result.status_code == 200 and result.json()['outstanding'] == 1
+    lead = result.json()['leads'][0]
+    assert lead['id'] == first.json()['reference']
+    assert lead['contact_handle'] == payload['contact_handle']
+    assert 'submission_key' not in lead and 'payload_hash' not in lead
+    marked = hosted.post('/api/marketing/leads/' + lead['id'] + '/contacted')
+    assert marked.status_code == 200 and marked.json()['changed']
+    assert hosted.post('/api/marketing/leads/' + lead['id'] + '/contacted').json()['changed'] is False
+    assert hosted.get('/api/marketing/leads').json()['outstanding'] == 0
+
+
+def test_public_enquiry_validates_and_limits_repeated_contact(hosted):
+    import uuid
+    base = {'contact_name': 'Dr Test', 'country': 'MY', 'contact_channel': 'email',
+            'contact_handle': 'test@example.invalid'}
+    invalid = hosted.post('/api/marketing/leads/submit', json={**base, 'submission_key': str(uuid.uuid4()),
+                                                                  'contact_handle': 'not-an-email'})
+    assert invalid.status_code == 422
+    trap = hosted.post('/api/marketing/leads/submit', json={**base, 'submission_key': str(uuid.uuid4()),
+                                                               'company_website': 'https://bot.example'})
+    assert trap.status_code == 201 and trap.json() == {'received': True}
+    for handle in ['test@example.invalid', 'TEST@example.invalid', 'Test@Example.Invalid']:
+        assert hosted.post('/api/marketing/leads/submit', json={**base, 'submission_key': str(uuid.uuid4()),
+                                                                    'contact_handle': handle}).status_code == 201
+    assert hosted.post('/api/marketing/leads/submit', json={**base, 'submission_key': str(uuid.uuid4())}).status_code == 429
+    hosted.post('/api/login', json={'username': 'admin', 'password': 'synthetic-test-password'})
+    assert hosted.get('/api/marketing/leads').json()['outstanding'] == 3
+
+
+def test_clinic_staff_cannot_read_or_acknowledge_site_enquiries(hosted):
+    import uuid
+    payload = {'submission_key': str(uuid.uuid4()), 'contact_name': 'Dr Test',
+               'country': 'SG', 'contact_channel': 'email', 'contact_handle': 'private@example.invalid'}
+    lead_id = hosted.post('/api/marketing/leads/submit', json=payload).json()['reference']
+    auth.provision('other-admin', 'clinic-river-admin', 'clinic-river', 'synthetic-other-password')
+    hosted.post('/api/login', json={'username': 'other-admin', 'password': 'synthetic-other-password'})
+    assert hosted.get('/api/marketing/leads').status_code == 403
+    assert hosted.post('/api/marketing/leads/' + lead_id + '/contacted').status_code == 403

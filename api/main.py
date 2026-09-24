@@ -261,3 +261,6 @@ from access_controls import router as access_router
 app.include_router(access_router)
 from owner_conversations import router as owner_conversations_router
 app.include_router(owner_conversations_router)
+
+from marketing_leads import router as marketing_leads_router
+app.include_router(marketing_leads_router)

@@ -1,7 +1,7 @@
 import Head from 'next/head'
 import Link from 'next/link'
 import { ArrowLeft, Mail, Phone, MapPin } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 export default function Contact() {
   const [formData, setFormData] = useState({
@@ -13,20 +13,40 @@ export default function Contact() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+  const pendingSubmission = useRef({ key: '', payload: '' })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
+    setError('')
 
     try {
-      // For now, use mailto as fallback
-      const mailtoLink = `mailto:contact@brobyvets.com?subject=${encodeURIComponent(formData.subject)}&body=${encodeURIComponent(
-        `Name: ${formData.name}\nEmail: ${formData.email}\nCompany: ${formData.company}\n\nMessage:\n${formData.message}`
-      )}`
-      localStorage.setItem('broby-contact-preview',JSON.stringify(formData))
+      const payload = JSON.stringify(formData)
+      if (pendingSubmission.current.payload !== payload) {
+        pendingSubmission.current = { key: crypto.randomUUID(), payload }
+      }
+      const response = await fetch('/api/marketing/leads/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          submission_key: pendingSubmission.current.key,
+          contact_name: formData.name,
+          clinic_name: formData.company,
+          country: 'other',
+          contact_channel: 'email',
+          contact_handle: formData.email,
+          subject: formData.subject,
+          message: formData.message,
+        }),
+      })
+      if (!response.ok || !(await response.json()).received) {
+        throw new Error('We could not save your enquiry. Please try again or email contact@brobyvets.com.')
+      }
       setSubmitted(true)
+      pendingSubmission.current = { key: '', payload: '' }
     } catch (error) {
-      console.error('Form submission error:', error)
+      setError(error.message || 'We could not save your enquiry. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -106,10 +126,10 @@ export default function Contact() {
               {submitted ? (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
                   <h3 className="text-lg font-semibold text-green-800 mb-2">
-                    Local draft saved
+                    Enquiry received
                   </h3>
                   <p className="text-green-700">
-                    This preview saved your inquiry on this device. No message was sent.
+                    Your enquiry is saved for our team. We will reply by email.
                   </p>
                 </div>
               ) : (
@@ -188,6 +208,8 @@ export default function Contact() {
                     />
                   </div>
 
+                  {error && <p role="alert" className="text-red-700">{error}</p>}
+                  <p className="text-sm text-text-secondary">We use your details to reply to this enquiry. <Link href="/privacy" className="underline">Privacy policy</Link>.</p>
                   <button
                     type="submit"
                     disabled={submitting}

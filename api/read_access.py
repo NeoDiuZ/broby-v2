@@ -89,6 +89,8 @@ ROUTES = {
     '/api/bootstrap': frozenset(), '/api/actions': frozenset(),
     '/api/actions/catalog': frozenset(), '/api/organization': frozenset(),
     '/api/access': frozenset(),
+    '/api/marketing/leads': ALL,
+    '/api/marketing/leads/{lead_id}/contacted': ALL,
     '/api/account/invitations': frozenset({'read.staff'}),
     '/api/account/mfa/setup': frozenset(), '/api/account/mfa/confirm': frozenset(), '/api/account/password': frozenset(),
     '/api/patients': PATIENT, '/api/v2/patients': PATIENT, '/api/v2/patients/{id}': PATIENT,
@@ -121,6 +123,7 @@ ROUTES = {
 }
 PUBLIC = {
     '/api/health', '/api/ready', '/api/session', '/api/login', '/api/logout',
+    '/api/marketing/leads/submit',
     '/api/account/invitations/accept', '/api/integrations/test/events',
     '/api/integrations/stripe/webhook', '/api/integrations/twilio/status/{attempt_id}', '/api/integrations/twilio/inbound',
 }
