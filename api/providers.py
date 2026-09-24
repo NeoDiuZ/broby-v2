@@ -9,7 +9,7 @@ class ProviderError(Exception):
         # response bodies, request headers, or arbitrary exception messages.
         self.service = service if service in ('ai', 'speech') else None
         self.status_code = status_code if type(status_code) is int and 400 <= status_code <= 599 else None
-        self.reason_code = reason_code if reason_code in ('spend_limit',) else None
+        self.reason_code = reason_code if reason_code in ('spend_limit', 'workspace_required', 'workspace_invalid') else None
 
     @property
     def retryable(self):
@@ -19,6 +19,8 @@ class ProviderError(Exception):
         if self.service and self.status_code:
             status = self.status_code
             reason = ('account or workspace spend limit' if self.reason_code == 'spend_limit'
+                      else 'workspace ID required' if self.reason_code == 'workspace_required'
+                      else 'invalid workspace ID' if self.reason_code == 'workspace_invalid'
                       else 'credentials' if status == 401 else 'billing or credits' if status == 402
                       else 'access' if status == 403 else 'model or endpoint' if status == 404
                       else 'rate limit' if status == 429 else 'request' if status < 500 and status != 408
@@ -39,6 +41,10 @@ def ai_http_error(response):
                 'You have reached your specified workspace API usage limits',
             )):
                 reason_code = 'spend_limit'
+            elif message == 'anthropic-workspace-id is required when authenticating with an identity-linked API key; send the id of the workspace this request acts in.':
+                reason_code = 'workspace_required'
+            elif message == 'anthropic-workspace-id header must be a valid workspace ID.':
+                reason_code = 'workspace_invalid'
         except (ValueError, TypeError):
             pass
     return ProviderError('AI provider request failed; no document was changed.',
@@ -84,8 +90,11 @@ def model_json(system,payload):
         if payload.get('guided_actions'):
             request['tools'][0]['input_schema']['properties']['guide']={'type':'string','enum':list(payload['guided_actions'])}
     try:
+        headers={'x-api-key':os.environ['ANTHROPIC_API_KEY'],'anthropic-version':'2023-06-01'}
+        if os.getenv('ANTHROPIC_WORKSPACE_ID'):
+            headers['anthropic-workspace-id']=os.environ['ANTHROPIC_WORKSPACE_ID']
         with httpx.Client(timeout=httpx.Timeout(180,connect=15)) as client:
-            response=client.post('https://api.anthropic.com/v1/messages',headers={'x-api-key':os.environ['ANTHROPIC_API_KEY'],'anthropic-version':'2023-06-01'},json=request)
+            response=client.post('https://api.anthropic.com/v1/messages',headers=headers,json=request)
         if response.status_code!=200:raise ai_http_error(response)
         body=response.json()
         if body.get('stop_reason')=='max_tokens':raise ProviderError('AI output was incomplete; reduce the source selection and retry.')

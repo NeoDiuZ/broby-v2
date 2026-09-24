@@ -38,7 +38,8 @@ Railway service configuration uses root directories and Dockerfile detection in 
 | `BROBY_SEED_DEMO=1` | Repeatable synthetic seed; never imports customer records |
 | `BROBY_ADMIN_USERNAME`, `BROBY_ADMIN_PASSWORD` | First-boot provisioning only; changing the variable does not reset an existing password |
 | `BROBY_ENABLE_AI=1` | Enables configured providers |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Authorized V1 key, model `claude-sonnet-4-6` |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Authorized provider key and selected model; the shared key also shares V1 provider quota |
+| `ANTHROPIC_WORKSPACE_ID` | Optional workspace ID for an Anthropic identity-linked key that is not scoped to one workspace; never guess this value |
 | `DEEPGRAM_API_KEY`, `DEEPGRAM_MODEL` | Authorized V1 key, model `nova-3` |
 | `PORT=8000` | Backend listener |
 

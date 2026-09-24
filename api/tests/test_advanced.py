@@ -145,6 +145,8 @@ def test_ai_adapter_classifies_http_failure_without_provider_body(monkeypatch,st
     ('You have reached your specified API usage limits. private account details','account or workspace spend limit'),
     ('You have reached your specified workspace API usage limits. private workspace details','account or workspace spend limit'),
     ('Invalid model parameter: private value','request'),
+    ('anthropic-workspace-id is required when authenticating with an identity-linked API key; send the id of the workspace this request acts in.','workspace ID required'),
+    ('anthropic-workspace-id header must be a valid workspace ID.','invalid workspace ID'),
 ])
 def test_ai_adapter_recognizes_spend_limit_without_storing_provider_message(monkeypatch,message,reason):
     import httpx
@@ -157,6 +159,19 @@ def test_ai_adapter_recognizes_spend_limit_without_storing_provider_message(monk
     with pytest.raises(providers.ProviderError) as caught:providers.model_json('test',{})
     safe=caught.value.safe_job_error(False)
     assert reason in safe and 'private' not in safe and 'private' not in str(caught.value)
+
+def test_ai_adapter_sends_configured_workspace_without_exposing_it(monkeypatch):
+    import httpx
+    monkeypatch.setenv('BROBY_ENABLE_AI','1')
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic-key')
+    monkeypatch.setenv('ANTHROPIC_MODEL','synthetic-model')
+    monkeypatch.setenv('ANTHROPIC_WORKSPACE_ID','wrkspc_synthetic')
+    original=httpx.Client
+    def respond(request):
+        assert request.headers['anthropic-workspace-id']=='wrkspc_synthetic'
+        return httpx.Response(200,json={'content':[{'type':'text','text':'{}'}]})
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    assert providers.model_json('test',{})=={}
 
 def test_invitation_single_use_and_mfa_replay(monkeypatch):
     auth.setup_tables();client=TestClient(main.app);admin={'x-actor-id':'clinic-east-admin'}
