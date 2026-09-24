@@ -90,13 +90,14 @@ native clinical facts.
 
 ## Acceptance evidence
 
-- The same 582 backend cases pass in SQLite mode and PostgreSQL PMS mode; the
+- The same 583 backend cases pass in SQLite mode and PostgreSQL PMS mode; the
   PostgreSQL run creates a disposable schema for each test. CI covers both modes.
 - Dedicated database cases cover concurrent duplicate payment requests, version
   history, rollback of new files, JSON matching and precise lease timestamps.
-- Nine migration cases cover all-table equality, preserved auth/session/claim
+- Ten migration cases cover all-table equality, preserved auth/session/claim
   data, explicit activation, failed-copy rollback/retry, unknown schemas, changed
-  sources, database-level rejection of old writers and crash recovery.
+  sources, database-level rejection of old writers, crash recovery and database
+  collation independence.
 - The isolated production-browser clinic migrated 35 PMS tables and 358 rows,
   including 125 records. Existing credentials, owner access, closed conversations,
   handovers and all 66 original seed records remained intact. New PostgreSQL
@@ -105,8 +106,21 @@ native clinical facts.
   local database. All 48 tables and 559 rows matched, with three copied files
   matching by hash. The disposable database was removed after verification.
 
-Exact hosted revision, cutover and post-deployment verification are recorded in
-the release receipt after execution. This local restore is not a Railway disaster
+Hosted promotion on 24 September verified all 35 tables and 9,672 rows. The
+pre-cutover session, memberships, permissions, jobs and all 427 accessible baseline
+records survived. All 14 earlier feature readback groups, access restrictions,
+saved owner conversations and canonical Stripe test payment/refund checks passed.
+A fresh live conversation passed 20 checks including real AI intent selection,
+exact patient-timeline receipts, staff reply and revoked-link denial. The browser
+opened that patient's timeline and the exact human message receipt.
+
+The first hosted attempt stopped safely at a grants-table hash mismatch because
+SQL text ordering differed between database locales. PR #36 corrected comparison
+to sort complete-row hashes, retaining every value and duplicate count. Retrying
+used the same frozen source and private backup; no rows were reset or skipped.
+See RELEASE_WORK.md for exact revisions and deployment receipts.
+
+This local restore is not a Railway disaster
 recovery drill, and three fixture files do not certify a large binary archive.
 Independent workers, external file storage, clinic-scale load acceptance and
 external operational alerts remain separate work.
