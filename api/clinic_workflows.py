@@ -1,7 +1,6 @@
 """Clinic workflow completion. Mutations run inside the shared action transaction."""
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-import logging
 import re
 
 from db import all_records, connection, get, now, record, uid, update
@@ -191,10 +190,3 @@ def tick(instant=None):
             except HTTPException:
                 # Revoked/inactive scheduler membership disables its work.
                 continue
-
-
-def loop(stop):
-    while not stop.is_set():
-        try: tick()
-        except Exception: logging.exception('Clinic schedule failed; retrying on next tick')
-        stop.wait(30)

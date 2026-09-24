@@ -9,7 +9,6 @@ def authorize(c,clinic,actor,action):
     from actions import authorize as check
     return check(c,clinic,actor,action)
 
-stop=threading.Event()
 def lease_time(seconds=90):return (datetime.now(timezone.utc)+timedelta(seconds=seconds)).isoformat()
 def claim_job(job_id):
     with connection(True) as c:
@@ -83,13 +82,18 @@ def run_claimed(job_id,token):
         d=consult['data']; d.update(summary=sections,template_id=snapshot['template_id'],generated_revision=snapshot['input_revision'],generation_mode=mode,context_preference=snapshot.get('retention','medical'),omitted_sources=omitted,status='in_progress')
         update(c,consult,d)
         c.execute('UPDATE jobs SET status=?,result=?,updated_at=? WHERE id=?',('completed',json.dumps(result),now(),job_id))
-def loop():
-    while not stop.wait(.4):
-        with connection() as c:
-            ids=[r[0] for r in c.execute("SELECT j.id FROM jobs j LEFT JOIN job_claims q ON j.id=q.job_id WHERE j.status IN ('queued','running') AND (q.job_id IS NULL OR (q.lease_until<=? AND q.next_attempt<=?)) ORDER BY j.created_at LIMIT 5",(now(),now()))]
-        for id in ids:
-            try:run_job(id)
-            except Exception:pass  # run_job persists the bounded, sanitized failure state.
+def tick():
+    with connection() as c:
+        ids=[r[0] for r in c.execute("SELECT j.id FROM jobs j LEFT JOIN job_claims q ON j.id=q.job_id WHERE j.status IN ('queued','running') AND (q.job_id IS NULL OR (q.lease_until<=? AND q.next_attempt<=?)) ORDER BY j.created_at LIMIT 5",(now(),now()))]
+    for id in ids:
+        try:run_job(id)
+        except Exception:
+            # Task failures are durable and do not stop other jobs. A failure
+            # before that state was saved is a worker fault, not a healthy tick.
+            with connection() as c:
+                row=c.execute('SELECT status,error FROM jobs WHERE id=?',(id,)).fetchone()
+            if not row or row['status'] not in ('queued','failed') or not row['error']:
+                raise
 
 
 def transcribe_windows(job,payload,token,chunks):

@@ -265,3 +265,33 @@ The hosted synthetic acceptance fixture is prepared in Broby New. Deployment
 revision, CI, hosted browser/API results and final readback are recorded after
 release in `.local/reports/broby-patient-link-release-2026-09-24.md`. No V1 data,
 active WhatsApp connection, customer message or real payment is involved.
+
+
+## Background worker diagnostics and guarded recovery
+
+The four existing background workers now use one supervisor with sequential
+cycles, interruptible bounded backoff and sanitized persistent failure/recovery
+history. Unexpected polling/storage failures can no longer silently kill the
+speech/document worker. Long-running calls are flagged for inspection, never
+forked or terminated blindly. Separate stop events prevent a new application
+lifespan from resuming an older loop. Provider/task permissions, leases,
+idempotency and uncertain-send protection remain unchanged.
+
+Administrators can inspect Settings → Sync & jobs for process-local worker
+progress and clinic-scoped document/payment/WhatsApp queues. Counts include all
+saved work; issue lists are bounded to 20 per queue. Claims and scheduled retries
+are distinguished from overdue unclaimed work. Existing failed-document retry
+uses the shared audited action. Provider credentials, task payloads, source text
+and raw exceptions are excluded from the diagnostic response.
+
+Local verification passes 378 backend tests, including 21 operational cases,
+16 frontend tests, TypeScript and production build. Production-browser acceptance
+uses an isolated SQLite/files/Pg fixture with all providers disabled and a
+controlled worker failure. The page showed the fault, queued a guarded retry,
+recovered the original document with exact receipts, and retained nine controlled
+loop failures plus recovery time after a server restart. Twelve API/data checks
+passed, including clinic preservation and administrator-only access. Exact results
+and final hosted revision are recorded
+in `.local/reports/broby-operations-health-release-2026-09-24.md`. This release
+provides in-app diagnostics, not external alerts, delivery/settlement proof or
+multi-worker infrastructure. See OPERATIONS_HEALTH.md for limits.

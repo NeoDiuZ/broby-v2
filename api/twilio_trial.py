@@ -142,11 +142,6 @@ def tick():
         with connection(True) as c:c.execute('UPDATE twilio_attempts SET lease_until=0 WHERE id=? AND token=?',(attempt['id'],token))
 
 
-def loop(stop):
-    while not stop.wait(1):
-        try:tick()
-        except Exception:pass # disabled configuration and durable sanitized errors
-
 
 async def signed(request,path):
     from actions import fail
