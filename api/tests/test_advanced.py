@@ -41,9 +41,10 @@ def test_lot_stocktake_and_purchase_order_reconciliation():
     assert get(item['id'])['data']['stock']==2
 
 def test_configured_rooms_and_availability():
-    config=act('schedule.configure',{'rooms':['Room A'],'availability':{'clinic-east-vet':{'0':[{'start':'9:00','end':'12:00'}]}}},actor='clinic-east-admin')
-    assert config['data']['availability']['clinic-east-vet']['0'][0]['start']=='09:00'
-    p={'patient_id':'luna','date':'2099-01-05','time':'09:00','duration':30,'clinician':'clinic-east-vet','room':'Room A','reason':'Synthetic'} # Monday
+    clinician=act('member.save',{'name':'Synthetic rota clinician','role':'vet'},actor='clinic-east-admin')['id']
+    config=act('schedule.configure',{'rooms':['Room A'],'availability':{clinician:{'0':[{'start':'9:00','end':'12:00'}]}}},actor='clinic-east-admin')
+    assert config['data']['availability'][clinician]['0'][0]['start']=='09:00'
+    p={'patient_id':'luna','date':'2099-01-05','time':'09:00','duration':30,'clinician':clinician,'room':'Room A','reason':'Synthetic'} # Monday
     app=act('appointment.create',p)
     err(409,lambda:act('appointment.create',{**p,'clinician':'clinic-east-nurse'}))
     err(409,lambda:act('appointment.create',{**p,'time':'13:00'}))

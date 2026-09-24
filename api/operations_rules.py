@@ -64,18 +64,18 @@ def schedule(c,clinic,clinician,start,duration,room=''):
     from actions import owned,fail
     member=owned(c,clinician,clinic,'member')
     if not member['data'].get('active'):fail('Choose an active clinician')
-    end=start+timedelta(minutes=duration)
-    if start.date()!=end.date() or duration>1440:fail('Appointment must fit within one clinic day')
+    if duration>1440:fail('Appointment must fit within one clinic day')
+    try:end=start+timedelta(minutes=duration)
+    except OverflowError:fail('Appointment exceeds the supported calendar')
+    if start.date()!=end.date():fail('Appointment must fit within one clinic day')
     config=get(c,'schedule-'+clinic,clinic)
     if not config:
         if room:fail('Configure rooms before assigning one')
         return
     data=config['data']
     if room and room not in data.get('rooms',[]):fail('Choose a configured room')
-    rota=data.get('availability',{}).get(clinician)
-    if rota is not None:
-        windows=rota.get(str(start.weekday()),[])
-        if not any(start.strftime('%H:%M')>=w['start'] and end.strftime('%H:%M')<=w['end'] for w in windows):fail('Appointment falls outside configured staff availability',409)
+    from scheduling import fits
+    if not fits(data,clinician,start,duration):fail('Appointment falls outside configured staff availability',409)
     for other in all_records(c,clinic,'appointment'):
         d=other['data']
         if not room or d.get('room')!=room or d['status'] in ('cancelled','completed'):continue

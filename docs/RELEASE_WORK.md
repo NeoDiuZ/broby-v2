@@ -32,6 +32,31 @@ Do not label placeholders, a healthy deployment, test-mode money or an internal
 notification as verified live delivery, settlement, clinical acceptance or a V1
 cutover. See FEATURE_STATUS.md for the complete open requirement inventory.
 
+## Acceptance — staff rota and dated leave, 24 September
+
+The previous form replaced a staff member's whole week with one day. The editor
+now retains all weekdays and staff, supports split shifts/breaks and reasoned dated
+leave/replacement hours, and presents effective shifts from Appointments and
+Settings. Review lists affected bookings. Saving checks scheduled/arrived bookings
+from the clinic-local current date onward inside the same transaction used by
+booking creation; conflicting schedules or room removal are blocked. Create,
+reschedule, recurring series and reopening all use the same effective-shift rules.
+
+Local acceptance covers the complete backend suite, including 32 new rota cases,
+16 frontend tests, TypeScript and the production build. An isolated production
+frontend/API with separate SQLite/files and PostgreSQL schema passed browser
+conflict preview, split shifts, dated leave, reload persistence, frozen draft,
+stale-version rejection/reopen recovery and appointment-form leave rejection.
+Eight API/database checks confirmed exact saved shifts, retained weekdays/leave,
+break/leave booking rejection, an allowed afternoon booking, durable SQLite state
+and the concurrent revision used for the stale-editor check. The local fixture is
+in `.local/rota-ui/`; do not rerun its prepare/readback mutation phases.
+
+Hosted verification and exact release identifiers are recorded separately in
+`.local/reports/broby-rota-release-2026-09-24.md` when completed. No clinic policy,
+V1 data, messaging or payment configuration is changed. See STAFF_ROTA.md for
+boundaries; the overall scheduling requirement remains partial.
+
 ## Acceptance — earlier transfer baseline recovery, 24 September
 
 Patients imported before revision tracking can now receive further updates through

@@ -231,3 +231,6 @@ app.include_router(assistant_history_router)
 
 from twilio_trial import router as twilio_router
 app.include_router(twilio_router)
+
+from scheduling import router as scheduling_router
+app.include_router(scheduling_router)

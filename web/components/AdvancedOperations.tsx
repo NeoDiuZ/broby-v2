@@ -35,11 +35,7 @@ export function TestConnections(){
  </section>
 }
 
-export function SchedulePreferences(){
- const w=useWorkspace();const config=w.records.find(r=>r.kind==='schedule');
- if(w.snapshot?.actor.data.role!=='admin')return null;
- return <details className="section-gap"><summary>Rooms and staff availability</summary><p>Choose a weekday and time window for a staff member. Saving replaces that member’s schedule; other staff retain their settings.</p><Form submit="Save availability" fields={[{name:'rooms',label:'Room names, separated by commas',value:config?.data.rooms?.join(', ')||''},{name:'member',label:'Staff member',required:true,options:w.records.filter(r=>r.kind==='member'&&r.data.active).map(r=>({value:r.id,label:r.data.name}))},{name:'weekday',label:'Weekday',options:['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((label,i)=>({value:String(i),label}))},{name:'start',label:'Available from',type:'time',required:true},{name:'end',label:'Available until',type:'time',required:true}]} onSubmit={async p=>{await w.act('schedule.configure',{version:config?.version,rooms:p.rooms.split(',').map((x:string)=>x.trim()).filter(Boolean),availability:{...config?.data.availability,[p.member]:{[p.weekday]:[{start:p.start,end:p.end}]}}});w.notify('Scheduling rules saved')}}/></details>
-}
+export {StaffRota as SchedulePreferences} from './StaffRota';
 
 export function AccountControls(){
  const w=useWorkspace();const [invitation,setInvitation]=useState<any>(null),[mfa,setMfa]=useState<any>(null),[enabled,setEnabled]=useState(false),[recovery,setRecovery]=useState<string[]>([]);
