@@ -206,8 +206,20 @@ GUIDED = {
 
 
 def catalogue():
-    return {name: {'description': effect, 'payload_schema': model.model_json_schema()}
-            for name, (model, _, effect) in SPECS.items()}
+    result = {}
+    for name, (model, kind, effect) in SPECS.items():
+        shape = model.model_json_schema()
+        fields = shape['properties']
+        # A UUID shape alone does not identify the target record. In particular,
+        # refund.id is a payment while refund.version belongs to its invoice.
+        # Publish the same reference semantics enforced by prepare below.
+        if kind and 'id' in fields:
+            fields['id']['description'] = f'Exact ID of the {kind} record from records; never an ID of a different kind.'
+        if 'version' in fields:
+            owner = 'invoice linked by the selected payment.data.invoice_id' if name == 'payment.refund' else kind
+            if owner: fields['version']['description'] = f'Current version of the {owner} record from records.'
+        result[name] = {'description': effect, 'target_kind': kind, 'payload_schema': shape}
+    return result
 
 
 def prepare(c, clinic, actor, name, payload, patient_id=None):

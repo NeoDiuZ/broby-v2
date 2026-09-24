@@ -42,6 +42,14 @@ latency guarantees. Other final p95 measurements: bootstrap 289.9 ms, timeline
 178.3 ms, operations health 160.1 ms. The test covers a bounded concurrent burst,
 not a prolonged soak or a capacity guarantee.
 
+A second, larger local run used 3,000 added patients (12,086 PMS records), 16
+concurrent clients and 320 reads with no HTTP errors. All concurrency guards and
+the real 90-second crash/lease recovery passed again. Its exact restore matched
+48 tables / 39,334 rows, three files and both indexed binary receipts. At this
+load, p95 was 1,738.9 ms for full bootstrap, 776.5 ms for patient search, 773.5 ms
+for timeline and 649.8 ms for worker health. The full bootstrap response reached
+4.46 MB, so further pagination remains a concrete scaling task.
+
 ## Backup format repair
 
 The backup writer had moved to format 2 while the verifier accepted only format
