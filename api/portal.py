@@ -6,7 +6,7 @@ from fastapi import APIRouter,Request,Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel,Field,field_validator
 from pathlib import Path
-from db import connection,get,record,update,event,uid,now,all_records
+from db import connection,get,record,update,event,uid,now,all_records,upsert
 from actions import fail,owned
 router=APIRouter()
 
@@ -111,9 +111,9 @@ def claim(token:str,response:Response,request:Request):
         if not known: secret=secrets.token_urlsafe(32)
         expiry=(datetime.now(timezone.utc)+timedelta(days=90)).isoformat()
         digest=hashlib.sha256(secret.encode()).hexdigest()
-        if known:c.execute('INSERT OR IGNORE INTO saved_pets VALUES(?,?,?)',(digest,known['grant_token'],known['expires_at']))
-        c.execute('INSERT OR REPLACE INTO owner_claims VALUES(?,?,?)',(digest,g['token'],expiry))
-        c.execute('INSERT OR REPLACE INTO saved_pets VALUES(?,?,?)',(digest,g['token'],expiry))
+        if known:c.execute('INSERT INTO saved_pets VALUES(?,?,?) ON CONFLICT DO NOTHING',(digest,known['grant_token'],known['expires_at']))
+        upsert(c,'owner_claims',{'token_hash':digest,'grant_token':g['token'],'expires_at':expiry},['token_hash'])
+        upsert(c,'saved_pets',{'vault_hash':digest,'grant_token':g['token'],'expires_at':expiry},['vault_hash','grant_token'])
     response.delete_cookie('broby_owner',path='/api/owner-account')
     response.set_cookie('broby_owner',secret,httponly=True,samesite='strict',max_age=90*86400,secure=runtime.hosted(),path='/api/')
     return {'saved':True,'expires_at':expiry}

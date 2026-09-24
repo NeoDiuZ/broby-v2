@@ -29,8 +29,8 @@ def setup(c):
     CREATE TABLE IF NOT EXISTS stripe_tasks(
       id TEXT PRIMARY KEY, clinic_id TEXT NOT NULL, kind TEXT NOT NULL,
       resource_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
-      attempts INTEGER NOT NULL DEFAULT 0, next_attempt REAL NOT NULL DEFAULT 0,
-      lease_until REAL NOT NULL DEFAULT 0, token TEXT, error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0, next_attempt DOUBLE PRECISION NOT NULL DEFAULT 0,
+      lease_until DOUBLE PRECISION NOT NULL DEFAULT 0, token TEXT, error TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS stripe_tasks_due ON stripe_tasks(status,next_attempt,lease_until);
     CREATE TABLE IF NOT EXISTS stripe_events(
@@ -71,7 +71,7 @@ def client():
 
 def enqueue(c, clinic, kind, resource_id, key=None):
     tid = key or uid()
-    c.execute('INSERT OR IGNORE INTO stripe_tasks(id,clinic_id,kind,resource_id,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+    c.execute('INSERT INTO stripe_tasks(id,clinic_id,kind,resource_id,created_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING',
               (tid, clinic, kind, resource_id, now(), now()))
     return tid
 

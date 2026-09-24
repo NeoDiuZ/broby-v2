@@ -8,7 +8,7 @@ from twilio.rest import Client
 from twilio.http.http_client import TwilioHttpClient
 from twilio.request_validator import RequestValidator
 from twilio.base.exceptions import TwilioRestException
-from db import connection,get,record,update,all_records,now,uid
+from db import connection,get,record,update,all_records,now,uid,upsert
 
 PERMISSIONS={'twilio.trial_send':{'admin'},'twilio.reconcile':{'admin'}}
 router=APIRouter(prefix='/api/integrations/twilio')
@@ -18,7 +18,7 @@ TERMINAL={'read','failed','undelivered','canceled'}
 
 def setup(c):
     c.executescript('''
-    CREATE TABLE IF NOT EXISTS twilio_attempts(id TEXT PRIMARY KEY,resource_id TEXT UNIQUE,token TEXT,lease_until REAL DEFAULT 0,next_poll REAL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS twilio_attempts(id TEXT PRIMARY KEY,resource_id TEXT UNIQUE,token TEXT,lease_until DOUBLE PRECISION DEFAULT 0,next_poll DOUBLE PRECISION DEFAULT 0);
     CREATE TABLE IF NOT EXISTS twilio_callbacks(digest TEXT PRIMARY KEY,message_sid TEXT,kind TEXT,received_at TEXT);
     CREATE TABLE IF NOT EXISTS twilio_optouts(clinic_id TEXT,recipient TEXT,blocked INTEGER,updated_at TEXT,PRIMARY KEY(clinic_id,recipient));
     ''')
@@ -202,7 +202,7 @@ async def inbound(request:Request):
             c.execute('INSERT INTO twilio_callbacks VALUES(?,?,?,?)',(digest,sid,'inbound',now()))
             optout=form.get('OptOutType','').upper()
             if optout in ('STOP','START') or body.strip().upper() in ('STOP','UNSUBSCRIBE','CANCEL','END','QUIT'):
-                c.execute('INSERT OR REPLACE INTO twilio_optouts VALUES(?,?,?,?)',(clinic,form['From'],int(optout!='START'),now()))
+                upsert(c,'twilio_optouts',{'clinic_id':clinic,'recipient':form['From'],'blocked':int(optout!='START'),'updated_at':now()},['clinic_id','recipient'])
     return Response(status_code=204)
 
 

@@ -180,8 +180,7 @@ def build(c, clinic, start, end):
 def read(request, start, end):
     from main import identity
     clinic, actor = identity(request)
-    with connection() as c:
-        c.execute('BEGIN')  # A single SQLite snapshot across movements and audit receipts.
+    with connection(snapshot=True) as c:
         if owned(c, actor, clinic, 'member')['data']['role'] != 'admin':
             fail('Administrator access required', 403)
         return build(c, clinic, start, end)

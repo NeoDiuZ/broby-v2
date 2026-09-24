@@ -457,3 +457,26 @@ Each human conversation message also has one patient-timeline event with its
 exact source receipt. Duplicate submissions cannot duplicate timeline entries,
 and these messages are not automatically approved as clinical instructions.
 The dedicated PostgreSQL acceptance case verifies timeline and source isolation.
+
+## PostgreSQL PMS consolidation and guarded migration
+
+The PMS, credentials, sessions, audit history, owner grants and durable queues now
+support the existing PostgreSQL database in a separate schema. All SQLite-specific
+queries/triggers have explicit PostgreSQL equivalents. A serial writer lock
+preserves stock, billing and replay invariants, while ordinary reads still observe
+permission revocation. The stopped-service migration snapshots and fences SQLite,
+copies all tables transactionally and verifies every row before activation. It
+refuses stale SQLite fallback, changed sources or a mismatched destination.
+
+Both complete backend runs passed: 582 cases on SQLite and 582 on PostgreSQL PMS.
+CI now tests both modes. The isolated clinic migration preserved 35 tables and
+358 rows, including credentials, grants and existing conversation history. New
+PostgreSQL conversation writes passed 19 checks; ten persistence checks passed.
+The owner browser also reopened the original approved care, closed conversation
+and unchanged staff reply after migration and restart. A stopped-clinic backup
+restored both schemas into a disposable database: all 48 tables, 559 rows and three
+copied files matched. See PMS_POSTGRES.md for activation/recovery and limits.
+
+Hosted cutover follows the checked code deployment and is verified separately.
+Files still use one backend volume; independent workers, external storage and a
+full Railway disaster-recovery rehearsal remain unfinished.

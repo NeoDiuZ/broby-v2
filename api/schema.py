@@ -11,9 +11,6 @@ def migrate(c):
     CREATE TABLE IF NOT EXISTS job_claims(job_id TEXT PRIMARY KEY,token TEXT,lease_until TEXT,attempts INTEGER DEFAULT 0,next_attempt TEXT DEFAULT '',last_error TEXT);
     CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS record_versions(record_id TEXT,version INTEGER,clinic_id TEXT,kind TEXT,data TEXT,recorded_at TEXT,PRIMARY KEY(record_id,version));
-    CREATE TRIGGER IF NOT EXISTS record_history BEFORE UPDATE ON records BEGIN
-      INSERT OR IGNORE INTO record_versions VALUES(OLD.id,OLD.version,OLD.clinic_id,OLD.kind,OLD.data,OLD.updated_at);
-    END;
     CREATE TABLE IF NOT EXISTS ontology(code TEXT PRIMARY KEY,name TEXT,value_type TEXT,unit TEXT,category TEXT);
     CREATE TABLE IF NOT EXISTS owner_claims(token_hash TEXT PRIMARY KEY,grant_token TEXT,expires_at TEXT);
     CREATE TABLE IF NOT EXISTS saved_pets(vault_hash TEXT,grant_token TEXT,expires_at TEXT,PRIMARY KEY(vault_hash,grant_token));
@@ -21,9 +18,16 @@ def migrate(c):
     CREATE TABLE IF NOT EXISTS credentials(username TEXT PRIMARY KEY,member_id TEXT NOT NULL,clinic_id TEXT NOT NULL,salt TEXT,password_hash TEXT);
     CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,username TEXT,expires_at TEXT);
     CREATE TABLE IF NOT EXISTS login_attempts(address TEXT PRIMARY KEY,failures INTEGER,blocked_until TEXT);
-    INSERT OR IGNORE INTO schema_migrations(version) VALUES(1);
+    INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING;
     ''')
-    c.executemany('INSERT OR IGNORE INTO ontology VALUES(?,?,?,?,?)',DEFINITIONS)
+    if c.dialect=='postgres':
+        from pms_postgres import history
+        history(c)
+    else:
+        c.executescript('''CREATE TRIGGER IF NOT EXISTS record_history BEFORE UPDATE ON records BEGIN
+          INSERT OR IGNORE INTO record_versions VALUES(OLD.id,OLD.version,OLD.clinic_id,OLD.kind,OLD.data,OLD.updated_at);
+        END;''')
+    c.executemany('INSERT INTO ontology VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING',DEFINITIONS)
     from accounts import setup
     setup(c)
     from integration_hooks import setup as setup_hooks

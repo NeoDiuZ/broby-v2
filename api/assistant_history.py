@@ -21,7 +21,7 @@ def setup(c):
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, clinic_id TEXT NOT NULL, actor_id TEXT NOT NULL,
       request_key TEXT NOT NULL, fingerprint TEXT NOT NULL, message TEXT NOT NULL,
       patient_id TEXT, status TEXT NOT NULL, response TEXT, execution TEXT,
-      token TEXT, lease_until REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+      token TEXT, lease_until DOUBLE PRECISION NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
       UNIQUE(clinic_id,actor_id,request_key));
     CREATE INDEX IF NOT EXISTS assistant_turn_conversation ON assistant_turns(conversation_id,created_at);
     ''')

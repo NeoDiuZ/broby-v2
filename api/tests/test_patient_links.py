@@ -185,7 +185,8 @@ def test_concurrent_choices_cannot_link_one_origin_to_two_patients():
 def test_failed_copy_rolls_back_mapping_receipt_records_and_new_files():
     client=TestClient(main.app);media(client);patient,_,_=existing();_,r=request(client,include_audio=True)
     p=payload(client,r,patient);before=target_records();files={x for x in db.DATA.rglob('*') if x.is_file()}
-    with db.connection(True) as c:c.execute("CREATE TRIGGER link_failure BEFORE INSERT ON audit WHEN NEW.action='transfer.accept' BEGIN SELECT RAISE(ABORT,'link injected failure'); END")
+    from db_faults import reject_transfer_audit
+    with db.connection(True) as c:reject_transfer_audit(c,'link_failure','link injected failure')
     with pytest.raises(Exception,match='link injected failure'):act('transfer.accept',p,**TARGET)
     assert target_records()==before
     assert {x for x in db.DATA.rglob('*') if x.is_file()}==files

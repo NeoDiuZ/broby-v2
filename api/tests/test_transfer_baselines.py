@@ -143,7 +143,8 @@ def test_baseline_rolls_back_records_revisions_and_files_on_failure():
     before_files = {p for p in db.DATA.rglob('*') if p.is_file()}
     with db.connection(True) as c:
         before = db.all_records(c, 'clinic-river')
-        c.execute("CREATE TRIGGER baseline_failure BEFORE INSERT ON audit WHEN NEW.action='transfer.accept' BEGIN SELECT RAISE(ABORT, 'baseline injected failure'); END")
+        from db_faults import reject_transfer_audit
+        reject_transfer_audit(c,'baseline_failure','baseline injected failure')
     with pytest.raises(Exception, match='baseline injected failure'):
         establish(client, r)
     assert {p for p in db.DATA.rglob('*') if p.is_file()} == before_files

@@ -1,7 +1,7 @@
 """Optional local password sessions; demo actor headers are disabled in password mode."""
 import hashlib,hmac,secrets,os,json,getpass,argparse
 from datetime import datetime,timezone,timedelta
-from db import connection,get,now,init
+from db import connection,get,now,init,upsert
 from fastapi import HTTPException
 
 def enabled():return os.getenv('BROBY_AUTH_MODE','demo')=='password'
@@ -51,7 +51,7 @@ def login(username,password,address,code=''):
         if not valid:
             failures=(attempt['failures'] if attempt and attempt['failures']<5 else 0)+1
             until=(datetime.now(timezone.utc)+timedelta(minutes=5 if failures>=5 else 0)).isoformat()
-            c.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)',(key,failures,until))
+            upsert(c,'login_attempts',{'address':key,'failures':failures,'blocked_until':until},['address'])
             failed=True
         else:
             c.execute('DELETE FROM login_attempts WHERE address=?',(key,));token=secrets.token_urlsafe(32)
@@ -81,5 +81,5 @@ if __name__=='__main__':
             if not c.execute('SELECT 1 FROM credentials WHERE username=?',(args.username,)).fetchone():raise SystemExit('Account not found')
             member=get(c,args.member,args.clinic)
             if not member or member['kind']!='member':raise SystemExit('Membership not found')
-            c.execute('INSERT OR REPLACE INTO auth_memberships VALUES(?,?,?)',(args.username,args.member,args.clinic))
+            upsert(c,'auth_memberships',{'username':args.username,'member_id':args.member,'clinic_id':args.clinic},['username','clinic_id'])
     print('Account membership configured.')

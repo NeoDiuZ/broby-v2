@@ -68,7 +68,10 @@ def catalog(request:Request):
 @router.get('/api/backup')
 def backup(request:Request):
     clinic,actor=identity(request)
-    with connection() as c:
+    # Serialize with the shared mutation layer while collecting both projections
+    # and referenced binaries. Read-only transactions on two stores are not an
+    # atomic archive when another request can change a referenced record/file.
+    with connection(True) as c:
         if owned(c,actor,clinic,'member')['data']['role']!='admin':fail('Administrator access required',403)
         rs=all_records(c,clinic);versions=[dict(r) for r in c.execute('SELECT * FROM record_versions WHERE clinic_id=?',(clinic,))]
         chunks=[dict(r) for r in c.execute('SELECT chunks.* FROM chunks JOIN records ON records.id=chunks.recording_id WHERE records.clinic_id=?',(clinic,))]
@@ -105,7 +108,8 @@ def operation_status(request:Request):
         if owned(c,actor,clinic,'member')['data']['role']!='admin':fail('Administrator access required',403)
         jobs=[dict(r) for r in c.execute('SELECT j.id,j.status,q.attempts,q.lease_until,q.next_attempt FROM jobs j LEFT JOIN job_claims q ON q.job_id=j.id WHERE j.clinic_id=? ORDER BY j.created_at DESC LIMIT 50',(clinic,))]
         from stripe_payments import configured
-        return {'sending_enabled':False,'payment_mode':'stripe_test' if configured(clinic) else 'simulation','lab_mode':'synthetic','jobs':jobs,'pending_escalations':sum(r['data']['status']=='needs_attention' for r in all_records(c,clinic,'escalation'))}
+        from db import store
+        return {'pms_store':store(),'sending_enabled':False,'payment_mode':'stripe_test' if configured(clinic) else 'simulation','lab_mode':'synthetic','jobs':jobs,'pending_escalations':sum(r['data']['status']=='needs_attention' for r in all_records(c,clinic,'escalation'))}
 
 @router.get('/api/organization')
 def organization(request:Request):

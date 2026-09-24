@@ -4,7 +4,7 @@ from datetime import datetime,timezone,timedelta
 from fastapi import APIRouter,Request
 from pydantic import BaseModel,Field
 import auth
-from db import connection,get,now,uid
+from db import connection,get,now,uid,upsert
 from actions import owned,fail
 router=APIRouter(prefix='/api/account')
 
@@ -39,7 +39,7 @@ def rate_limit(subject):
         active=row and row['blocked_until']>now()
         if active and row['failures']>=10:fail('Too many account verification attempts. Try again in five minutes.',429)
         expiry=row['blocked_until'] if active else (datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()
-        c.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)',(key,row['failures']+1 if active else 1,expiry))
+        upsert(c,'login_attempts',{'address':key,'failures':row['failures']+1 if active else 1,'blocked_until':expiry},['address'])
 
 class Enrollment(BaseModel):
     token:str=Field(min_length=20,max_length=200)
@@ -101,7 +101,7 @@ def mfa_setup(p:PasswordCheck,request:Request):
         old=c.execute('SELECT * FROM account_mfa WHERE username=?',(username,)).fetchone()
         if old and old['enabled']:fail('MFA is already enabled',409)
         secret=base64.b32encode(secrets.token_bytes(20)).decode()
-        c.execute('INSERT OR REPLACE INTO account_mfa VALUES(?,?,?,-1,0)',(username,'',secret))
+        upsert(c,'account_mfa',{'username':username,'secret':'','pending_secret':secret,'last_counter':-1,'enabled':0},['username'])
     return {'secret':secret,'issuer':'Broby','account':username}
 
 @router.post('/mfa/confirm')

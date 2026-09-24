@@ -3,7 +3,7 @@ import json, threading, time, secrets
 from datetime import datetime,timezone,timedelta
 import providers
 import audio_windows
-from db import connection, get, update, now, unpack, uid
+from db import connection, get, update, now, unpack, uid, upsert
 
 def authorize(c,clinic,actor,action):
     from actions import authorize as check
@@ -17,7 +17,7 @@ def claim_job(job_id):
         old=c.execute('SELECT * FROM job_claims WHERE job_id=?',(job_id,)).fetchone()
         if old and (old['lease_until']>now() or old['next_attempt']>now()):return None
         token=secrets.token_hex(24);attempts=(old['attempts'] if old else 0)+1
-        c.execute('INSERT OR REPLACE INTO job_claims VALUES(?,?,?,?,?,?)',(job_id,token,lease_time(),attempts,'',None))
+        upsert(c,'job_claims',{'job_id':job_id,'token':token,'lease_until':lease_time(),'attempts':attempts,'next_attempt':'','last_error':None},['job_id'])
         c.execute("UPDATE jobs SET status='running',updated_at=? WHERE id=?",(now(),job_id))
         return token
 

@@ -28,7 +28,7 @@ def digest(value):
 def setup(c):
     c.execute('CREATE TABLE IF NOT EXISTS transferred_patients(source_clinic TEXT,source_patient TEXT,target_clinic TEXT,target_patient TEXT,PRIMARY KEY(source_clinic,source_patient,target_clinic))')
     c.execute('CREATE TABLE IF NOT EXISTS transfer_requests(id TEXT PRIMARY KEY,source_clinic TEXT,target_clinic TEXT,patient_id TEXT,grant_token TEXT,status TEXT,expires_at TEXT,result TEXT)')
-    if 'scope' not in {r[1] for r in c.execute('PRAGMA table_info(transfer_requests)')}:
+    if 'scope' not in db.columns(c,'transfer_requests'):
         c.execute("ALTER TABLE transfer_requests ADD COLUMN scope TEXT NOT NULL DEFAULT '{\"medications\":false,\"audio\":false}'")
     c.execute('''CREATE TABLE IF NOT EXISTS transfer_revisions(
         source_clinic TEXT,source_patient TEXT,target_clinic TEXT,kind TEXT,origin_id TEXT,
@@ -99,7 +99,7 @@ def owner_requests(token: str):
         return [{'id': r['id'], 'target_clinic': r['target_clinic'],
                  'status': 'expired' if r['status'] == 'pending' and r['expires_at'] <= now() else r['status'],
                  'expires_at': r['expires_at'], 'scope': json.loads(r['scope'])}
-                for r in c.execute('SELECT * FROM transfer_requests WHERE grant_token=? ORDER BY rowid DESC', (g['token'],))]
+                for r in c.execute('SELECT * FROM transfer_requests WHERE grant_token=? ORDER BY expires_at DESC,id', (g['token'],))]
 
 
 def pending(c, id, clinic):
@@ -231,9 +231,9 @@ def receiving_owners(c, patient):
 def patient_link(c, r, target):
     if not target:
         return None
-    row = c.execute("""SELECT * FROM records WHERE kind='transfer_patient_link' AND clinic_id=?
-        AND json_extract(data,'$.source_clinic_id')=? AND json_extract(data,'$.source_patient_id')=?
-        AND json_extract(data,'$.patient_id')=? ORDER BY created_at DESC LIMIT 1""",
+    row = c.execute(f"""SELECT * FROM records WHERE kind='transfer_patient_link' AND clinic_id=?
+        AND {db.json_text(c,'data','source_clinic_id')}=? AND {db.json_text(c,'data','source_patient_id')}=?
+        AND {db.json_text(c,'data','patient_id')}=? ORDER BY created_at DESC LIMIT 1""",
         (r['target_clinic'], r['source_clinic'], r['patient_id'], target['id'])).fetchone()
     return db.unpack(row)
 
@@ -295,7 +295,7 @@ def legacy_review(c, r, patient, mode='append_current_source'):
     """Bounded receiving-side context. Only this patient's clinical records cross
     the preview boundary; request capabilities and filesystem paths never do."""
     kinds = {'event', 'source', 'attachment', 'observation', 'recording', 'medication', 'medication_history', 'consultation'}
-    rows = c.execute("SELECT * FROM records WHERE clinic_id=? AND json_extract(data,'$.patient_id')=? ORDER BY kind,id LIMIT ?",
+    rows = c.execute("SELECT * FROM records WHERE clinic_id=? AND "+db.json_text(c,'data','patient_id')+"=? ORDER BY kind,id LIMIT ?",
                      (r['target_clinic'], patient['id'], MAX_ITEMS + 1)).fetchall()
     if len(rows) > MAX_ITEMS:
         fail('The receiving record exceeds the baseline review limit; arrange a reviewed archive reconciliation', 422)
@@ -320,9 +320,8 @@ def preview(id: str, request: Request, target_patient_id: str | None = None):
     from main import identity
     from actions import authorize
     clinic, actor = identity(request)
-    with connection() as c:
+    with connection(snapshot=True) as c:
         authorize(c, clinic, actor, 'transfer.accept')
-        c.execute('BEGIN')
         r = pending(c, id, clinic)
         if r['status'] == 'accepted':
             fail('This request was already accepted', 409)

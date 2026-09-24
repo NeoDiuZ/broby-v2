@@ -7,6 +7,9 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pms: [sqlite, postgres]
     services:
       postgres:
         image: postgres:18
@@ -20,6 +23,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       BROBY_TEST_SPINE_URL: postgresql+psycopg://broby:test-only-password@localhost:5432/broby_test
+      BROBY_TEST_PMS_POSTGRES: ${{ matrix.pms == 'postgres' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
