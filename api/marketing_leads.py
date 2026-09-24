@@ -118,8 +118,9 @@ def list_enquiries(request: Request, offset: int = 0):
                            contact_handle,subject,message,status,created_at,contacted_at,contacted_by
                            FROM marketing_leads ORDER BY created_at DESC,id DESC LIMIT 100 OFFSET ?''',
                          (offset,)).fetchall()
+        total = c.execute('SELECT COUNT(*) FROM marketing_leads').fetchone()[0]
         outstanding = c.execute("SELECT COUNT(*) FROM marketing_leads WHERE status='new'").fetchone()[0]
-    return {'leads': [dict(row) for row in rows], 'outstanding': outstanding}
+    return {'leads': [dict(row) for row in rows], 'total': total, 'outstanding': outstanding}
 
 
 @router.post('/{lead_id}/contacted')
