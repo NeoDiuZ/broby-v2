@@ -223,9 +223,10 @@ def dispatch(c,a,p,clinic,actor):
         return result
     if a=='appointment.create':
         check_patient(c,p,clinic); clinician=p.get('clinician',clinic+'-vet'); owned(c,clinician,clinic,'member')
-        date=require(p,'date'); time=require(p,'time'); duration=integer(p.get('duration',30),'Duration',5)
-        try: start=datetime.fromisoformat(date+'T'+time)
-        except ValueError: fail('Invalid date or time')
+        from clinic_workflows import calendar_date
+        from scheduling import clock_time
+        date=calendar_date(p.get('date')); time=clock_time(p.get('time')); duration=integer(p.get('duration',30),'Duration',5)
+        start=datetime.fromisoformat(date+'T'+time)
         from operations_rules import schedule
         schedule(c,clinic,clinician,start,duration,p.get('room',''))
         for r in all_records(c,clinic,'appointment'):

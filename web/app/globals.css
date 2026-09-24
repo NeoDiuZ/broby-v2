@@ -24,3 +24,19 @@ body{font-size:var(--text-body)}.sidebar{width:var(--sidebar-width);flex-basis:v
 .speech-progress{padding:12px 20px;border-top:1px solid var(--line);font-size:12px}.speech-progress p{margin-bottom:8px}.speech-progress article{padding:12px 0;border-top:1px solid var(--line)}.speech-progress summary{cursor:pointer;color:var(--teal-dark)}
 section.action-preview{font-size:13px;line-height:1.5;max-height:none;white-space:normal}section.action-preview dl{margin:12px 0}section.action-preview dl>div{margin:8px 0}section.action-preview dt{font-size:11px;color:var(--muted)}section.action-preview dd{margin:0;white-space:pre-wrap}section.action-preview p{margin:10px 0}
 .credit-review{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.credit-review dt{color:var(--muted)}.credit-review dd{margin:0;overflow-wrap:anywhere}
+
+/* Staff rota: readable weekly grid and labelled shift controls. */
+.rota-panel>summary{padding:18px 22px;cursor:pointer;font-weight:600}
+.rota-table{min-width:860px}.rota-table caption{text-align:left;padding:12px 0;color:var(--muted)}
+.rota-table td{min-width:115px;vertical-align:top}.rota-table small{display:block;margin-top:6px}
+.rota-controls{border:0;padding:0;min-width:0}.rota-controls>label{display:block;margin:14px 0}
+.rota-controls>label.actions{display:flex}.rota-controls input[type=checkbox]{width:auto}
+.rota-controls textarea{display:block;width:100%;max-width:500px}
+.rota-week-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
+.rota-shifts{border:1px solid var(--border,#ddd);border-radius:10px;padding:12px;min-width:0}
+.rota-shifts .actions{align-items:end;flex-wrap:wrap;margin-bottom:10px}
+.rota-shifts label{font-size:12px}.rota-shifts input{display:block;width:125px}
+.rota-shifts>.muted{display:block;margin-bottom:8px}.rota-exception,.rota-review{padding:16px;border:1px solid var(--border,#ddd);border-radius:10px;margin:16px 0}
+.rota-exception>label{display:block;margin-bottom:12px}.rota-exception>label input{display:block;width:100%}
+.rota-review li{margin:10px 0}.rota-editor>.actions{margin-top:20px;flex-wrap:wrap}
+@media(max-width:650px){.rota-week-editor{grid-template-columns:1fr}.rota-exception .section-heading{align-items:start;flex-direction:column}}

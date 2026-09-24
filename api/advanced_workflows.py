@@ -39,23 +39,8 @@ def dispatch(c,a,p,clinic,actor):
         if r['data']['status']=='received':fail('A fully received order cannot be cancelled')
         return update(c,r,{**r['data'],'status':'cancelled','reason':require(p,'reason')})
     if a=='schedule.configure':
-        rooms=p.get('rooms',[]);availability=p.get('availability',{})
-        if not isinstance(rooms,list) or len(rooms)>100 or any(not isinstance(x,str) or not x.strip() for x in rooms) or len(set(rooms))!=len(rooms):fail('Provide unique room names')
-        if not isinstance(availability,dict):fail('Invalid staff availability')
-        for member,days in availability.items():
-            owned(c,member,clinic,'member')
-            if not isinstance(days,dict):fail('Availability must map weekdays 0–6 to time windows')
-            for day,windows in days.items():
-                if day not in list('0123456') or not isinstance(windows,list):fail('Invalid weekday or windows')
-                for window in windows:
-                    try:
-                        start=datetime.strptime(window['start'],'%H:%M');end=datetime.strptime(window['end'],'%H:%M')
-                    except (ValueError,TypeError,KeyError):fail('Use HH:MM start and end times')
-                    if start>=end:fail('Availability start must precede end')
-                    window['start']=start.strftime('%H:%M');window['end']=end.strftime('%H:%M')
-        r=get(c,'schedule-'+clinic,clinic);data={'rooms':rooms,'availability':availability}
-        if r:version(r,p);return update(c,r,data)
-        return record(c,'schedule',clinic,data,'schedule-'+clinic)
+        from scheduling import configure
+        return configure(c,clinic,p)
     if a=='dashboard.save':
         query=validate_query(c,p.get('query'),clinic)
         data={'name':require(p,'name'),'query':query,'created_by':actor}
