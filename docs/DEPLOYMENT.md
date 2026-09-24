@@ -18,11 +18,11 @@ The local initial account details are in `.local/hosted-access.json` (owner-read
 | Backend | `/api`, `api/Dockerfile` | FastAPI, port 8000 on IPv4 and IPv6; private network only; one process and replica |
 | Postgres | Railway PostgreSQL 18 SSL image | New database and persistent volume; private network only |
 
-All three services run in Singapore (`asia-southeast1-eqsg3a`). The backend's `/data` volume stores SQLite PMS data, account/session records, durable job rows, audio chunks and uploads. PostgreSQL stores the normalized patient spine. Preserve both volumes. No V1 database, volume, DNS, deployment source, or running service was changed.
+All three services run in Singapore (`asia-southeast1-eqsg3a`). PostgreSQL stores both the normalized patient spine and the separate `broby_pms` schema for PMS records, accounts, sessions, audit history and durable queues. The backend's `/data` volume stores audio/uploads plus the frozen legacy database and pre-cutover backup. Preserve PostgreSQL and the file volume together. No V1 database, volume, DNS, deployment source, or running service was changed.
 
 The browser uses one origin. Next.js forwards `/api/*` to `http://backend.railway.internal:8000/api/*`; the backend is not publicly exposed. `BROBY_API_ORIGIN` is a frontend **build-time** variable, so changing it requires rebuilding. The frontend Dockerfile explicitly accepts that build argument.
 
-Railway service configuration uses root directories and Dockerfile detection in the dashboard. New services no longer accept `railway.json` Config as Code; do not add obsolete configuration files. The backend first validates hosted settings, applies Alembic migrations, idempotently seeds the synthetic clinic, then starts one API process. Both services use `/api/ready` as their deployment healthcheck (180 seconds). This checks PostgreSQL schema access, SQLite access, and writable file storage. `/api/health` is only liveness.
+Railway service configuration uses root directories and Dockerfile detection in the dashboard. New services no longer accept `railway.json` Config as Code; do not add obsolete configuration files. The backend first validates hosted settings, applies Alembic migrations, idempotently seeds the synthetic clinic, then starts one API process. Both services use `/api/ready` as their deployment healthcheck (180 seconds). This checks both active PostgreSQL schemas and writable file storage. `/api/ready` reports `pms_store: postgres` after cutover. `/api/health` is only liveness.
 
 ## Backend variables
 
@@ -32,7 +32,9 @@ Railway service configuration uses root directories and Dockerfile detection in 
 | `BROBY_AUTH_MODE=password` | Requires a session and verified clinic membership, ignoring demo actor headers |
 | `BROBY_ALLOWED_ORIGINS` | Exact HTTPS frontend origin |
 | `BROBY_DATA_DIR=/data` | Persistent backend volume |
-| `BROBY_SPINE_URL=${{Postgres.DATABASE_URL}}` | New private PostgreSQL connection, normalized to psycopg |
+| `BROBY_SPINE_URL=${{Postgres.DATABASE_URL}}` | Existing private PostgreSQL connection used by both schemas |
+| `BROBY_PMS_STORE=postgres`, `BROBY_PMS_SCHEMA=broby_pms` | Active PMS store and isolated schema |
+| `BROBY_PMS_MIGRATE=1` | Explicit guarded legacy promotion; completed stores are not recopied |
 | `BROBY_SEED_DEMO=1` | Repeatable synthetic seed; never imports customer records |
 | `BROBY_ADMIN_USERNAME`, `BROBY_ADMIN_PASSWORD` | First-boot provisioning only; changing the variable does not reset an existing password |
 | `BROBY_ENABLE_AI=1` | Enables configured providers |
@@ -42,7 +44,7 @@ Railway service configuration uses root directories and Dockerfile detection in 
 
 Only the two provider keys required by this code were copied. V1 database, Redis, JWT, storage, RunPod, OpenAI and messaging keys were not needed. Shared provider keys share existing provider billing/quota. Both copied values were verified to match V1 without displaying them, and both providers completed real requests with synthetic inputs.
 
-Staff sessions and saved owner cookies use Secure, HttpOnly and SameSite=Strict in hosted mode. Clinic reads and writes require membership. Foreign browser origins and cross-site mutations are rejected. Owner links remain revocable capabilities exposing approved content only. Manual single-use staff invitations, password changes, TOTP and recovery codes are implemented. Email delivery/reset and the separately gated hosted synthetic-account acceptance exercise remain unfinished.
+Staff sessions and saved owner cookies use Secure, HttpOnly and SameSite=Strict in hosted mode. Clinic reads and writes require membership. Foreign browser origins and cross-site mutations are rejected. Owner links remain revocable capabilities exposing approved content only. Manual single-use staff invitations, password changes, TOTP and recovery codes are implemented. Hosted synthetic invitation/MFA/recovery/password/session acceptance passed. Email delivery/reset remains unfinished.
 
 ## Local development
 
@@ -65,7 +67,7 @@ node web/node_modules/typescript/bin/tsc --project web/tsconfig.json --noEmit
 ./scripts/build.sh
 ```
 
-CI runs the backend suite against disposable PostgreSQL 18, builds and starts the API container over IPv4, and typechecks/builds the active frontend. `website/` is a preserved reference, not a second deployed frontend.
+CI runs the same backend suite with SQLite and PostgreSQL PMS backends against disposable PostgreSQL 18, builds and starts the API container over IPv4, and typechecks/builds the active frontend. `website/` is a preserved reference, not a second deployed frontend.
 
 ## Verification performed
 
@@ -90,12 +92,22 @@ Repeat only against an isolated demo deployment. The first command creates synth
 
 Daily Railway volume backups are enabled for both stores, with six-day retention. Initial snapshots completed on 23 September 2026: backend at 18:08 SGT (798 MB), PostgreSQL at 18:14 SGT (862 MB). PostgreSQL point-in-time recovery is not enabled. Scheduled snapshots are independent and are not synchronized between the two stores.
 
-One API process owns the in-process worker. Jobs persist in SQLite with leases, heartbeat renewal and bounded provider retries. Speech jobs checkpoint each completed 25-minute window. The current file/store design is still one backend instance, despite job claim protection. Do not increase replicas or worker count until the SQLite migration and independent worker design are complete. The mounted volume causes a short redeployment interruption.
+One API process owns the in-process worker. Jobs persist in PostgreSQL with leases, heartbeat renewal and bounded provider retries. Speech jobs checkpoint each completed 25-minute window. The current file/store design is still one backend instance, despite job claim protection. The SQLite migration is complete; do not increase replicas or worker count until file storage and independent worker coordination are designed and tested. The mounted volume causes a short redeployment interruption.
 
 Back up **both** PostgreSQL and the backend volume. The UI ZIP includes PMS records/files and a clinic-scoped PostgreSQL archive in spine.json. The legacy restore utility refuses archives with native PostgreSQL events; use the coordinated server backup/restore workflow for a complete restore. Volume snapshots are separate recovery points; a consistent two-store restore requires stopping writes, choosing matching recovery points, and checking IDs, receipts, counts and job state. The local `scripts/backup-local.py` creates a coordinated backup only with the local API stopped. Redeploy persistence was verified; a complete cloud backup restoration drill remains outstanding.
 
-Before real customer use: finish the two-store writer migration, independent workers, verified owner identity, operational alerting, retention/restore operations and provider language/device evaluation. WhatsApp delivery, payment gateways, external laboratory feeds, native mobile and other features marked unfinished in `FEATURE_STATUS.md` are not implemented by this deployment work. No production domain cutover or V1 customer migration has been performed.
+Before real customer use: complete the requirements and acceptance boundaries in `FEATURE_STATUS.md`, including provider onboarding, actual migration, operational recovery/alerts and representative language/device evaluation. Stripe sandbox Checkout and refunds are implemented and hosted-verified; live merchant activation/settlement remains excluded. Real WhatsApp dispatch and external laboratory feeds remain unfinished. Additional scaling work includes external file storage and independent workers. No production domain cutover or V1 customer migration has been performed.
 
 ## 24 September audit and speech release
 
 The previous prose above was corrected for PR #5 account/backup/job features. The current 58-item product assessment is [FEATURE_STATUS.md](FEATURE_STATUS.md); the old deployment baseline test count is not the latest release count. This release packages FFmpeg in the API image for bounded audio decoding and 25-minute transcription. Local development requires FFmpeg on PATH. No new provider keys or Redis service are needed. See [SPEECH_WINDOWS_TESTING.md](SPEECH_WINDOWS_TESTING.md) for scope, tests and measured release evidence.
+
+## PostgreSQL PMS cutover
+
+See [PMS_POSTGRES.md](PMS_POSTGRES.md) for transaction behavior, all-table
+verification, the private pre-cutover backup and recovery boundaries. Never
+remove the PostgreSQL flag or roll back to an old image to bypass a failed
+cutover: the legacy database is deliberately write-fenced. The first hosted
+attempt caught a locale-dependent fingerprint ordering mismatch; PR #36 makes
+comparison independent of database text ordering without weakening value/count
+verification. RELEASE_WORK.md records the corrected release and hosted evidence.

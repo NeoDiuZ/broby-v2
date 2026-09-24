@@ -1,6 +1,6 @@
 # First-build acceptance and remaining work
 
-Updated 23 September 2026. Scope: deterministic patient spine, exact v2 read contract, lab ingestion and three patient screens, with the broader existing web preview preserved. Mobile and the extension remain deferred.
+Historical first-build evidence from 23 September 2026; current deployment boundaries refreshed 24 September. Scope: deterministic patient spine, exact v2 read contract, lab ingestion and three patient screens, with the broader existing web preview preserved. Mobile and the extension remain deferred.
 
 ## Implemented and verified
 
@@ -35,14 +35,14 @@ Patients that exist only in PostgreSQL also have a standalone record screen; pre
 
 ## Explicit remaining boundaries
 
-1. **Transition, not a completed whole-product migration.** Existing PMS data still writes to SQLite; a durable change sequence projects relevant records into PostgreSQL before v2 reads. Native v2 lab events currently appear in the new timeline/chart, but older AI chat, owner sharing, reporting and document-generation source pickers do not yet consume them. Move these readers/writers to the normalized spine before claiming one unified product. Historical SQLite IDs remain opaque strings; there has been no production identity reconciliation.
+1. **Foundation implemented; whole-product acceptance remains.** The PMS and typed clinical schemas now share PostgreSQL. Generic PMS records still project into typed clinical tables; native lab facts are consumed by the later AI, portal and reporting releases. This is not a fully normalized PMS rewrite or a V1 identity reconciliation. See FEATURE_STATUS.md for the current 58-item audit.
 2. **Visual parity cannot be fully signed off.** `~/broby-v2-mockups` was not present. Implemented the document's numeric tokens and layout behaviours, but screens 01/02 still need side-by-side comparison with those files. Qualitative legacy observations remain available as timeline text; the new chart is deliberately numeric.
 3. **Real lab integration remains external.** The deterministic incoming endpoint and simulator work. Actual analyser/vendor authentication, payload mapping, document acquisition and delivery contracts still need vendor access. A source receipt may include inline report text; external source IDs without an attached local binary display their provenance, not an invented/downloaded document.
-4. **Handover PR published, review pending.** Complete source and the Railway PostgreSQL handover are in [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1), branch `codex/v2-handover`. The first-build contract was written before this implementation; earlier preview work predates it. No Railway deployment or production cutover has occurred.
-5. **Production work remains.** Full source completeness audits, large-dataset/load tests, deployment-grade access control and ingest service credentials, backup retention/restore drills, security review and actual v1 migration. This build is not an internet-facing clinic deployment.
+4. **The handover has shipped.** The initial [PR #1](https://github.com/NeoDiuZ/broby-v2/pull/1) was followed by the authenticated Broby New Railway deployment and later feature releases. The old claim that no deployment existed is obsolete. The live site contains synthetic data and is not a V1 customer cutover.
+5. **Production acceptance remains.** Actual lab and WhatsApp access, approved V1 export/mapping, representative clinical/device evaluation, large-dataset tests and a complete cloud recovery drill remain. Authentication, feature/read authorization, local coordinated restore and later synthetic hosted checks are already implemented; see DEPLOYMENT.md and RELEASE_WORK.md.
 
 ## Backups and shutdown
 
-The UI's clinic ZIP is now explicitly labeled **legacy PMS backup**; it does not include PostgreSQL. Stop the API, then run `.venv/bin/python scripts/backup-local.py /new/backup/path` to capture the PostgreSQL dump plus legacy SQLite data/files. Whole-workspace backups contain local auth/grants; protect them. Restore PostgreSQL with `pg_restore` into a newly created empty database and restore the legacy directory into a new path. Configure both paths together; never mix unrelated snapshots. Environment/provider secrets and unsent browser drafts are not included.
+The clinic ZIP includes PMS records/files and a clinic-scoped PostgreSQL archive in `spine.json`; it is not a whole-service backup. Stop the API, then run `.venv/bin/python scripts/backup-local.py /new/backup/path` to capture the PostgreSQL database (both schemas) and the data/files directory. Whole-workspace backups contain local auth/grants; protect them. Restore PostgreSQL with `pg_restore` into a newly created empty database and restore the data directory into a new path. Configure both paths together; never mix unrelated snapshots. Environment/provider secrets and unsent browser drafts are not included.
 
 PostgreSQL is an independent local process. Stop it after stopping the API with `.local/postgres/bin/pg_ctl -D "$PWD/.local/pgdata" stop`. `start-local.sh` starts it again when the bundled runtime exists. The scripts do not deploy, send messages or connect to production.

@@ -480,3 +480,43 @@ copied files matched. See PMS_POSTGRES.md for activation/recovery and limits.
 Hosted cutover follows the checked code deployment and is verified separately.
 Files still use one backend volume; independent workers, external storage and a
 full Railway disaster-recovery rehearsal remain unfinished.
+
+### Verified hosted cutover and recovery — 24 September 2026
+
+- PR #33 merged `819f11bbc02cbd8a587cb7290d47fb100a66a00f`; its live
+  read-permission checks passed. PR #34 merged
+  `e8bffa38772e20bc436c1dfd7973124adc634fcf`; 20 hosted conversation checks passed,
+  including real model intent selection, patient timeline and exact source text.
+- PR #35 merged `437ed64025feb8919a4078668a0279081ee77535` after six passing CI
+  checks. Its code-first Backend and Frontend deployments both succeeded before
+  enabling the three documented PMS migration variables on Backend only.
+- The first migration deployment `60dea1a7-c975-48af-8a62-d2d6f10c9f18` failed at
+  grants-table verification. Locale-dependent SQL ordering caused different hash
+  order for mixed-case tokens. Broby New was unavailable during recovery; the
+  transaction rolled back and the original SQLite backup/write fence remained.
+- PR #36 replaces SQL-order dependence with sorted complete-row hashes. Counts,
+  complete values and duplicate multiplicity remain checked. Ten migration tests,
+  four database tests, full local SQLite/PostgreSQL suites (583 each), and all six
+  CI checks passed. The fix merged as
+  `5534ae93df7afa67ca53a4cf0aed4e2c2b07c0f3` at 09:00:28 UTC.
+- Backend `fe93d6dc-8d06-495c-9095-15ac6ce88d01` and Frontend
+  `c25743d6-8c94-4214-ac6e-e1268f551ec4` both succeeded at that revision.
+  At 09:01:08 UTC startup reported verified promotion of 35 tables / 9,672 rows;
+  readiness reports PostgreSQL and files, with `pms_store: postgres`.
+- The original pre-cutover session, memberships, permissions, job rows and all
+  427 baseline records across two accessible synthetic clinics remained exact.
+  All 14 earlier hosted feature groups passed, plus six read-access checks and
+  eleven saved owner-conversation checks. A fresh conversation passed twenty
+  checks with real AI intent, privacy/replay/stale-review guards, staff reply and
+  exact timeline receipts. Both new test links were revoked and the thread closed.
+- Stripe's canonical test receipt remains paid for 100 cents, with a succeeded
+  40-cent refund and local paid balance of 60 cents; nine matched webhook events,
+  zero failed tasks. No new payment or external message was sent during cutover.
+- The live browser retained access, opened the new synthetic patient and displayed
+  both owner questions, the staff reply and the exact original-source text.
+
+Both Google Doc tabs were reread at their unchanged revision before this audit.
+FEATURE_STATUS.md separates named requirements, unfinished engineering and
+external acceptance inputs. Redis remains unnecessary for the present design;
+V1, its active WhatsApp connection, real customer data and real payments were
+not changed. The scheduled Codex task remains paused.

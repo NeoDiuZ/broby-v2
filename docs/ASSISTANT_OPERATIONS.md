@@ -62,9 +62,9 @@ review after reload and checked its exact title/date in Messages. PR #18 and
 the Railway release details are recorded in RELEASE_WORK.md; final acceptance
 follow-up evidence is in the ignored operator release report.
 
-There are now 61 advertised actions out of 100 shared operations. Twelve use the
+There are now 61 advertised actions out of 105 shared operations. Twelve use the
 new strict proposal schemas; the other 49 retain their earlier field descriptions
-and executor-time validation. The remaining 30 advanced operations still need
+and executor-time validation. The remaining 44 advanced operations still need
 appropriate review contracts. This is not blanket coverage of all natural-language
 intents, languages, clinical policies or ambiguous ownership instructions.
 Model interpretation remains fallible: the operator must inspect the exact review.
