@@ -394,3 +394,22 @@ opted out one owner, cancelled the remainder and verified saved history after bo
 services restarted. All 66 original records stayed exact. The repeatable API flow
 passed 15 checks and 9 restart readbacks with external sending disabled. Release
 SHA, CI and Railway deployment/hosted receipts are recorded privately after release.
+
+## Existing clinic adoption with explicit two-sided review
+
+Independent clinic administrators can now preview an organization's master access
+and restrictions, request adoption, and withdraw a pending request. The master
+reviews exact clinic identity, current workspace counts and the consent before
+accepting or declining. No cross-clinic membership exists while pending. One
+transaction adds/reuses an active administrator membership, attaches the clinic,
+closes the request and records both audit receipts. Stale policy/clinic/counts,
+expired requests and revoked requester authority block acceptance. No existing
+record, balance, inventory item or staff membership is rewritten.
+
+27 regression cases and isolated two-account browser acceptance cover these
+boundaries. All 14 original receiving-clinic records stayed exact; exactly one
+master membership was added; inherited restrictions applied to the original admin;
+reverse clinic access remained denied. A fresh sign-in correctly verifies the new
+membership for encrypted offline work. See ORGANIZATION_ADOPTION.md for the exact
+scope and the local-versus-hosted acceptance distinction. Existing hosted clinics
+are not reassigned as part of testing.
