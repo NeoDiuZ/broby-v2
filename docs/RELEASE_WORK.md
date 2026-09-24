@@ -376,3 +376,21 @@ runs; the payment/lab/message adapter checks are simulations. The scheduling
 harness restores the original rota, cancels its bookings, deactivates its test
 member and verifies unrelated records are unchanged. It also supports read-only
 verification of the saved fixture after deployment.
+
+## Reviewed recall campaigns and owner preference protection
+
+Messages now supports recipient review, selected recall batches, live progress and
+cancellation of remaining manual drafts. Preparation revalidates exact reminder,
+patient and owner versions in one transaction; concurrent or duplicate reviews
+cannot produce duplicate batches. Owner opt-outs cancel pending recall drafts,
+apply to scheduled preparation and survive owner merges. Draft edit/copy/contact
+link/manual completion checks reject stale recipients, changed reminders and
+opt-outs. Cancellation preserves history and never schedules an automatic retry.
+See RECALL_CAMPAIGNS.md for the scope and manual-delivery boundary.
+
+Local validation: 459 backend tests, 39 frontend tests, TypeScript and production
+build passed. Isolated password-authenticated browser acceptance prepared a batch,
+opted out one owner, cancelled the remainder and verified saved history after both
+services restarted. All 66 original records stayed exact. The repeatable API flow
+passed 15 checks and 9 restart readbacks with external sending disabled. Release
+SHA, CI and Railway deployment/hosted receipts are recorded privately after release.

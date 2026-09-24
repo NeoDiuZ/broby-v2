@@ -40,6 +40,10 @@ def dispatch(c,a,p,clinic,actor):
         target=owned(c,require(p,'target_id'),clinic,'owner')
         if source['id']==target['id']:fail('Choose two different owners')
         if source['data'].get('merged_into') or target['data'].get('merged_into'):fail('An owner has already been merged',409)
+        if source['data'].get('recall_opt_out'):
+            from recalls import dispatch as recall_action
+            recall_action(c,'owner.recall_preference',{'id':target['id'],'version':target['version'],
+                'opt_out':True,'reason':'Preserved opt-out from merged owner '+source['id']},clinic,actor)
         from clinic_workflows import owner_ids
         for r in all_records(c,clinic,'patient'):
             if source['id'] in owner_ids(r):
@@ -135,6 +139,9 @@ def dispatch(c,a,p,clinic,actor):
     if a in ('message.update','message.cancel'):
         r=owned(c,p['id'],clinic,'outbox');version(r,p)
         if r['data']['status'] not in ('pending','failed'):fail('This message cannot be changed after delivery starts',409)
+        if a=='message.update':
+            from recalls import validate_draft
+            validate_draft(c,r)
         if a=='message.cancel' and r['data'].get('grant_token'):c.execute('UPDATE grants SET revoked=1 WHERE token=? AND clinic_id=?',(r['data']['grant_token'],clinic))
         return update(c,r,{**r['data'],**({'body':require(p,'body')} if a=='message.update' else {'status':'cancelled'})})
     if a=='payment.refund':

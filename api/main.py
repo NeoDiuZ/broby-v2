@@ -241,3 +241,6 @@ app.include_router(operations_router)
 
 from financial_reports import router as financial_router
 app.include_router(financial_router)
+
+from recalls import router as recalls_router
+app.include_router(recalls_router)

@@ -56,7 +56,8 @@ def cancel_reminder_draft(c, reminder):
 
 
 def queue_due(c, clinic, actor, instant=None):
-    from actions import dispatch as base, owned
+    from actions import owned
+    from recalls import eligibility, queue_one
     settings = owned(c, 'settings-' + clinic, clinic, 'settings')['data']
     cutoff = (clinic_today(c, clinic, instant).date() + timedelta(days=settings.get('reminder_days', 7))).isoformat()
     created = []
@@ -64,10 +65,8 @@ def queue_due(c, clinic, actor, instant=None):
         d = r['data']
         if d['status'] != 'due' or d['due'] > cutoff or d.get('outbox_id'):
             continue
-        patient = owned(c, d['patient_id'], clinic, 'patient')
-        out = base(c, 'message.queue', {'patient_id': patient['id'], 'body': f"Reminder for {patient['data']['name']}: {d['title']}, due {d['due']}. Please contact your clinic to arrange this."}, clinic, actor)
-        update(c, out, {**out['data'], 'reminder_id': r['id']})
-        update(c, r, {**d, 'outbox_id': out['id']})
+        if eligibility(c, r)[2]: continue
+        out = queue_one(c, r, clinic, actor)
         created.append(out['id'])
     return {'id': uid(), 'count': len(created)}
 
