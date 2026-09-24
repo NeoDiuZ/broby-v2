@@ -2,7 +2,7 @@
  * @file _app.jsx
  * @description App-wide chrome. Loads global stylesheet, Plus Jakarta Sans
  * (used by /privacy /terms /dpa /subprocessors via tailwind `font-plus-jakarta`),
- * and the global staging banner.
+ * and a development-only preview banner.
  */
 
 import Head from 'next/head'
@@ -13,11 +13,11 @@ function MyApp({ Component, pageProps }) {
     <>
       <Head>
         <link rel="stylesheet" href="/marketing.css" />
-        <title>Broby Vets | Local website preview</title>
+        <title>Broby Vets</title>
         <link rel="icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" href="/images/broby-logo.png" />
       </Head>
-      <StagingBanner />
+      {process.env.NODE_ENV !== 'production' && <StagingBanner />}
       <Component {...pageProps} />
     </>
   )

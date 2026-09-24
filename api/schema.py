@@ -18,6 +18,15 @@ def migrate(c):
     CREATE TABLE IF NOT EXISTS credentials(username TEXT PRIMARY KEY,member_id TEXT NOT NULL,clinic_id TEXT NOT NULL,salt TEXT,password_hash TEXT);
     CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,username TEXT,expires_at TEXT);
     CREATE TABLE IF NOT EXISTS login_attempts(address TEXT PRIMARY KEY,failures INTEGER,blocked_until TEXT);
+    CREATE TABLE IF NOT EXISTS marketing_leads(
+      id TEXT PRIMARY KEY,submission_key TEXT NOT NULL UNIQUE,payload_hash TEXT NOT NULL,
+      contact_name TEXT NOT NULL,clinic_name TEXT NOT NULL,country TEXT NOT NULL,
+      contact_channel TEXT NOT NULL,contact_handle TEXT NOT NULL,contact_key TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',message TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'new',created_at TEXT NOT NULL,
+      contacted_at TEXT,contacted_by TEXT);
+    CREATE INDEX IF NOT EXISTS marketing_leads_created ON marketing_leads(created_at);
+    CREATE INDEX IF NOT EXISTS marketing_leads_contact ON marketing_leads(contact_key,created_at);
     INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING;
     ''')
     if c.dialect=='postgres':
