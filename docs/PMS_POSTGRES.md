@@ -53,8 +53,9 @@ The migration:
 3. Adds database-level write-rejection triggers to the legacy tables. An obsolete
    open connection cannot resume writing after the copy. The backup predates this
    fence and retains the original data.
-4. Copies every table in one PostgreSQL transaction, then compares ordered row
-   counts and SHA-256 fingerprints of all values. Credentials, grants, claims,
+4. Copies every table in one PostgreSQL transaction, then compares row counts and
+   SHA-256 fingerprints of all values. Sorted complete-row hashes make this
+   comparison independent of each server's text collation. Credentials, grants, claims,
    original record versions and histories are preserved without resetting them.
 5. Restores projection triggers/sequence position and commits a migration receipt
    in `broby_pms.pms_migration`. A final local marker identifies that exact store.

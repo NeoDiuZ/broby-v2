@@ -23,12 +23,15 @@ def write_private(path,content):
 
 
 def fingerprint(connection,table,columns,keys):
-    query='SELECT '+','.join(columns)+' FROM '+table+' ORDER BY '+','.join(keys)
-    digest=hashlib.sha256();count=0
+    # Database locales can order mixed-case tokens differently. Compare the
+    # multiset of complete row hashes, not each server's collation order.
+    query='SELECT '+','.join(columns)+' FROM '+table
+    rows=[]
     for row in connection.execute(query):
-        digest.update(json.dumps(list(row),ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()+b'\n')
-        count+=1
-    return {'rows':count,'sha256':digest.hexdigest()}
+        rows.append(hashlib.sha256(json.dumps(list(row),ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()).digest())
+    digest=hashlib.sha256()
+    for value in sorted(rows):digest.update(value)
+    return {'rows':len(rows),'sha256':digest.hexdigest()}
 
 
 def target_tables(c):
@@ -123,7 +126,7 @@ def promote_if_needed():
                 preserve_backup(source,backup,tables)
                 freeze_legacy(source,tables)
             for table in ('records','auth_memberships'):c.execute('ALTER TABLE '+table+' DISABLE TRIGGER USER')
-            manifest={'version':1,'migration_id':migration_id,'origin':'sqlite' if source else 'fresh',
+            manifest={'version':2,'migration_id':migration_id,'origin':'sqlite' if source else 'fresh',
                       'completed_at':db.now(),'tables':{},'backup':str(backup.relative_to(db.DATA)) if backup else None}
             for table,info in tables.items():
                 columns=info['columns'];keys=info['keys']

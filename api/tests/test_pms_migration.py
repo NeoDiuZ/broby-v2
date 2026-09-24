@@ -20,6 +20,8 @@ def legacy(postgres_target,monkeypatch):
         c.execute('INSERT INTO twilio_attempts(id,lease_until,next_poll) VALUES(?,?,?)',('trial-held',1789999999.123456,1789999999.987654))
         db.record(c,'whatsapp_trial','clinic-east',{'status':'uncertain','patient_id':'luna'},'held-send')
         c.execute('INSERT INTO grants VALUES(?,?,?,?,?)',('SYNTHETIC-private-grant','clinic-east','luna','2098-01-01',0))
+        for grant in ('SYNTHETIC-A','SYNTHETIC-a','SYNTHETIC-B','SYNTHETIC-b','SYNTHETIC-_'):
+            c.execute('INSERT INTO grants VALUES(?,?,?,?,?)',(grant,'clinic-east','luna','2098-01-01',1))
     original=sqlite3.connect(db.DB);original.row_factory=sqlite3.Row
     tables=pms_migrate.source_tables(original)
     fingerprints={t:pms_migrate.fingerprint(original,t,d['columns'],d['keys']) for t,d in tables.items()}
@@ -27,6 +29,19 @@ def legacy(postgres_target,monkeypatch):
     monkeypatch.setenv('BROBY_PMS_STORE','postgres')
     monkeypatch.setenv('BROBY_PMS_MIGRATE','1')
     return {'token':token,'tables':tables,'fingerprints':fingerprints}
+
+
+def test_fingerprint_is_independent_of_database_collation_but_preserves_every_value():
+    class Rows:
+        def __init__(self,rows):self.rows=rows
+        def execute(self,query):return iter(self.rows)
+    binary=[('A','clinic',0),('B','clinic',1),('_','clinic',0),('a','clinic',0)]
+    locale=[('_','clinic',0),('a','clinic',0),('A','clinic',0),('B','clinic',1)]
+    def digest(rows):return pms_migrate.fingerprint(Rows(rows),'grants',['token','clinic_id','revoked'],['token'])
+    assert digest(binary)==digest(locale)
+    assert digest(binary)!=digest([*binary[:-1],('a','clinic',1)])
+    assert digest(binary)!=digest(binary+[binary[0]])
+    assert digest(binary)!=digest(binary[:-1])
 
 
 def test_cutover_preserves_every_table_auth_claims_history_and_original_file(legacy):
