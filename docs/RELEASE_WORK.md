@@ -349,3 +349,30 @@ controls remain unavailable. Templates navigation leads to a paid-upgrade gate,
 which was not accepted. No Twilio token was copied and Backend sending remains
 disabled. Do not repeat join messages merely to refresh this provider UI. The
 private `.local/WHATSAPP_NEXT.md` records the exact account, sender and evidence.
+
+## Reviewed leave, effective rota periods and calendar correction
+
+Staff can request leave; an administrator reviews another staff member's request
+against active bookings before approval. Reasons and transition history persist.
+Approved leave blocks bookings, recurring series and reschedules; withdrawal
+restores the underlying shifts. Dated weekly periods plan different hours without
+replacing all future weeks. Review versions and the shared booking transaction
+protect against concurrent appointments and stale rota edits. No fee, entitlement,
+payroll or clinic-policy values are invented. See STAFF_ROTA.md for exact rules.
+
+Browser acceptance found and fixed a pre-existing incomplete-date input bug that
+left Invalid Date cells in the appointment calendar. New calendar regression cases
+cover incomplete input, month-end/leap-year navigation and supported-year bounds.
+The isolated production-browser flow exercised request, conflicting approval,
+booking cancellation, approval, dated hours, restart, withdrawal and preserved
+history. API/data checks verified actual booking rejection/restoration, inclusive
+period precedence and all 66 original records unchanged. Full local validation:
+427 backend tests, 39 frontend tests, TypeScript and production build. CI and
+hosted/deployed verification are recorded in the release receipt after deployment.
+The same isolated production build also passed 23 clinic-workflow checks plus
+7 persistence/revocation checks, 17 advanced clinical/inventory/adapter checks
+and 16 repeatable scheduling checks. External providers were disabled for these
+runs; the payment/lab/message adapter checks are simulations. The scheduling
+harness restores the original rota, cancels its bookings, deactivates its test
+member and verifies unrelated records are unchanged. It also supports read-only
+verification of the saved fixture after deployment.

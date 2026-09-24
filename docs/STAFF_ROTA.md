@@ -52,6 +52,72 @@ and atomic recurring/reschedule/reopen failure. The earlier room-collision test
 now uses its own clinician so it does not strand seeded appointments.
 
 Browser and hosted release results are recorded in RELEASE_WORK.md when verified.
-Cancellation fees, no-show rules, leave approvals, payroll, a rolling weekly rota
-with effective date ranges, deposits and clinic policy decisions are not inferred
-or implemented by this release.
+Cancellation fees, no-show rules, payroll, deposits and clinic policy decisions
+are not inferred or implemented. Reviewed leave and effective periods are
+implemented in the extension below.
+
+## Effective periods and reviewed leave
+
+Administrators can add dated weekly rota periods (inclusive start/end dates) for
+individual staff. Periods cannot overlap. Empty weekdays within a period mean a
+day off; outside a period the base weekly rule applies. Dated changes override a
+period, while approved leave takes priority over both. The same precedence is
+used by the rota reader, create/reschedule/reopen/recurring booking actions and
+configuration conflict previews. Omitted `periods` retain saved periods. Limits
+are 104 periods per member and 2000 per clinic, within the existing 500-member
+configuration limit. The editor preserves unsaved changes during polling.
+
+Staff can request full-day leave for themselves; administrators can enter requests
+for another staff member. Requests cover 1–366 current/future clinic-local days.
+Pending or approved overlapping requests are rejected. Pending leave does not
+block bookings. An administrator with `leave.review` and `schedule.configure`
+permissions can review another member's request, see conflicting bookings and
+approve or reject with a reason. Self-approval is prohibited. Existing bookings
+must be moved or cancelled before approval; neither preview nor approval moves
+appointments. Approval checks the request and schedule versions and repeats all
+conflict checks inside the booking write transaction. Rota changes and approvals
+therefore cannot race a new booking or overwrite a concurrent review.
+
+The requester or an administrator can withdraw pending or current/future approved
+leave with a reason. Withdrawal restores the **underlying** rota, not unrestricted
+availability. Past approved leave remains history. Expired pending requests can
+be withdrawn/rejected but cannot be approved retroactively. Every transition
+retains its actor, time and reason, record revisions and shared-action audit.
+Same-key retries return the same receipt without duplicate transitions. Approval
+and withdrawal of approved leave advance the rota version, invalidating stale
+rota drafts and refreshing the displayed availability.
+
+These are operational scheduling records visible to the clinic team, **not a
+confidential HR system**. The form explicitly asks users not to enter private
+medical details. There are no inferred leave entitlements, payroll calculations,
+cancellation/no-show fees or deposit rules. Clinic-approved policies are still
+needed for those features. Partial-day leave uses the existing administrator
+replacement-hour workflow; request/approval currently covers full days only.
+
+Actions: `leave.request`, `leave.review`, `leave.cancel`. Read-only review:
+`POST /api/schedule/leave/preview` with `id` and `version`, returning the current
+request/schedule versions, overlapping approved request IDs and booking conflicts.
+Approval requires that reviewed `schedule_version`. Organization locks apply to
+review through its schedule permission dependency.
+
+The calendar now handles incomplete keyboard date entry without constructing
+invalid duplicate day cells. Navigation clamps end-of-month dates and bounds
+rendered dates to years 0001–9999. Frontend regression tests cover the reproduced
+incomplete-input failure, month/leap-year navigation and supported-date boundaries.
+
+Repeatable acceptance (private state files must stay out of Git):
+
+```sh
+.venv/bin/python scripts/smoke-scheduling.py <app-url> \
+  --credentials <private-credentials.json> --state <new-private-state.json>
+# After deployment/restart, inspect the existing fixture without recreating it:
+.venv/bin/python scripts/smoke-scheduling.py <app-url> \
+  --credentials <private-credentials.json> --state <same-private-state.json> --verify-only
+```
+
+The script creates a synthetic member/patient, exercises period hours, conflicts,
+a booking arriving after review, approval replay and withdrawal, then cancels its
+appointments, deactivates its test member and restores the previous clinic rota.
+It checks that every other existing record is unchanged. If a run fails, inspect
+its saved phase/IDs before acting; it refuses to recreate an existing state file.
+The leave and cancelled appointment history remain as acceptance evidence.

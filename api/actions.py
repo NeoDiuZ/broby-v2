@@ -72,8 +72,11 @@ from stripe_payments import PERMISSIONS as STRIPE_PERMISSIONS
 PERMISSIONS.update(STRIPE_PERMISSIONS)
 from billing import PERMISSIONS as BILLING_PERMISSIONS
 PERMISSIONS.update(BILLING_PERMISSIONS)
+from scheduling import PERMISSIONS as SCHEDULING_PERMISSIONS
+PERMISSIONS.update(SCHEDULING_PERMISSIONS)
 
 DEPENDENCIES={
+ 'leave.review':('schedule.configure',),
  'credit_note.reverse':('credit_note.create',),
  'stripe.checkout':('payment.record',),'stripe.refund':('payment.refund',),
  'test.lab.receive':('clinical.ingest',),
@@ -118,6 +121,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in SCHEDULING_PERMISSIONS:
+        from scheduling import dispatch as scheduling_action
+        return scheduling_action(c,a,p,clinic,actor)
     if a in BILLING_PERMISSIONS:
         from billing import dispatch as billing_action
         return billing_action(c,a,p,clinic,actor)

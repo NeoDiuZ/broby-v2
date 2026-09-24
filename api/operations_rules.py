@@ -74,8 +74,8 @@ def schedule(c,clinic,clinician,start,duration,room=''):
         return
     data=config['data']
     if room and room not in data.get('rooms',[]):fail('Choose a configured room')
-    from scheduling import fits
-    if not fits(data,clinician,start,duration):fail('Appointment falls outside configured staff availability',409)
+    from scheduling import fits, with_leave
+    if not fits(with_leave(c,clinic,data),clinician,start,duration):fail('Appointment falls outside configured staff availability',409)
     for other in all_records(c,clinic,'appointment'):
         d=other['data']
         if not room or d.get('room')!=room or d['status'] in ('cancelled','completed'):continue
