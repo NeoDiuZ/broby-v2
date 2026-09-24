@@ -32,8 +32,9 @@ def dispatch(c,a,p,clinic,actor):
         return {'id':oid,'name':name}
     if not org or not master(c,org,actor):fail('Organization master access required',403)
     if a=='organization.policy':
+        from read_access import READS
         locks=p.get('actions',[])
-        if not isinstance(locks,list) or any(x not in permissions or x.startswith('organization.') for x in locks):fail('Invalid organization locks')
+        if not isinstance(locks,list) or any(not isinstance(x,str) or x not in permissions and x not in READS or x.startswith(('organization.','access.')) for x in locks):fail('Invalid organization locks')
         c.execute('UPDATE organizations SET locked_actions=? WHERE id=?',(json.dumps(sorted(set(locks))),org['id']))
         return {'id':org['id'],'locked_actions':locks}
     if a=='organization.clinic_create':

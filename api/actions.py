@@ -78,6 +78,8 @@ from recalls import PERMISSIONS as RECALL_PERMISSIONS
 PERMISSIONS.update(RECALL_PERMISSIONS)
 from organization_adoption import PERMISSIONS as ADOPTION_PERMISSIONS
 PERMISSIONS.update(ADOPTION_PERMISSIONS)
+from access_controls import PERMISSIONS as ACCESS_PERMISSIONS
+PERMISSIONS.update(ACCESS_PERMISSIONS)
 
 DEPENDENCIES={
  'recall.prepare':('message.queue',), 'recall.cancel':('message.cancel',),
@@ -95,12 +97,14 @@ DEPENDENCIES={
 }
 
 def allowed_actions(c,clinic,actor):
+    from read_access import allowed_reads, action_reads
+    reads=allowed_reads(c,clinic,actor)
     member=owned(c,actor,clinic,'member')['data'];practice=owned(c,clinic,clinic,'clinic')['data']
     locked=set(practice.get('locked_features',[]))
     from organizations import blocked
     master_locks=blocked(c,clinic,actor)
     def allowed(action):
-        return action not in master_locks and member.get('active') and member['role'] in PERMISSIONS[action] and (member['role']=='admin' or action not in locked) and all(allowed(dep) for dep in DEPENDENCIES.get(action,()))
+        return action_reads(action)<=reads and action not in master_locks and member.get('active') and member['role'] in PERMISSIONS[action] and (member['role']=='admin' or action not in locked) and all(allowed(dep) for dep in DEPENDENCIES.get(action,()))
     return [a for a in PERMISSIONS if allowed(a)]
 
 def authorize(c,clinic,actor,action):
@@ -126,6 +130,9 @@ def execute(action,p,clinic,actor,key):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in ACCESS_PERMISSIONS:
+        from access_controls import dispatch as access_action
+        return access_action(c,a,p,clinic,actor)
     if a in ADOPTION_PERMISSIONS:
         from organization_adoption import dispatch as adoption_action
         return adoption_action(c,a,p,clinic,actor)
@@ -337,9 +344,10 @@ def dispatch(c,a,p,clinic,actor):
     if a=='share.revoke':
         c.execute('UPDATE grants SET revoked=1 WHERE token=? AND clinic_id=?',(require(p,'token'),clinic)); return {'id':p['token'],'revoked':True}
     if a=='feature_locks.save':
+        from read_access import READS
         r=owned(c,clinic,clinic,'clinic'); version(r,p)
         locked=p.get('actions',[])
-        if not isinstance(locked,list) or any(x not in PERMISSIONS for x in locked): fail('Unknown action in feature locks')
+        if not isinstance(locked,list) or any(not isinstance(x,str) or x not in PERMISSIONS and x not in READS for x in locked): fail('Unknown action in feature locks')
         return update(c,r,{**r['data'],'locked_features':locked})
     if a=='attachment.approve':
         r=owned(c,p['id'],clinic,'attachment'); version(r,p)
@@ -356,7 +364,7 @@ def dispatch(c,a,p,clinic,actor):
         if p.get('id'):
             r=owned(c,p['id'],clinic,'member'); version(r,p)
             if r['id']==actor and (role!='admin' or p.get('active') is False): fail('You cannot remove your own administrative access')
-            return update(c,r,{'name':require(p,'name'),'role':role,'active':p.get('active',True)})
+            return update(c,r,{**r['data'],'name':require(p,'name'),'role':role,'active':p.get('active',True)})
         return record(c,'member',clinic,{'name':require(p,'name'),'role':role,'active':True})
     if a=='import.patients':
         rows=p.get('rows',[])

@@ -413,3 +413,21 @@ reverse clinic access remained denied. A fresh sign-in correctly verifies the ne
 membership for encrypted offline work. See ORGANIZATION_ADOPTION.md for the exact
 scope and the local-versus-hosted acceptance distinction. Existing hosted clinics
 are not reassigned as part of testing.
+
+## Read permissions across UI, API and stored responses
+
+Eight read areas now support clinic locks, individual versioned restrictions and
+master inheritance. The server filters the bootstrap, guards all staff endpoints,
+blocks dependent writes and replayed results, and denies mixed archives/history,
+files and assistant conversations when an underlying area is restricted. Browser
+views clear on permission change; observed policy changes prevent an obsolete
+local cache returning after a storage failure. Read READ_ACCESS.md for the
+conservative composite-view rule and the explicit twelve-hour offline limit.
+
+Local full validation passed 534 backend tests, 40 frontend tests, TypeScript and
+production build. Isolated production-browser acceptance exercised restriction,
+sign-in, permitted patient search, restoration and live revocation of an open
+invoice. Direct API/data checks passed 16 cases and verified 65 unrelated original
+records, plus restrictions after service restart. Exact CI, merge and Railway
+receipts are recorded after release; these local results alone do not prove live
+rollout or the remaining external integrations.

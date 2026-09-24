@@ -75,3 +75,15 @@ test('snapshot retention removes old copies but never pending work',async()=>{
 test('legacy warning counts only unencrypted clinical work without exposing contents',async()=>{
  const t=setup();await t.login();assert.equal(await t.r.legacyDeviceRows(),0);await t.r.putDraft('new','encrypted');t.localStorage.setItem('broby-note-other','unclaimed legacy');await t.raw('pending',null,{id:'old',clinic:'other',actor:'other',text:'legacy'});assert.equal(await t.r.legacyDeviceRows(),2);
 });
+
+test('observed permission change prevents old snapshot fallback after cache quota failure',async()=>{
+ const t=setup();await t.login();
+ const reduced={...t.snapshot,permissions:[],read_permissions:['read.patients']};
+ const {IDBObjectStore}=require('fake-indexeddb'),put=IDBObjectStore.prototype.put;
+ IDBObjectStore.prototype.put=function(value,...args){if(this.name==='snapshots')throw new DOMException('Synthetic quota','QuotaExceededError');return put.call(this,value,...args)};
+ try{await assert.rejects(t.r.cacheSnapshot(reduced),/quota/)}finally{IDBObjectStore.prototype.put=put}
+ assert.equal(await t.r.cachedSnapshot('clinic-a','actor-a'),null);
+ t.r.lockDevice();await t.r.unlockOffline('alice','synthetic existing password');
+ assert.equal(await t.r.cachedSnapshot('clinic-a','actor-a'),null);
+ await t.r.cacheSnapshot(reduced);assert.deepEqual(Array.from((await t.r.cachedSnapshot('clinic-a','actor-a')).snapshot.read_permissions),['read.patients']);
+});

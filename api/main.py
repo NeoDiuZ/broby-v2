@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form, Response
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form, Response, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 try:
@@ -33,7 +33,8 @@ async def lifespan(app):
         worker_stop.set()
         for thread in monitor.threads.values(): thread.join(timeout=3)
 
-app=FastAPI(title='Broby V2',lifespan=lifespan,
+from read_access import enforce_route
+app=FastAPI(title='Broby V2',lifespan=lifespan,dependencies=[Depends(enforce_route)],
             docs_url=None if runtime.hosted() else '/docs',
             redoc_url=None if runtime.hosted() else '/redoc',
             openapi_url=None if runtime.hosted() else '/openapi.json')
@@ -78,6 +79,9 @@ def bootstrap(request:Request):
         member=owned(c,actor,clinic,'member')
         from spine.reader import native_records
         rs=all_records(c,clinic)+native_records(clinic)
+        from read_access import allowed_reads, filter_records, ALL
+        reads=allowed_reads(c,clinic,actor)
+        rs=filter_records(rs,reads,actor)
         if auth.enabled():
             sess=auth.session(request); clinics=[]
             for membership in c.execute('SELECT clinic_id,member_id FROM auth_memberships WHERE username=?',(sess['username'],)):
@@ -86,7 +90,7 @@ def bootstrap(request:Request):
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
         from stripe_payments import configured
         integrations={**providers.available(),'payments':configured(clinic)}
-        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))],'permissions':allowed_actions(c,clinic,actor),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
+        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
 class Command(BaseModel):
     action:str
     payload:dict[str,Any]=Field(default_factory=dict)
@@ -199,7 +203,11 @@ def assistant(body:Chat,request:Request):
         if body.key:
             from assistant_history import ask
             return ask(clinic,actor,body.message,body.patient_id,body.conversation_id,body.key)
-        with connection() as c:return answer(c,clinic,actor,body.message,body.patient_id,body.history)
+        with connection() as c:
+            result=answer(c,clinic,actor,body.message,body.patient_id,body.history)
+            from read_access import require, ALL
+            require(c,clinic,actor,ALL)
+            return result
     except ProviderError:
         # A saved question remains failed/retryable, with no confirmable action.
         fail('The AI provider could not return a verified answer. No clinic record was changed. Retry this question.',503)
@@ -247,3 +255,6 @@ app.include_router(recalls_router)
 
 from organization_adoption import router as adoption_router
 app.include_router(adoption_router)
+
+from access_controls import router as access_router
+app.include_router(access_router)

@@ -76,8 +76,23 @@ export function localPut(store:string,value:any){const session=current();return 
 export async function localAll(store:string):Promise<any[]>{const session=current();await flushDeviceWrites();const rows=await readRaw(store);const result=[];for(const row of rows){if(row.owner!==session.owner||!row.sealed)continue;const data=unpack(JSON.parse(decode.decode(await unseal(session.key,row.sealed,store+':'+row.id))));result.push(data)}if(active!==session)throw new DeviceLocked('Device locked.');return result}
 export function localDelete(store:string,id:string){const session=current();return enqueue(async()=>{if(active!==session)throw new DeviceLocked('Device locked.');await writeRaw(store,session.owner+':'+id,true)})}
 export async function localGet(store:string,id:string){return(await localAll(store)).find(row=>row.id===id)}
-export async function cacheSnapshot(snapshot:Snapshot){if(active?.lease.mode==='local-demo'&&!deviceScopeAllowed(snapshot.clinic.id,snapshot.actor.id))active.lease.scopes.push({clinic:snapshot.clinic.id,actor:snapshot.actor.id});if(!deviceScopeAllowed(snapshot.clinic.id,snapshot.actor.id))throw new Error('This clinic has not been verified for device access. Sign in again.');await localPut('snapshots',{id:snapshot.clinic.id+':'+snapshot.actor.id,savedAt:Date.now(),snapshot});const copies=(await localAll('snapshots')).sort((a,b)=>b.savedAt-a.savedAt);for(let i=0;i<copies.length;i++)if(i>=5||Date.now()-copies[i].savedAt>MAX_AGE)await localDelete('snapshots',copies[i].id)}
-export async function cachedSnapshot(clinic:string,actor:string){const session=current();if(!validLease(session.lease)||!deviceScopeAllowed(clinic,actor))return null;const row=await localGet('snapshots',clinic+':'+actor);return row&&Date.now()-row.savedAt<=MAX_AGE?row:null}
+const policyStamp=(snapshot:Snapshot)=>JSON.stringify([snapshot.actor.data?.role,[...(snapshot.read_permissions||[])].sort(),[...snapshot.permissions].sort()]);
+const policyKey=(clinic:string,actor:string)=>'broby-access-'+current().owner+':'+clinic+':'+actor;
+export async function cacheSnapshot(snapshot:Snapshot){
+ if(active?.lease.mode==='local-demo'&&!deviceScopeAllowed(snapshot.clinic.id,snapshot.actor.id))active.lease.scopes.push({clinic:snapshot.clinic.id,actor:snapshot.actor.id});
+ if(!deviceScopeAllowed(snapshot.clinic.id,snapshot.actor.id))throw new Error('This clinic has not been verified for device access. Sign in again.');
+ // Persist the latest observed policy before a possibly failing cache write.
+ // An older encrypted snapshot must not reappear after a quota/network failure.
+ localStorage.setItem(policyKey(snapshot.clinic.id,snapshot.actor.id),policyStamp(snapshot));
+ await localPut('snapshots',{id:snapshot.clinic.id+':'+snapshot.actor.id,savedAt:Date.now(),snapshot});
+ const copies=(await localAll('snapshots')).sort((a,b)=>b.savedAt-a.savedAt);
+ for(let i=0;i<copies.length;i++)if(i>=5||Date.now()-copies[i].savedAt>MAX_AGE)await localDelete('snapshots',copies[i].id);
+}
+export async function cachedSnapshot(clinic:string,actor:string){
+ const session=current();if(!validLease(session.lease)||!deviceScopeAllowed(clinic,actor))return null;
+ const row=await localGet('snapshots',clinic+':'+actor);
+ return row&&Date.now()-row.savedAt<=MAX_AGE&&localStorage.getItem(policyKey(clinic,actor))===policyStamp(row.snapshot)?row:null;
+}
 export async function getDraft(id:string){return(await localGet('drafts',id))?.value}
 export const putDraft=(id:string,value:any)=>localPut('drafts',{id,value});
 export const removeDraft=(id:string)=>localDelete('drafts',id);
