@@ -1,4 +1,5 @@
 'use client';
+import {deviceInfo} from './device';
 import {api,identity,localAll,localDelete,localPut} from './api';
 export type RecordingState={status:'idle'|'requesting'|'recording'|'paused'|'saving'|'saved'|'error';id:string;consultationId:string;patientId:string;elapsed:number;chunks:number;error:string};
 export type RefinementOptions={language:string;diarize:boolean};
@@ -6,16 +7,18 @@ let state:RecordingState={status:'idle',id:'',consultationId:'',patientId:'',ela
 const listeners=new Set<()=>void>();
 let recorder:MediaRecorder|null=null,stream:MediaStream|null=null,timer:ReturnType<typeof setInterval>|null=null;
 let pendingWrites:Promise<void>[]=[],activeMeta:any=null,failedChunks:any[]=[],pendingFinalization=false;
-let startedAt=0,previousElapsed=0;
+let startedAt=0,previousElapsed=0,recoveryUser='';
 const liveAttempts=new Map<string,number>();
 const emit=(patch:Partial<RecordingState>)=>{state={...state,...patch};listeners.forEach(f=>f())};
 const elapsed=()=>previousElapsed+(state.status==='recording'?Math.max(0,Date.now()-startedAt)/1000:0);
 const scope=(meta:any)=>({'x-clinic-id':meta.clinic,'x-actor-id':meta.actor});
 const action=(meta:any,action:string,payload:any,key:string)=>api('/actions',{method:'POST',headers:scope(meta),body:JSON.stringify({action,payload,key})});
 export const recordingStore={subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn)}},getSnapshot:()=>state,getServerSnapshot:()=>state};
+export function assertDeviceCanLock(){if(['requesting','recording','paused','saving'].includes(state.status))throw new Error('Finish the voice note before locking or signing out.');if(failedChunks.length||pendingFinalization)throw new Error('Audio is still held in this page. Retry saving it before locking or signing out.')}
 export async function startRecording(patientId:string,consultationId:string,refinement?:RefinementOptions){
  if(['requesting','recording','paused','saving'].includes(state.status))throw new Error('Finish the current voice note before starting another on this device.');
  if(failedChunks.length||pendingFinalization)throw new Error('Retry the previous note before starting another; audio is still held in this page.');
+ recoveryUser=deviceInfo()?.username||'';
  const id=crypto.randomUUID();emit({status:'requesting',id,patientId,consultationId,error:'',elapsed:0,chunks:0});
  try{
   stream=await navigator.mediaDevices.getUserMedia({audio:true});const i=identity();
@@ -50,6 +53,7 @@ export async function stopRecording(){
  catch(e){emit({status:'error',error:failedChunks.length?'Audio is still held in this page. Keep it open and choose Retry upload.':'Voice note remains on this device. Choose Retry upload when connected.'});throw e}
 }
 async function persistFailedChunks(){
+ if((failedChunks.length||pendingFinalization)&&recoveryUser!==(deviceInfo()?.username||''))throw new Error('Sign back into the account that recorded this note to recover its audio.');
  const retry=failedChunks;failedChunks=[];
  for(const chunk of retry){try{await localPut('audio',chunk)}catch{failedChunks.push(chunk)}}
  if(failedChunks.length)throw new Error('Device storage is full or unavailable. Keep this page open and free storage, then retry.');

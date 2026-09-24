@@ -8,7 +8,7 @@ const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.
 function setup(){
  const data={recordings:new Map(),audio:new Map()},uploaded=new Map();
  let lastRecorder,failStorage=false,failMetadata=false,failNetwork=false,commands=[],stopped=false,tick,clock=Date.now(),beforeAction=null,failDelete=false,jobProgress=null;const localDeletes=[];
- const api={identity:()=>({clinic:'test',actor:'test-vet'}),headers:()=>({}),localAll:async k=>[...data[k].values()],localDelete:async(k,id)=>{localDeletes.push({k,id});if(failDelete&&localDeletes.length===2)throw new Error('Cleanup failed');return data[k].delete(id)},
+ const api={deviceInfo:()=>({username:'synthetic-recorder'}),identity:()=>({clinic:'test',actor:'test-vet'}),headers:()=>({}),localAll:async k=>[...data[k].values()],localDelete:async(k,id)=>{localDeletes.push({k,id});if(failDelete&&localDeletes.length===2)throw new Error('Cleanup failed');return data[k].delete(id)},
   localPut:async(k,v)=>{if(k==='audio'&&failStorage)throw new Error('Quota exceeded');if(k==='recordings'&&v.status==='queued'&&failMetadata)throw new Error('Metadata failure');data[k].set(v.id,{...v})},
   api:async(path,options={})=>{if(failNetwork)throw new Error('Offline');if(path.startsWith('/jobs/'))return jobProgress||{status:'waiting',result:{completed_windows:0}};if(path!=='/actions')return{received:[...uploaded.keys()]};const {action:a,payload:p,key}=JSON.parse(options.body);if(beforeAction)await beforeAction(a,p);commands.push({a,p,key,headers:options.headers});if(a==='recording.complete'){assert.equal(uploaded.size,p.expected_chunks)}return{id:'server-note'}}};
  class Recorder{static isTypeSupported(){return true}mimeType='audio/webm';constructor(){lastRecorder=this}start(){}pause(){}resume(){}stop(){this.ondataavailable({data:new Blob(['final'])});this.onstop()}emit(value){this.ondataavailable({data:new Blob([value])})}}
@@ -122,4 +122,10 @@ test('completed sections avoid repeated decoding until the next 25-minute bounda
  assert.equal(t.commands.filter(x=>x.a==='recording.refine').length,1);assert.equal(t.uploaded.size,1);
  t.advance(1440);await t.r.syncAudio();assert.equal(t.commands.filter(x=>x.a==='recording.refine').length,2);
  await t.r.stopRecording();
+});
+
+test('locking and sign-out cannot discard active or volatile audio',async()=>{
+ const t=setup();t.r.assertDeviceCanLock();await t.r.startRecording('patient','consult');assert.throws(()=>t.r.assertDeviceCanLock(),/Finish/);
+ t.setStorage(true);await assert.rejects(t.r.stopRecording());assert.throws(()=>t.r.assertDeviceCanLock(),/still held/);
+ t.setStorage(false);t.setNetwork(true);await assert.rejects(t.r.syncAudio());t.r.assertDeviceCanLock();assert.equal(t.data.audio.size,1);
 });
