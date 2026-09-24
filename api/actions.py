@@ -113,7 +113,7 @@ def authorize(c,clinic,actor,action):
     if action not in allowed_actions(c,clinic,actor):fail('Your role or clinic permissions do not allow this action',403)
     return owned(c,actor,clinic,'member')
 
-def execute(action,p,clinic,actor,key):
+def execute(action,p,clinic,actor,key,*,expected_versions=None):
     if action not in PERMISSIONS: fail('Unknown action',404)
     fingerprint=hashlib.sha256(json.dumps({'action':action,'payload':p},sort_keys=True).encode()).hexdigest()
     with connection(True) as c:
@@ -122,6 +122,14 @@ def execute(action,p,clinic,actor,key):
         if previous:
             if previous['payload_hash']!=fingerprint: fail('Idempotency key was reused with different input',409)
             return json.loads(previous['result'])
+        # The saved assistant review pins its referenced records, not just the
+        # primary mutation target. Check under the same writer lock as dispatch.
+        # Replay is deliberately above this check: our own completed mutation
+        # may have changed these versions before its response was received.
+        for id, expected in (expected_versions or {}).items():
+            current=get(c,id,clinic)
+            if not current or current['version']!=expected:
+                fail('A record used in this review changed. Ask again and review the latest details before confirming.',409)
         from db import mutation_actor
         token=mutation_actor.set(actor)
         try:result=dispatch(c,action,p,clinic,actor)

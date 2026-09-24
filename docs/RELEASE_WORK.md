@@ -520,3 +520,30 @@ FEATURE_STATUS.md separates named requirements, unfinished engineering and
 external acceptance inputs. Redis remains unnecessary for the present design;
 V1, its active WhatsApp connection, real customer data and real payments were
 not changed. The scheduled Codex task remains paused.
+
+## Assistant completion and reliability acceptance — current release
+
+All 67 advertised assistant actions now have strict, read-only proposal contracts
+and human-readable reviews. Thirty-two operations explicitly route to their
+dedicated review flow; six internal provider test-adapter operations remain
+unadvertised. The shared executor rechecks every review dependency under the
+writer lock before a new mutation, while exact confirmation replay remains safe.
+Intent metadata is bounded without limiting full-dataset factual query counts.
+
+The 1,000-patient local authenticated rehearsal passed 160 concurrent reads,
+stock/booking races, duplicate payment retries, actual API process loss and
+automatic leased-job recovery. A complete 48-table / 13,334-row backup restored
+exactly, including indexed file/audio bytes; a corrupted copy was rejected. This
+found and fixed the incompatible backup writer/verifier formats and excessive
+patient-page summary queries. Patient search uses five queries per page and
+local p95 improved from 594.5 ms to 175.8 ms. See RELIABILITY_ACCEPTANCE.md.
+
+Local validation and hosted release receipts are recorded separately. These
+checks do not establish cloud disaster recovery, prolonged capacity, physical
+device acceptance, live merchant settlement, WhatsApp delivery or lab feeds.
+
+Validation before publication: full SQLite and PostgreSQL suites each passed 740
+cases; a subsequent stopped-API/backup-target regression also passed. Frontend
+40 tests, TypeScript and production build passed. Dedicated contract tests
+exercise every advertised action through confirmation/replay; real-provider
+intent and hosted browser acceptance are checked after deployment.

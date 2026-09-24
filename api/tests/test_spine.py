@@ -307,3 +307,26 @@ def test_existing_patient_link_preserves_native_history_and_owner_projection(cli
         assert s.get(Patient,patient['id']).name=='SYNTHETIC independent Luna'
         assert s.get(Owner,patient['data']['owner_id']).name=='Receiving owner'
     with db.connection() as c:assert db.get(c,patient['id'])==patient
+
+
+def test_patient_page_aggregates_are_bounded_and_preserve_counts_and_owner(client):
+    from sqlalchemy import event
+    from spine import service
+    projection.sync('clinic-east')
+    with database.session() as s:
+        selected=s.scalars(select(Patient).where(Patient.clinic_id=='clinic-east')).all()
+        expected={p.id:service.patient_view(s,p) for p in selected}
+    queries=[]
+    def capture(c,cursor,statement,parameters,context,executemany):queries.append(statement)
+    engine=database.engine();event.listen(engine,'before_cursor_execute',capture)
+    try:
+        with database.session() as s:result=service.patients(s,'clinic-east','',200,'')
+    finally:event.remove(engine,'before_cursor_execute',capture)
+    assert len(queries)==5
+    assert {r['id']:r for r in result['items']}==expected
+    milo=next(r for r in result['items'] if r['id']=='milo')
+    assert milo['owner']=={'id':'owner-milo','name':'Rachel Tan'}
+    assert milo['stats']=={'visits':1,'observations':1,'document_sources':0}
+    with database.session() as s:
+        assert service.patients(s,'clinic-river','',50,'')['items']==[]
+        assert service.patients(s,'clinic-east','no such synthetic name',50,'')['items']==[]

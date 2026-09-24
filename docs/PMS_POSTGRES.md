@@ -83,8 +83,10 @@ stops startup; never delete it just to suppress a failed check.
 
 The local coordinated backup utility dumps the whole PostgreSQL database (both
 schemas in one database snapshot) and copies the stopped API's data directory.
-It refuses separately hosted PMS/clinical databases. Its version-2 manifest
-describes the PostgreSQL dump, data directory and active PMS mode. The legacy
+It refuses separately hosted PMS/clinical databases. Its version-3 manifest
+also stores dump/file hashes and complete-table fingerprints from the same
+exported PostgreSQL snapshot as the dump. The verifier accepts formats 1/2/3
+and explicitly distinguishes historical backups without original fingerprints. The legacy
 clinic-ZIP restore tool remains explicitly SQLite-only and rejects archives with
 native clinical facts.
 
@@ -124,3 +126,7 @@ This local restore is not a Railway disaster
 recovery drill, and three fixture files do not certify a large binary archive.
 Independent workers, external file storage, clinic-scale load acceptance and
 external operational alerts remain separate work.
+
+The expanded rehearsal in [RELIABILITY_ACCEPTANCE.md](RELIABILITY_ACCEPTANCE.md)
+verifies 48 tables / 13,334 rows, real process-loss recovery and rejection of a
+corrupt backup. It also fixes the earlier format-2 writer/format-1 verifier mismatch.

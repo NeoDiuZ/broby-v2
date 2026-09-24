@@ -73,10 +73,33 @@ def cursor_decode(token,scope):
         if d['scope']!=scope or not isinstance(v,list) or len(v)!=2 or not all(isinstance(x,str) for x in v):raise ValueError()
         return v
     except Exception:fail('Invalid cursor')
-def patient_view(s,p):
-    owner=s.scalar(select(Owner).join(OwnerPatient,Owner.id==OwnerPatient.owner_id).where(OwnerPatient.patient_id==p.id).order_by(OwnerPatient.is_primary.desc(),Owner.id))
-    last=s.scalar(select(func.max(Event.occurred_at)).where(Event.patient_id==p.id,Event.event_type=='consult'))
-    return {'id':p.id,'name':p.name,'species':p.species,'breed':p.breed,'sex':p.sex,'date_of_birth':p.date_of_birth.isoformat() if p.date_of_birth else None,'owner':{'id':owner.id,'name':owner.name} if owner else None,'last_seen':utc(last) if last else None,'stats':{'visits':s.scalar(select(func.count()).select_from(Event).where(Event.patient_id==p.id,Event.event_type=='consult')),'observations':s.scalar(select(func.count()).select_from(Observation).join(Event).where(Event.patient_id==p.id)),'document_sources':s.scalar(select(func.count()).select_from(Source).where(Source.patient_id==p.id,Source.kind=='document'))}}
+def patient_views(s,items):
+    """Fetch page summaries in four queries, independent of page length.
+
+    Only IDs from the already clinic-scoped patient selection enter these
+    aggregates; joins cannot multiply observation or document counts.
+    """
+    if not items:return []
+    ids=[p.id for p in items];owners={}
+    for pid,owner in s.execute(select(OwnerPatient.patient_id,Owner).join(Owner,Owner.id==OwnerPatient.owner_id)
+                               .where(OwnerPatient.patient_id.in_(ids)).order_by(OwnerPatient.is_primary.desc(),Owner.id)):
+        owners.setdefault(pid,owner)
+    visits={pid:(count,last) for pid,count,last in s.execute(select(Event.patient_id,func.count(),func.max(Event.occurred_at))
+             .where(Event.patient_id.in_(ids),Event.event_type=='consult').group_by(Event.patient_id))}
+    observations=dict(s.execute(select(Event.patient_id,func.count()).select_from(Observation).join(Event)
+                      .where(Event.patient_id.in_(ids)).group_by(Event.patient_id)).all())
+    documents=dict(s.execute(select(Source.patient_id,func.count()).where(Source.patient_id.in_(ids),Source.kind=='document')
+                    .group_by(Source.patient_id)).all())
+    result=[]
+    for p in items:
+        owner=owners.get(p.id);count,last=visits.get(p.id,(0,None))
+        result.append({'id':p.id,'name':p.name,'species':p.species,'breed':p.breed,'sex':p.sex,
+                       'date_of_birth':p.date_of_birth.isoformat() if p.date_of_birth else None,
+                       'owner':{'id':owner.id,'name':owner.name} if owner else None,'last_seen':utc(last) if last else None,
+                       'stats':{'visits':count,'observations':observations.get(p.id,0),'document_sources':documents.get(p.id,0)}})
+    return result
+
+def patient_view(s,p):return patient_views(s,[p])[0]
 def patients(s,clinic,q,limit,cursor):
     scope='patients:'+clinic+':'+q;after=cursor_decode(cursor,scope)
     query=select(Patient).where(Patient.clinic_id==clinic)
@@ -86,7 +109,7 @@ def patients(s,clinic,q,limit,cursor):
         query=query.where(or_(Patient.name.ilike(text,escape='\\'),Patient.id.in_(owner_ids)))
     if after:query=query.where(or_(Patient.name>after[0],and_(Patient.name==after[0],Patient.id>after[1])))
     rows=s.scalars(query.order_by(Patient.name,Patient.id).limit(limit+1)).all();items=rows[:limit]
-    return {'items':[patient_view(s,p) for p in items],'next_cursor':cursor_encode(scope,[items[-1].name,items[-1].id]) if len(rows)>limit else None}
+    return {'items':patient_views(s,items),'next_cursor':cursor_encode(scope,[items[-1].name,items[-1].id]) if len(rows)>limit else None}
 def timeline(s,clinic,pid,limit,cursor,category='',q='',start=None,end=None):
     patient(s,pid,clinic);scope=json.dumps([clinic,pid,category,q,str(start),str(end)]);after=cursor_decode(cursor,scope)
     query=select(Event).where(Event.clinic_id==clinic,Event.patient_id==pid)
