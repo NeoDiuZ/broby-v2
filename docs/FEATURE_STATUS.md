@@ -69,7 +69,7 @@ This replaces the obsolete status table, which incorrectly continued to list fea
 
 ## Blockers versus unfinished engineering
 
-**Engineering that can continue without a new vendor:** offline cold start/device privacy; long-session physical-device acceptance; verified owner account flows (delivery channel needed for final verification); correction of established clinic-patient mappings and clinical-fact reconciliation; PMS transition to one canonical PostgreSQL store; independent workers/object storage; pagination/load testing; operational diagnostics/alerts; fuller assistant/action contracts, reporting and test coverage. These are unfinished work, not things an AI agent is inherently unable to build.
+**Engineering that can continue without a new vendor:** offline cold start/device privacy; long-session physical-device acceptance; verified owner account flows (delivery channel needed for final verification); correction of established clinic-patient mappings and clinical-fact reconciliation; PMS transition to one canonical PostgreSQL store; independent workers/object storage; pagination/load testing; external alerts and incident response; fuller assistant/action contracts, reporting and test coverage. These are unfinished work, not things an AI agent is inherently unable to build.
 
 **External inputs for final acceptance:** live merchant activation and lab vendor/test access; WhatsApp recipient linking and production sender enrollment; approved V1 export; clinic billing, retention and escalation policies; representative recordings and physical devices. Test adapters cannot prove payment settlement, analyser compatibility, emergency response or customer message delivery.
 
@@ -80,6 +80,8 @@ This replaces the obsolete status table, which incorrectly continued to list fea
 Broby New contains **Frontend, Backend and Postgres**, all in Singapore, under **cxlabyky's Projects**. Frontend is public HTTPS; the API and database use private routing. Backend has a persistent `/data` volume. Deployments track this repository's `main` branch. PostgreSQL contains the normalized clinical spine; `/data` still contains the SQLite PMS/session/job store plus audio/uploads. Both must be backed up and restored together.
 
 V1's `Redis-Ky2t` supports transient auth tickets, request limits, coordination locks, caches and live-event pub/sub. V2 does not call Redis: its current sessions, rate limits and job claims use its database, and the browser polls for updates. Therefore absence of Redis is **not a missing connection causing current V2 workflows to fail**. Creating an unused Redis service would not add these features or make V2 scalable.
+
+Administrator worker/queue diagnostics and bounded loop recovery are implemented (see OPERATIONS_HEALTH.md). They distinguish current process progress, failed tasks and provider-disabled workers, with durable sanitized failure/recovery history. External alerts, incident acknowledgement and independent worker deployment remain unfinished.
 
 The architectural limit is one backend replica with local persistent files and a remaining SQLite/Pg projection. Moving canonical PMS data to PostgreSQL, externalizing files, and separating workers/observability must precede a multi-replica claim. Redis may then be useful for shared ephemeral coordination/pub-sub if the chosen worker design needs it. Never point V2 at V1 Redis, because that would share sessions/locks/events across environments.
 

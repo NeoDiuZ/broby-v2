@@ -365,17 +365,6 @@ def poll():
                 if not waiting: enqueue(c, clinic, 'sync', r['id'])
 
 
-def loop(stop):
-    last_poll = 0
-    while not stop.wait(1):
-        try:
-            if time.monotonic() - last_poll > 60:
-                poll(); last_poll = time.monotonic()
-            tick()
-        except Exception:
-            # Durable tasks remain claimable; avoid logging credentials or payloads.
-            pass
-
 
 @router.post('/webhook')
 async def webhook(request: Request):

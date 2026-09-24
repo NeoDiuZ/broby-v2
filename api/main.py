@@ -23,15 +23,16 @@ async def lifespan(app):
     init(seed=os.getenv('BROBY_SEED_DEMO', '1') == '1'); auth.setup_tables();
     runtime.provision_admin()
     from spine.projection import setup_queue
-    setup_queue(); jobs.stop.clear(); thread=threading.Thread(target=jobs.loop,daemon=True); thread.start()
-    from clinic_workflows import loop as schedule_loop
-    scheduler=threading.Thread(target=schedule_loop,args=(jobs.stop,),daemon=True); scheduler.start()
-    from stripe_payments import loop as payment_loop
-    payments=threading.Thread(target=payment_loop,args=(jobs.stop,),daemon=True); payments.start()
-    from twilio_trial import loop as twilio_loop
-    messaging=threading.Thread(target=twilio_loop,args=(jobs.stop,),daemon=True); messaging.start()
-    yield
-    jobs.stop.set(); thread.join(timeout=3); scheduler.join(timeout=3); payments.join(timeout=3); messaging.join(timeout=3)
+    setup_queue(); worker_stop = threading.Event()
+    from operations_health import start_workers
+    monitor = start_workers(worker_stop)
+    app.state.workers = monitor
+    try:
+        yield
+    finally:
+        worker_stop.set()
+        for thread in monitor.threads.values(): thread.join(timeout=3)
+
 app=FastAPI(title='Broby V2',lifespan=lifespan,
             docs_url=None if runtime.hosted() else '/docs',
             redoc_url=None if runtime.hosted() else '/redoc',
@@ -234,3 +235,6 @@ app.include_router(twilio_router)
 
 from scheduling import router as scheduling_router
 app.include_router(scheduling_router)
+
+from operations_health import router as operations_router
+app.include_router(operations_router)

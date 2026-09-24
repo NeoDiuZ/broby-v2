@@ -40,3 +40,6 @@ def migrate(c):
 
     from twilio_trial import setup as setup_twilio
     setup_twilio(c)
+
+    from operations_health import setup as setup_operations
+    setup_operations(c)
