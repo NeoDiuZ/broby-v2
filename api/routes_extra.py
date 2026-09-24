@@ -12,7 +12,7 @@ def identity(request):
 @router.get('/api/session')
 def session(request:Request):
     sess=auth.session(request) if auth.enabled() else None
-    return {'mode':'password' if auth.enabled() else 'demo','authenticated':bool(sess) if auth.enabled() else True,'username':sess['username'] if sess else None}
+    return {'mode':'password' if auth.enabled() else 'demo','authenticated':bool(sess) if auth.enabled() else True,'username':sess['username'] if sess else None,'expires_at':sess['expires_at'] if sess else None}
 class Login(BaseModel):
     username:str=Field(min_length=1,max_length=200)
     password:str=Field(min_length=1,max_length=1000)

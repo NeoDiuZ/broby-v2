@@ -295,3 +295,21 @@ and final hosted revision are recorded
 in `.local/reports/broby-operations-health-release-2026-09-24.md`. This release
 provides in-app diagnostics, not external alerts, delivery/settlement proof or
 multi-worker infrastructure. See OPERATIONS_HEALTH.md for limits.
+
+## Acceptance — encrypted offline device workspace, 24 September
+
+Offline cold opening now uses a public app shell plus encrypted account-scoped
+IndexedDB data. The existing account password unlocks the random data key at
+reload; the last verified server session bounds offline access to at most 12
+hours. Explicit sign-out revokes offline access without deleting queued work.
+Old-password rewrapping, known-scope legacy migration, copy eviction, capture
+lock guards and visible storage/failure states preserve recoverable work.
+
+379 backend and 36 frontend tests pass. Production-browser fault injection stops
+both isolated servers, verifies wrong/correct-password behavior, cold reload,
+typed-note persistence, encrypted audio queue and reconnect. One exact source,
+one byte-identical WAV and 66 unchanged unrelated records were verified. Final
+cold reload/draft recovery passed twice. See OFFLINE_DEVICE.md for boundaries;
+full physical-device/crash/eviction acceptance remains open. The hosted release
+receipt is `.local/reports/broby-offline-release-2026-09-24.md`; a local pass alone
+does not establish deployment. V1, provider configuration and real data stay untouched.

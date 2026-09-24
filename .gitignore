@@ -26,3 +26,7 @@ tmp/
 *.dump
 *.pem
 *.key
+
+# Generated offline shell, tied to the current frontend build
+web/public/broby-sw.js
+web/public/offline-workspace.html

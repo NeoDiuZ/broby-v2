@@ -73,3 +73,20 @@ def test_readiness_fails_when_postgres_is_unavailable(hosted, monkeypatch):
     response=hosted.get('/api/ready')
     assert response.status_code == 503
     assert 'secrets' not in response.text
+
+
+def test_device_access_uses_actual_session_deadline_and_never_exposes_secrets(hosted):
+    from datetime import datetime, timezone, timedelta
+    before = hosted.get('/api/session')
+    assert before.json()['expires_at'] is None
+    assert before.headers['cache-control'] == 'no-store'
+    hosted.post('/api/login', json={'username':'admin','password':'synthetic-test-password'})
+    response = hosted.get('/api/session')
+    data = response.json()
+    assert data['authenticated'] and data['username'] == 'admin'
+    deadline = datetime.fromisoformat(data['expires_at'])
+    assert datetime.now(timezone.utc) < deadline <= datetime.now(timezone.utc)+timedelta(hours=12)
+    assert set(data) == {'authenticated','mode','username','expires_at'}
+    assert response.headers['cache-control'] == 'no-store'
+    hosted.post('/api/logout')
+    assert hosted.get('/api/session').json()['expires_at'] is None
