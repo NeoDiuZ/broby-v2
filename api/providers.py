@@ -1,7 +1,29 @@
 """Opt-in provider adapters. Secrets remain server-side; tests replace HTTP transport."""
 import os,json,math
 import httpx
-class ProviderError(Exception):pass
+
+class ProviderError(Exception):
+    def __init__(self, message, *, service=None, status_code=None):
+        super().__init__(message)
+        # Only the adapter supplies these bounded facts. Never persist provider
+        # response bodies, request headers, or arbitrary exception messages.
+        self.service = service if service in ('ai', 'speech') else None
+        self.status_code = status_code if type(status_code) is int and 400 <= status_code <= 599 else None
+
+    @property
+    def retryable(self):
+        return self.status_code is None or self.status_code in (408, 429) or self.status_code >= 500
+
+    def safe_job_error(self, retry):
+        if self.service and self.status_code:
+            status = self.status_code
+            reason = ('credentials' if status == 401 else 'billing or credits' if status == 402
+                      else 'access' if status == 403 else 'model or endpoint' if status == 404
+                      else 'rate limit' if status == 429 else 'request' if status < 500 and status != 408
+                      else 'temporary availability')
+            action = 'Automatic retry scheduled.' if retry else 'Review the provider connection before retrying.'
+            return f'{self.service.upper()} provider HTTP {status} ({reason}). {action}'
+        return 'Provider request failed; retry scheduled' if retry else 'Job failed; review permissions and provider configuration before retrying'
 
 def available():
     enabled=os.getenv('BROBY_ENABLE_AI','0')=='1'
@@ -15,7 +37,7 @@ def transcribe(audio,mime,language='multi',diarize=True,allow_empty=False):
     try:
         with httpx.Client(timeout=httpx.Timeout(1500,connect=15)) as client:
             response=client.post('https://api.deepgram.com/v1/listen',params=params,headers={'Authorization':'Token '+os.environ['DEEPGRAM_API_KEY'],'Content-Type':mime},content=audio)
-        if response.status_code!=200:raise ProviderError(f'Speech provider returned HTTP {response.status_code}; check its configuration and retry.')
+        if response.status_code!=200:raise ProviderError('Speech provider request failed',service='speech',status_code=response.status_code)
         body=response.json();alternative=body['results']['channels'][0]['alternatives'][0]
         text=alternative.get('transcript','').strip()
         if not text and not allow_empty:raise ProviderError('No speech was recognized. The original audio has been preserved.')
@@ -45,7 +67,7 @@ def model_json(system,payload):
     try:
         with httpx.Client(timeout=httpx.Timeout(180,connect=15)) as client:
             response=client.post('https://api.anthropic.com/v1/messages',headers={'x-api-key':os.environ['ANTHROPIC_API_KEY'],'anthropic-version':'2023-06-01'},json=request)
-        if response.status_code!=200:raise ProviderError(f'AI provider returned HTTP {response.status_code}; no document was changed.')
+        if response.status_code!=200:raise ProviderError('AI provider request failed; no document was changed.',service='ai',status_code=response.status_code)
         body=response.json()
         if body.get('stop_reason')=='max_tokens':raise ProviderError('AI output was incomplete; reduce the source selection and retry.')
         if planner:

@@ -40,8 +40,10 @@ def run_job(job_id):
         with connection(True) as c:
             if owns_claim(c,job_id,token):
                 attempts=c.execute('SELECT attempts FROM job_claims WHERE job_id=?',(job_id,)).fetchone()[0]
-                retry=isinstance(exc,providers.ProviderError) and attempts<3
-                error=str(exc) if isinstance(exc,audio_windows.AudioValidationError) else 'Provider request failed; retry scheduled' if retry else 'Job failed; review permissions and provider configuration before retrying'
+                retry=isinstance(exc,providers.ProviderError) and exc.retryable and attempts<3
+                error=(str(exc) if isinstance(exc,audio_windows.AudioValidationError)
+                       else exc.safe_job_error(retry) if isinstance(exc,providers.ProviderError)
+                       else 'Job failed; review permissions and provider configuration before retrying')
                 c.execute('UPDATE jobs SET status=?,error=?,updated_at=? WHERE id=?',('queued' if retry else 'failed',error,now(),job_id))
                 c.execute('UPDATE job_claims SET lease_until=?,next_attempt=?,last_error=? WHERE job_id=? AND token=?',('',lease_time(30*2**(attempts-1)) if retry else '',error,job_id,token))
         raise

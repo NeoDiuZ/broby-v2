@@ -109,6 +109,38 @@ def test_provider_failure_uses_backoff_and_stops_after_three_attempts(monkeypatc
             with db.connection(True) as c:c.execute("UPDATE job_claims SET next_attempt='' WHERE job_id=?",(j['id'],))
         else:assert job['status']=='failed'
 
+@pytest.mark.parametrize('status,retries,reason',[
+    (400,False,'request'),(401,False,'credentials'),(402,False,'billing or credits'),
+    (403,False,'access'),(404,False,'model or endpoint'),(429,True,'rate limit'),
+    (500,True,'temporary availability')])
+def test_provider_http_failure_persists_only_safe_status_and_retry_decision(monkeypatch,status,retries,reason):
+    note()
+    monkeypatch.setattr(providers,'available',lambda:{'ai':True})
+    monkeypatch.setattr(providers,'assemble',lambda *args:(_ for _ in ()).throw(
+        providers.ProviderError('private provider body and key',service='ai',status_code=status)))
+    j=act('summary.generate',{'id':'consult-luna','version':get('consult-luna')['version'],'mode':'ai'})
+    with pytest.raises(providers.ProviderError):jobs.run_job(j['id'])
+    with db.connection() as c:
+        job=dict(c.execute('SELECT * FROM jobs WHERE id=?',(j['id'],)).fetchone())
+        claim=dict(c.execute('SELECT * FROM job_claims WHERE job_id=?',(j['id'],)).fetchone())
+    assert job['status']==('queued' if retries else 'failed')
+    assert claim['attempts']==1
+    assert f'HTTP {status}' in job['error'] and reason in job['error']
+    assert 'private' not in job['error'] and claim['last_error']==job['error']
+
+@pytest.mark.parametrize('status',[401,402,404,429,500])
+def test_ai_adapter_classifies_http_failure_without_provider_body(monkeypatch,status):
+    import httpx
+    monkeypatch.setenv('BROBY_ENABLE_AI','1')
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic-key')
+    monkeypatch.setenv('ANTHROPIC_MODEL','synthetic-model')
+    original=httpx.Client
+    def respond(request):return httpx.Response(status,text='private provider response and key')
+    monkeypatch.setattr(providers.httpx,'Client',lambda **kw:original(transport=httpx.MockTransport(respond)))
+    with pytest.raises(providers.ProviderError) as caught:providers.model_json('test',{})
+    assert caught.value.service=='ai' and caught.value.status_code==status
+    assert 'private' not in str(caught.value) and 'private' not in caught.value.safe_job_error(False)
+
 def test_invitation_single_use_and_mfa_replay(monkeypatch):
     auth.setup_tables();client=TestClient(main.app);admin={'x-actor-id':'clinic-east-admin'}
     member=act('member.save',{'name':'Synthetic user','role':'nurse'},actor='clinic-east-admin')
