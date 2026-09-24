@@ -547,3 +547,29 @@ cases; a subsequent stopped-API/backup-target regression also passed. Frontend
 40 tests, TypeScript and production build passed. Dedicated contract tests
 exercise every advertised action through confirmation/replay; real-provider
 intent and hosted browser acceptance are checked after deployment.
+
+### Live acceptance follow-up
+
+PR #38 merged as `f17634cfc7afe17770981ee54062d202834cbc94` after all six CI
+checks passed (741 backend cases in each database mode, frontend tests/typecheck/
+build and packaged API checks). Backend `d1da8d6c-3af4-49b5-8bfd-964cedab7d7d`
+and Frontend `7eeb48da-f627-4179-9b19-81a420f2bfda` both deployed successfully.
+Both Google Doc tabs were reread at their unchanged revision.
+
+Hosted real-model acceptance exposed ambiguous refund target guidance. The
+catalogue now states each target kind and explicitly distinguishes a payment ID
+from its linked invoice version. Invalid proposals remain non-confirmable.
+The read-only comparison now excludes only Stripe's independent polling metadata
+(verification timestamp, record version/update time); all business fields,
+statuses, amounts and invoice/payment records remain compared. Explicit retries
+preserve failed model attempts instead of replacing the acceptance evidence.
+
+The feature readbacks also exposed a pre-existing WebKit recording failure.
+Repeated initial 2.5 ms Opus timestamps caused FFmpeg's strict WAV muxer to fail.
+The decoder now assigns the contiguous WAV timestamps from decoded sample count,
+without disabling strict packet/decoder errors. A generated-tone regression
+reproduces the old failure and verifies exact PCM sample preservation; no user's
+recording is committed. The preserved original recording also decodes locally
+to all 52,360 samples at 16 kHz. Hosted retry and final acceptance follow release.
+The sample-clock filter follows the official FFmpeg `asetpts` contract:
+https://ffmpeg.org/ffmpeg-filters.html#setpts_002c-asetpts.

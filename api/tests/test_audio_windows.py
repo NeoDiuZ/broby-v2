@@ -92,6 +92,46 @@ def test_browser_audio_formats_decode_with_actual_duration(tmp_path,extension,co
         assert audio.count==1 and 4.9<audio.duration<5.1
 
 
+def test_webkit_duplicate_initial_opus_timestamps_keep_all_samples(tmp_path):
+    """Reproduce WebKit timing with generated tones; no user's audio fixture."""
+    original=tmp_path/'synthetic.webm'
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
+                    'sine=frequency=440:sample_rate=48000:duration=1',
+                    '-c:a','libopus','-frame_duration','2.5',str(original)],check=True)
+    raw=bytearray(original.read_bytes())
+
+    def vint(offset,identifier=False):
+        length=1
+        while not raw[offset] & (1 << (8-length)):length+=1
+        value=int.from_bytes(raw[offset:offset+length],'big')
+        return (value if identifier else value & ((1 << (7*length))-1)),length
+
+    blocks=[]
+    def walk(start,end):
+        pos=start
+        while pos<end:
+            tag,n=vint(pos,True);size,m=vint(pos+n);body=pos+n+m;stop=min(end,body+size)
+            if tag in (0x18538067,0x1f43b675):walk(body,stop)
+            elif tag==0xa3:
+                _,track_length=vint(body)
+                blocks.append(body+track_length)
+            pos=stop
+    walk(0,len(raw));assert len(blocks)>10
+    for offset in blocks[:5]:raw[offset:offset+2]=b'\0\0'
+    original.write_bytes(raw)
+    # The raw PCM muxer ignores presentation timestamps. It supplies an
+    # independent full-sample reference, without relaxing decoder errors.
+    reference=subprocess.run(['ffmpeg','-nostdin','-v','error','-xerror',
+                              '-i',str(original),'-map','0:a:0','-ac','1','-ar','16000',
+                              '-f','s16le','pipe:1'],capture_output=True,check=True).stdout
+    digest=hashlib.sha256(raw).hexdigest()
+    with audio_windows.prepare([{'path':str(original),'sha256':digest}]) as audio:
+        with wave.open(BytesIO(audio.read(0)),'rb') as decoded:
+            assert decoded.readframes(decoded.getnframes())==reference
+        assert .99<audio.duration<1.02
+    assert original.read_bytes()==raw
+
+
 def test_retry_keeps_finished_windows_offsets_speakers_and_one_source(monkeypatch):
     monkeypatch.setattr(audio_windows, 'WINDOW_SECONDS', 2)
     recording, original = saved_recording()

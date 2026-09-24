@@ -102,6 +102,11 @@ def prepare(chunks, partial=False):
             subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', *([] if partial else ['-xerror']),
                             '-protocol_whitelist', 'file,pipe', '-f', demuxer,
                             '-i', str(original), '-map', '0:a:0', '-vn', '-sn', '-dn',
+                            # WebKit Opus may timestamp several initial 2.5 ms
+                            # packets at zero. Use the decoded sample clock for
+                            # the contiguous WAV, retaining every audio sample.
+                            # Strict demux/decode errors still fail closed.
+                            '-af', 'asetpts=N/SR/TB',
                             '-t', str(MAX_SECONDS + 1), '-ac', '1', '-ar', str(SAMPLE_RATE),
                             '-c:a', 'pcm_s16le', str(decoded)],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
