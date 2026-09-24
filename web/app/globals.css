@@ -44,3 +44,13 @@ section.action-preview{font-size:13px;line-height:1.5;max-height:none;white-spac
 .transfer-destination>label{display:block;margin:14px 0}.transfer-destination input:not([type=checkbox]),.transfer-destination select,.transfer-destination textarea{display:block;width:100%;margin-top:6px}.transfer-destination input[type=checkbox]{width:auto;margin-right:8px}
 
 .operations-health{margin-bottom:2rem;padding:1.25rem}.worker-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:1rem}.worker-card,.queue-health{border:1px solid var(--border);border-radius:12px;padding:1rem;margin:1rem 0}.worker-card h4,.queue-health h4{margin:0 0 .6rem}.worker-card dt{color:var(--muted);font-size:.8rem;margin-top:.6rem}.worker-card dd{margin:0;font-size:.9rem}.queue-counts{display:flex;flex-wrap:wrap;gap:1rem}.queue-counts dd{margin:0;font-weight:600}.operations-health .job-row small{overflow-wrap:anywhere}
+
+.financial-register > .actions {padding: 16px 24px; align-items: end; flex-wrap: wrap;}
+.financial-register > p, .financial-register > details {margin: 16px 24px;}
+.financial-register label {display: grid; gap: 6px;}
+.financial-table {width:100%; border-collapse:collapse; text-align:left;}
+.financial-table th,.financial-table td {padding:14px 20px; border-bottom:1px solid var(--line); vertical-align:top;}
+.financial-table caption {text-align:left; padding:16px 20px; font-weight:600;}
+.financial-table code {overflow-wrap:anywhere;}
+
+.metric-grid.overview-metrics {grid-template-columns:repeat(2,minmax(0,1fr));}
