@@ -375,3 +375,53 @@ def test_patient_page_aggregates_are_bounded_and_preserve_counts_and_owner(clien
     with database.session() as s:
         assert service.patients(s,'clinic-river','',50,'')['items']==[]
         assert service.patients(s,'clinic-east','no such synthetic name',50,'')['items']==[]
+
+
+@pytest.mark.parametrize('changed_patient',['previous','corrected'])
+def test_mapping_correction_reviews_and_preserves_both_native_histories(client,changed_patient):
+    from fastapi import HTTPException
+    river={'x-clinic-id':'clinic-river','x-actor-id':'clinic-river-vet'}
+    def act(name,p,clinic='clinic-river'):
+        return actions.execute(name,p,clinic,clinic+'-vet',str(uuid.uuid4()))
+    def request(correction=False):
+        grant=act('share.create',{'patient_id':'luna'},'clinic-east')
+        response=client.post('/api/owner/'+grant['id']+'/transfers',json={'target_clinic':'clinic-river','consent':True,'allow_mapping_correction':correction})
+        assert response.status_code==200,response.text
+        return response.json()
+    first=request();initial=client.get('/api/transfers/'+first['id']+'/preview',headers=river).json()
+    previous=act('transfer.accept',{'id':first['id'],'expected_digest':initial['digest']})['id']
+    corrected=act('patient.create',{'name':'Synthetic correction target','species':'Cat','owner_name':'Receiving owner'})
+    native={}
+    for name,patient_id in [('previous',previous),('corrected',corrected['id'])]:
+        response=client.post('/api/v2/ingest/lab',json=result(patient_id=patient_id,dedupe_key='correction:'+name,summary='Independent '+name+' native fact'),headers=river)
+        assert response.status_code==200,response.text
+        native[name]=response.json()['id']
+    pending=request(True)
+    def review():
+        response=client.get('/api/transfers/'+pending['id']+'/preview',params={'target_patient_id':corrected['id'],'correct_mapping':'true'},headers=river)
+        assert response.status_code==200,response.text
+        return response.json()
+    current=review();context=current['mapping_correction']
+    assert any(x['id']==native['previous'] and x['data']['native_spine'] for x in context['previous_history']['existing_records'])
+    assert any(x['id']==native['corrected'] and x['data']['native_spine'] for x in context['receiving_history']['existing_records'])
+    p={'id':pending['id'],'target_patient_id':corrected['id'],'previous_patient_id':previous,'correct_mapping':True,
+       'expected_digest':current['digest'],'confirm_corrected_identity':True,'acknowledge_unresolved_history':True,
+       'correction_reason':'Synthetic reviewer checked both identities and their independently recorded clinical histories.'}
+    act('clinical.approve',{'id':native[changed_patient],'approved':True})
+    with pytest.raises(HTTPException) as exc:act('transfer.accept',p)
+    assert exc.value.status_code==409
+    out=act('transfer.accept',{**p,'expected_digest':review()['digest']})
+    assert out['id']==corrected['id'] and out['reconciliation_status']=='unresolved'
+    for name,patient_id in [('previous',previous),('corrected',corrected['id'])]:
+        timeline=client.get('/api/v2/patients/'+patient_id+'/timeline',headers=river).json()['items']
+        assert any(x['id']==native[name] for x in timeline)
+        assert any(x['summary']=='Unresolved history after patient-link correction' and x['source'] for x in timeline)
+    with database.session() as s:
+        assert s.get(Event,native[changed_patient]).body['owner_approved'] is True
+        assert s.get(Event,native['previous']).patient_id==previous
+        assert s.get(Event,native['corrected']).patient_id==corrected['id']
+        assert s.scalar(select(func.count()).select_from(Patient).where(Patient.clinic_id=='clinic-river'))==2
+    with db.connection() as c:
+        assert db.get(c,corrected['id'])==corrected
+        receipt=db.get(c,out['mapping_correction_id'])
+        assert set(native.values()) <= {x['id'] for x in receipt['data']['preserved_records']}

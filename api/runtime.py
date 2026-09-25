@@ -16,7 +16,17 @@ def allowed_origins():
     }
 
 
+def worker_mode():
+    value = os.getenv('BROBY_WORKER_MODE', 'embedded')
+    if value not in ('embedded', 'external'):
+        raise RuntimeError('BROBY_WORKER_MODE must be embedded or external')
+    return value
+
+
 def validate():
+    worker_mode()
+    if os.getenv('BROBY_PROCESS_ROLE', 'api') not in ('api', 'worker'):
+        raise RuntimeError('BROBY_PROCESS_ROLE must be api or worker')
     if not hosted():
         return
     if os.getenv('BROBY_AUTH_MODE') != 'password':

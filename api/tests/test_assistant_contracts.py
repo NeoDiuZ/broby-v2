@@ -37,6 +37,7 @@ def fixtures(monkeypatch):
     template = do('template.save', {'name': 'Synthetic template', 'sections': ['Subjective']})
     appointment = do('appointment.create', {'patient_id': 'luna', 'date': '2098-06-01', 'time': '10:00', 'duration': 30, 'reason': 'Synthetic check', 'clinician': 'clinic-east-vet'})
     message = do('message.queue', {'patient_id': 'luna', 'body': 'Exact supplied synthetic message.'})
+    reminder = do('reminder.create', {'patient_id': 'luna', 'title': 'Synthetic selected recall', 'due': '2098-09-03'})
     recording = do('recording.create', {'patient_id': 'luna', 'consultation_id': 'consult-luna'})
     grant = do('share.create', {'patient_id': 'luna'})
     leave = do('leave.request', {'member_id': 'clinic-east-vet', 'start': '2098-07-01', 'end': '2098-07-02', 'reason': 'Synthetic leave request'})
@@ -45,6 +46,7 @@ def fixtures(monkeypatch):
         recording = db.update(c, db.get(c, recording['id']), {**recording['data'], 'status': 'saved'})
         attachment = db.record(c, 'attachment', 'clinic-east', {'patient_id': 'luna', 'name': 'Synthetic.txt', 'approved': False})
         intake = db.record(c, 'intake', 'clinic-east', {'patient_id': 'luna', 'text': 'Exact owner statement.', 'status': 'new'})
+        escalation = db.record(c, 'escalation', 'clinic-east', {'patient_id': 'luna', 'intake_id': intake['id'], 'status': 'needs_attention', 'delivery': 'disabled'})
         campaign = db.record(c, 'recall_campaign', 'clinic-east', {'title': 'Synthetic campaign', 'status': 'prepared', 'items': []})
         thread_id = db.uid()
         owner_turn = db.record(c, 'owner_turn', 'clinic-east', {'patient_id': 'luna', 'thread_id': thread_id,
@@ -105,6 +107,8 @@ def fixtures(monkeypatch):
         'conversation.close': {**target(thread), 'reason': 'Synthetic phone follow-up completed'},
         'conversation.reply': {**target(thread), 'message': 'SYNTHETIC staff portal reply copied exactly.'},
         'recall.cancel': {**target(campaign), 'reason': 'Synthetic cancellation'},
+        'recall.prepare': {'title': 'Synthetic reviewed campaign', 'start': '2098-09-01', 'end': '2098-09-30', 'reminder_ids': [reminder['id']]},
+        'escalation.acknowledge': target(escalation),
         'leave.request': {'member_id': 'clinic-east-nurse', 'start': '2098-08-01', 'end': '2098-08-02', 'reason': 'Synthetic leave'},
         'leave.review': {**target(leave), 'decision': 'approved', 'reason': 'Synthetic approval'},
         'leave.cancel': {**target(leave), 'reason': 'Synthetic withdrawal'},
@@ -118,6 +122,8 @@ def test_every_contract_saved_review_confirm_and_replay(monkeypatch, name):
     before = snapshot()
     message = (f"Reply to conversation {payload['id']} message: {payload['message']}" if name == 'conversation.reply'
                else f"{name.split('.')[1].capitalize()} conversation {payload['id']} reason: {payload['reason']}" if name.startswith('conversation.')
+               else f"Prepare recall campaign {payload['title']} from {payload['start']} to {payload['end']} reminders: {', '.join(payload['reminder_ids'])}" if name == 'recall.prepare'
+               else f"Acknowledge escalation {payload['id']}" if name == 'escalation.acknowledge'
                else 'Synthetic explicit operator request')
     turn = proposal(monkeypatch, name, payload, message=message)
     monkeypatch.setattr('providers.available', lambda: {'ai': True, 'transcription': True})

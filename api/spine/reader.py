@@ -36,14 +36,15 @@ def native_records(clinic,patient_id=None):
         query=select(Event).where(Event.clinic_id==clinic,Event.payload_hash!='legacy')
         if patient_id:query=query.where(Event.patient_id==patient_id)
         result=[];source_ids=set()
-        for e in s.scalars(query.order_by(Event.occurred_at.desc())):
-            view=service.event_view(s,e);when=service.utc(e.occurred_at)
+        events=list(s.scalars(query.order_by(Event.occurred_at.desc())))
+        context=service.event_context(s,events)
+        for e in events:
+            view=service.event_view(s,e,context);when=service.utc(e.occurred_at)
             def row(id,kind,data):return {'id':id,'kind':kind,'clinic_id':clinic,'version':1,'created_at':when,'updated_at':when,'data':data}
             result.append(row(e.id,'event',{'patient_id':e.patient_id,'title':e.summary,'category':view['event_type'],'occurred_at':when,'body':e.body.get('text',''),'approved':e.body.get('owner_approved') is True,'native_spine':True,'source_ids':[e.source_id] if e.source_id else [],'receipt':view['source'],'observations':view['observations']}))
             for receipt in [view['source'],*[o['source'] for o in view['observations']]]:
                 if receipt and receipt['receipt_id'] not in source_ids:
-                    from .models import Source
-                    src=s.get(Source,receipt['receipt_id']);source_ids.add(src.id)
+                    src=context['sources'][receipt['receipt_id']];source_ids.add(src.id)
                     result.append(row(src.id,'source',{'patient_id':e.patient_id,'title':src.content.get('title') or src.reference_id,'text':src.content.get('text',''),'receipt':receipt,'native_spine':True}))
             for o in view['observations']:
                 result.append(row(o['id'],'observation',{'patient_id':e.patient_id,'event_id':e.id,'name':o['name'],'code':o['concept'],'value':o['value'],'value_type':o['value_type'],'unit':o['unit'],'low':o['ref_low'],'high':o['ref_high'],'source_id':o['source']['receipt_id'] if o['source'] else None,'receipt':o['source'],'category':view['event_type'],'native_spine':True}))

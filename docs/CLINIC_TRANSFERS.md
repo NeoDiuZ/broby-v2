@@ -46,8 +46,8 @@ Limits: 1,000 origin items / 5 MB of metadata, 25 attachments, 25 voice notes an
 before the database commit. Any handled transaction failure removes only files
 created by that transaction. A process/power failure before commit can leave
 unreferenced files; automated orphan collection and cloud restore rehearsal remain
-operational follow-ups. Imports still use the existing single-backend SQLite
-transaction alongside the PostgreSQL clinical projection.
+operational follow-ups. Imports use the active PMS transaction (PostgreSQL in the hosted V2 service,
+SQLite in local fallback tests), alongside the PostgreSQL clinical projection.
 
 ## Earlier imports without revision history
 
@@ -94,12 +94,57 @@ back on a handled failure; competing destination choices cannot both succeed.
 
 Known species mismatches and a receiving patient already linked to a different
 patient at the same source clinic are rejected. Established mappings cannot be
-retargeted through this workflow. A correction/relink procedure, clinical-fact
-equivalence review and verified owner login/identity remain unfinished. This is a
+retargeted through this first-link workflow. Use the separately consented correction
+procedure below. Clinical-fact equivalence and legal owner identity remain separate
+reconciliation gates. This is a
 staff assertion of animal identity, not an owner merge or proof of legal identity.
 The owner consent mechanism still uses revocable capability links. Existing media
 is listed by metadata; newly copied source binaries are checksum-verified. The
 same 1,000-record / 5 MB receiving-context review limits apply.
+
+## Correct an established receiving-patient link
+
+A correction requires a **new, unexpired owner transfer request** with the separate,
+unchecked permission to correct the receiving patient-record link. Earlier/default
+transfer consent cannot authorize this operation. Pending consent cannot expand:
+the owner must withdraw that request and submit a new one with the correction option.
+The owner is told that the currently selected approved facts may be copied to a
+different patient record at the same receiving clinic, while earlier accepted copies
+remain on the previous record for separate clinical reconciliation. Medication and
+audio consent remain independent opt-ins.
+
+Receiving vets and administrators choose Review transfer → Review a patient-link
+correction, select a different existing receiving patient, and load its review.
+The review includes source identity, both receiving patients, every owner, and both
+clinical histories, including native PostgreSQL facts. Acceptance requires a
+10–1,000 character reason, explicit confirmation of the corrected identity, and a
+separate acknowledgement that earlier copies and possible overlapping facts remain
+unresolved. Changes to the source, either reviewed history or identity, owner links,
+prior accepted requests, or current mapping invalidate the preview. Species and
+conflicting-origin checks also apply. The combined history is bounded to 1,000
+clinical records and 5 MB of review context.
+
+The transaction changes only the future source-to-receiving-patient mapping and
+appends the currently approved source facts missing from that destination. Every
+previous patient, owner, clinical record, original file, stock record and origin
+revision is preserved. Origin revisions keep one immutable sequence; only a copy
+held by the selected destination can suppress a duplicate import. Later requests
+skip its unchanged facts normally, and changed facts append there. An accepted
+request cannot be replayed into another patient. Competing corrections cannot both
+accept an earlier preview, and handled failures roll back mapping, receipt, new
+records, revisions and newly copied media together.
+
+An immutable `transfer_mapping_correction` receipt records the two patient IDs,
+reviewer, reason, digest, owner consent scope, prior request references, all reviewed
+record versions/fingerprints and the current source fingerprints. Both patients
+receive private timeline notices and a persistent timeline banner explaining the
+unresolved clinical reconciliation. These notices stay visible when timeline filters
+hide the dated event. Receipt status remains `unresolved`; no facts are moved,
+deleted, overwritten, or asserted equivalent, and no workflow currently clears this
+gate. Staff must separately investigate whether earlier copies belong to the old
+patient and whether independently recorded facts overlap. This operation does not
+merge owners or prove legal identity. Existing receiving media is reviewed through
+metadata; newly copied source binaries are checksum-verified.
 
 ## Verification
 
@@ -134,3 +179,12 @@ persistence. Sixteen API/database checks verify unchanged receiving records,
 immutable receipt, exact media, private copies, no new stock/dispensing, repeat
 deduplication and retained copies after source revocation. Hosted release evidence
 is recorded in the private patient-link release report.
+
+`api/tests/test_transfer_corrections.py` covers fresh correction consent, strict
+acknowledgements/reasons, both identity/history stale guards, source changes,
+permissions, destination conflicts, competing corrections, rollback, immutable
+receipt/history/media preservation, destination-specific deduplication, changed
+origin revisions and legacy mappings. `test_spine.py` also verifies that real native
+facts on either patient invalidate stale reviews and remain on their original
+patient after acceptance. These are synthetic acceptance checks; resolving real
+clinical fact equivalence remains a separate, explicit gate.

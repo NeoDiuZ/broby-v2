@@ -41,6 +41,7 @@ class Consent(BaseModel):
     consent: StrictBool
     include_medications: StrictBool = False
     include_audio: StrictBool = False
+    allow_mapping_correction: StrictBool = False
 
 
 @router.get('/api/owner/{token}/transfer-clinics')
@@ -59,6 +60,8 @@ def request_transfer(token: str, p: Consent):
     if not p.consent:
         fail('Explicit sharing consent is required')
     scope = {'medications': p.include_medications, 'audio': p.include_audio}
+    if p.allow_mapping_correction:
+        scope['mapping_correction'] = True
     with connection(True) as c:
         g = grant(c, token)
         owned(c, p.target_clinic, p.target_clinic, 'clinic')
@@ -238,17 +241,21 @@ def patient_link(c, r, target):
     return db.unpack(row)
 
 
-def plan(c, r, target_patient_id=None):
+def plan(c, r, target_patient_id=None, correct_mapping=False):
     items, binaries, total = snapshot(c, r)
     key = (r['source_clinic'], r['patient_id'], r['target_clinic'])
     mapped = c.execute('SELECT target_patient FROM transferred_patients WHERE source_clinic=? AND source_patient=? AND target_clinic=?', key).fetchone()
     target_patient_id = selected_patient(target_patient_id)
-    if mapped and target_patient_id and target_patient_id != mapped[0]:
+    if correct_mapping and (not mapped or not target_patient_id or target_patient_id == mapped[0]):
+        fail('A mapping correction requires an established link and a different receiving patient', 409)
+    if correct_mapping and json.loads(r['scope']).get('mapping_correction') is not True:
+        fail('Ask the owner for a new transfer request explicitly allowing correction of the receiving patient link', 409)
+    if mapped and target_patient_id and target_patient_id != mapped[0] and not correct_mapping:
         fail('This source patient is already linked to another receiving record; its destination cannot be changed through a transfer', 409)
-    target_id = mapped[0] if mapped else target_patient_id
+    target_id = target_patient_id if correct_mapping else mapped[0] if mapped else target_patient_id
     target = owned(c, target_id, r['target_clinic'], 'patient') if target_id else None
     matching = target is not None and mapped is None
-    if matching:
+    if matching or correct_mapping:
         another = c.execute('SELECT source_patient FROM transferred_patients WHERE source_clinic=? AND target_clinic=? AND target_patient=? AND source_patient<>?',
                             (r['source_clinic'], r['target_clinic'], target['id'], r['patient_id'])).fetchone()
         if another:
@@ -261,18 +268,35 @@ def plan(c, r, target_patient_id=None):
     revisions = list(c.execute('SELECT * FROM transfer_revisions WHERE source_clinic=? AND source_patient=? AND target_clinic=? ORDER BY revision', key))
     # Historical payloads cannot be reconstructed reliably. A reviewed baseline
     # appends today's approved facts; it never labels an old copy as equivalent.
-    baseline = legacy_review(c, r, target) if mapped and not revisions else None
+    baseline = legacy_review(c, r, target) if mapped and not revisions and not correct_mapping else None
     existing_review = legacy_review(c, r, target, mode='link_existing_patient') if matching else None
+    correction = None
+    if correct_mapping:
+        previous = owned(c, mapped[0], r['target_clinic'], 'patient')
+        correction = {
+            'previous_patient': previous, 'previous_owners': receiving_owners(c, previous),
+            'previous_history': legacy_review(c, r, previous, mode='preserve_previous_mapping'),
+            'receiving_history': legacy_review(c, r, target, mode='correct_mapping'),
+            'reconciliation_status': 'unresolved',
+        }
+        if len(correction['previous_history']['existing_records']) + len(correction['receiving_history']['existing_records']) > MAX_ITEMS or len(encoded(correction).encode()) > 5 * 1024 * 1024:
+            fail('The combined correction history exceeds the review limit; arrange a reviewed archive reconciliation', 422)
     owners = receiving_owners(c, target) if target else []
     link = patient_link(c, r, target) if mapped else None
+    correction_receipt = db.unpack(c.execute(f"""SELECT * FROM records WHERE kind='transfer_mapping_correction' AND clinic_id=?
+        AND {db.json_text(c,'data','source_clinic_id')}=? AND {db.json_text(c,'data','source_patient_id')}=?
+        ORDER BY created_at DESC,id DESC LIMIT 1""", key[2:] + key[:2]).fetchone())
     counts = {'new': 0, 'changed': 0, 'unchanged': 0}
     for item in items:
         fp = digest(item['payload'])
         prior = [x for x in revisions if x['kind'] == item['kind'] and x['origin_id'] == item['origin_id']]
-        last = prior[-1] if prior else None
+        # Revisions retain one immutable origin sequence across mapping corrections.
+        # Only a copy actually held by this receiving patient may suppress an import.
+        local_prior = [x for x in prior if (get(c, x['target_id'], r['target_clinic']) or {}).get('data', {}).get('patient_id') == target_id]
+        last = local_prior[-1] if local_prior else None
         # A source reverting to an older value is still a change from the last
         # accepted revision. It needs review and a dated revision, not a silent skip.
-        state = 'unchanged' if last and last['fingerprint'] == fp else 'changed' if prior else 'new'
+        state = 'unchanged' if last and last['fingerprint'] == fp else 'changed' if local_prior else 'new'
         current = get(c, last['target_id'], r['target_clinic']) if last else None
         item.update(fingerprint=fp, state=state, revision=(max([x['revision'] for x in prior], default=0) + 1),
                     previous=json.loads(last['payload']) if last else None, destination_copy=current)
@@ -282,7 +306,9 @@ def plan(c, r, target_patient_id=None):
               'source_patient_id': r['patient_id'], 'scope': json.loads(r['scope']), 'expires_at': r['expires_at'],
               'patient': identity['patient'], 'owner': identity['owner'], 'destination_patient': target,
               'destination_owner': owners[0] if owners else None, 'destination_owners': owners,
-              'destination_mode': 'existing' if matching else 'linked' if mapped else 'new',
+              'destination_mode': 'correction' if correct_mapping else 'existing' if matching else 'linked' if mapped else 'new',
+              'mapping_correction_required': correct_mapping, 'mapping_correction': correction,
+              'latest_mapping_correction': {'id': correction_receipt['id'], **fields(correction_receipt['data'], ('previous_patient_id', 'patient_id', 'reason', 'reviewed_by', 'reviewed_at', 'reconciliation_status'))} if correction_receipt else None,
               'existing_patient_review_required': matching, 'existing_patient_review': existing_review,
               'patient_link': {'id': link['id'], **fields(link['data'], ('reviewed_by', 'reviewed_at', 'reason'))} if link else None,
               'baseline_required': baseline is not None, 'baseline': baseline,
@@ -316,7 +342,7 @@ def legacy_review(c, r, patient, mode='append_current_source'):
 
 
 @router.get('/api/transfers/{id}/preview')
-def preview(id: str, request: Request, target_patient_id: str | None = None):
+def preview(id: str, request: Request, target_patient_id: str | None = None, correct_mapping: bool = False):
     from main import identity
     from actions import authorize
     clinic, actor = identity(request)
@@ -325,7 +351,7 @@ def preview(id: str, request: Request, target_patient_id: str | None = None):
         r = pending(c, id, clinic)
         if r['status'] == 'accepted':
             fail('This request was already accepted', 409)
-        result, _ = plan(c, r, target_patient_id)
+        result, _ = plan(c, r, target_patient_id, correct_mapping)
         # Do not expose local media paths in previews. The full copy participates in
         # the digest so a receiving edit invalidates an earlier review.
         for item in result['items']:
@@ -367,7 +393,9 @@ def dispatch(c, a, p, clinic, actor):
         if target_id and target_id != result['id']:
             fail('This request was already imported into a different receiving patient', 409)
         return result
-    review, binaries = plan(c, r, p.get('target_patient_id'))
+    if 'correct_mapping' in p and type(p['correct_mapping']) is not bool:
+        fail('Mapping correction must be explicitly confirmed', 422)
+    review, binaries = plan(c, r, p.get('target_patient_id'), p.get('correct_mapping', False))
     if p.get('expected_digest') != review['digest']:
         fail('Review the current transfer preview before accepting; source or receiving records may have changed', 409)
     if review['counts']['changed'] and p.get('review_changes') is not True:
@@ -390,6 +418,17 @@ def dispatch(c, a, p, clinic, actor):
             fail('Record a patient-match review reason between 10 and 1000 characters', 422)
     elif p.get('link_existing_patient') or p.get('acknowledge_existing_history') or match_reason:
         fail('This preview does not create a patient link; reload and review the current destination', 409)
+    correction = review['mapping_correction']
+    correction_reason = p.get('correction_reason')
+    if correction:
+        if p.get('confirm_corrected_identity') is not True or p.get('acknowledge_unresolved_history') is not True:
+            fail('Confirm the corrected patient identity and acknowledge that earlier copies remain on the previous patient with unresolved clinical reconciliation', 409)
+        if p.get('previous_patient_id') != correction['previous_patient']['id']:
+            fail('The previous receiving link changed; reload the correction review', 409)
+        if not isinstance(correction_reason, str) or not 10 <= len(correction_reason.strip()) <= 1000:
+            fail('Record a mapping-correction review reason between 10 and 1000 characters', 422)
+    elif correction_reason or p.get('confirm_corrected_identity') or p.get('acknowledge_unresolved_history') or p.get('previous_patient_id'):
+        fail('This preview does not correct a mapping; reload and review the current destination', 409)
     identity = next(x['payload'] for x in review['items'] if x['kind'] == 'identity')
     patient = review['destination_patient']
     if not patient:
@@ -398,6 +437,35 @@ def dispatch(c, a, p, clinic, actor):
                          'external_id': 'transfer:' + r['source_clinic'] + ':' + r['patient_id'], 'transfer_request_id': r['id']})
         c.execute('INSERT INTO transferred_patients VALUES(?,?,?,?)', (r['source_clinic'], r['patient_id'], clinic, patient['id']))
     link_id = review['patient_link']['id'] if review['patient_link'] else None
+    correction_record = None
+    if correction:
+        previous = correction['previous_patient']
+        correction_record = record(c, 'transfer_mapping_correction', clinic, {
+            'patient_id': patient['id'], 'previous_patient_id': previous['id'],
+            'source_clinic_id': r['source_clinic'], 'source_patient_id': r['patient_id'],
+            'transfer_request_id': r['id'], 'owner_consent_scope': review['scope'],
+            'reason': correction_reason.strip(), 'reviewed_by': actor, 'reviewed_at': now(),
+            'reviewed_digest': review['digest'], 'source_identity': identity,
+            'reconciliation_status': 'unresolved', 'clinical_equivalence_asserted': False,
+            'earlier_requests': correction['previous_history']['earlier_requests'],
+            'preserved_records': [{'id': x['id'], 'kind': x['kind'], 'version': x['version'], 'fingerprint': digest(x)}
+                for x in [previous, *correction['previous_owners'], *correction['previous_history']['existing_records'],
+                          patient, *review['destination_owners'], *correction['receiving_history']['existing_records']]],
+            'current_origins': [{'kind': x['kind'], 'origin_id': x['origin_id'], 'fingerprint': x['fingerprint']} for x in review['items']],
+        })
+        changed = c.execute('UPDATE transferred_patients SET target_patient=? WHERE source_clinic=? AND source_patient=? AND target_clinic=? AND target_patient=?',
+                            (patient['id'], r['source_clinic'], r['patient_id'], clinic, previous['id']))
+        if changed.rowcount != 1:
+            fail('The receiving link changed; reload the correction review', 409)
+        text = ('Clinical reconciliation remains unresolved. The source patient link was corrected from receiving patient '
+                + previous['id'] + ' to ' + patient['id'] + '. Earlier copies remain on the previous patient and must not be assumed to belong to that animal. '
+                'No earlier clinical facts, media, patient details or owner links were moved, deleted, overwritten or marked equivalent. '
+                'Current approved source facts are imported only into the corrected receiving patient. '
+                'A separate clinical review is still required for earlier copies and possible overlapping facts.\n'
+                'Review reason: ' + correction_reason.strip() + '\nReviewed by: ' + actor + '\nCorrection receipt: ' + correction_record['id'])
+        for id in (previous['id'], patient['id']):
+            notice = db.event(c, clinic, id, 'clinical', 'Unresolved history after patient-link correction', text)
+            db.update(c, notice, {**notice['data'], 'transfer_mapping_correction_id': correction_record['id'], 'reconciliation_status': 'unresolved'})
     if matching:
         context = review['existing_patient_review']
         linked = record(c, 'transfer_patient_link', clinic, {
@@ -441,6 +509,8 @@ def dispatch(c, a, p, clinic, actor):
                       'origin_fingerprint': item['fingerprint'], 'origin_recorded_at': d.get('occurred_at', d.get('recorded_at'))}
         if link_id:
             provenance['transfer_patient_link_id'] = link_id
+        if correction_record:
+            provenance['transfer_mapping_correction_id'] = correction_record['id']
         if baseline_record:
             provenance['transfer_baseline_id'] = baseline_record['id']
         text = receipt_text(item)
@@ -492,7 +562,9 @@ def dispatch(c, a, p, clinic, actor):
               'audio_copied': copied['audio'], 'medication_histories': copied['medication'], 'counts': review['counts'],
               'consultation_id': consultation['id'] if consultation else None, 'reviewed_digest': review['digest'],
               'reviewed_by': actor, 'accepted_at': now(),
-              'baseline_id': baseline_record['id'] if baseline_record else None, 'patient_link_id': link_id}
+              'baseline_id': baseline_record['id'] if baseline_record else None, 'patient_link_id': link_id,
+              'mapping_correction_id': correction_record['id'] if correction_record else None,
+              'reconciliation_status': 'unresolved' if correction_record else None}
     c.execute("UPDATE transfer_requests SET status='accepted',result=? WHERE id=?", (encoded(result), r['id']))
     return result
 

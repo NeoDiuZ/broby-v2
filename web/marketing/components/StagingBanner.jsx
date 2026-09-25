@@ -1,1 +1,8 @@
-export function StagingBanner() { return <div role="status" style={{position:'fixed',bottom:0,left:0,right:0,zIndex:100,background:'#173b35',color:'white',fontSize:12,padding:'10px 18px',textAlign:'center'}}>Local preview of the v1 website · Original marketing copy and legal pages are preserved references. Live AI and integrations are not enabled in this build. <a style={{textDecoration:'underline'}} href="/app">Open clinic workspace →</a></div> }
+export function StagingBanner() {
+ return <aside aria-label="Broby V2 preview status" style={{background:'#173b35',color:'white',fontSize:13,padding:'14px 18px',textAlign:'center',lineHeight:1.6}}>
+  <strong>Broby V2 · synthetic preview.</strong> Customer messaging and live payments are not enabled.
+  {' '}These legal documents are reference copies from the earlier product and await approval for V2.
+  {' '}V2 has no verified automatic 90-day audio deletion. Real-clinic onboarding remains pending.
+  {' '}<a style={{textDecoration:'underline',color:'inherit'}} href="/app">Open clinic workspace →</a>
+ </aside>
+}

@@ -24,14 +24,14 @@ async def lifespan(app):
     runtime.provision_admin()
     from spine.projection import setup_queue
     setup_queue(); worker_stop = threading.Event()
-    from operations_health import start_workers
-    monitor = start_workers(worker_stop)
+    from worker_runtime import for_api
+    monitor = for_api(worker_stop)
     app.state.workers = monitor
     try:
         yield
     finally:
         worker_stop.set()
-        for thread in monitor.threads.values(): thread.join(timeout=3)
+        if hasattr(monitor, 'close'): monitor.close()
 
 from read_access import enforce_route
 app=FastAPI(title='Broby V2',lifespan=lifespan,dependencies=[Depends(enforce_route)],
