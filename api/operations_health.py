@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request
 import db
+import runtime
 
 router = APIRouter(prefix='/api/operations')
 LABELS = {'documents': 'Documents and speech', 'schedule': 'Scheduled preparation',
@@ -19,6 +20,10 @@ def setup(c):
     c.execute('''CREATE TABLE IF NOT EXISTS worker_history(
         name TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
         last_failure_at TEXT, last_recovery_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS worker_runtime(
+        name TEXT PRIMARY KEY, owner_id TEXT NOT NULL, storage_id TEXT NOT NULL,
+        mode TEXT NOT NULL, started_at TEXT NOT NULL, heartbeat_at TEXT NOT NULL,
+        stopped_at TEXT, snapshot TEXT NOT NULL)''')
     c.execute('CREATE INDEX IF NOT EXISTS jobs_clinic_status ON jobs(clinic_id,status,created_at)')
     c.execute('CREATE INDEX IF NOT EXISTS stripe_tasks_clinic_status ON stripe_tasks(clinic_id,status,created_at)')
 
@@ -127,9 +132,9 @@ class Supervisor:
             return result
 
 
-def start_workers(stop):
+def start_workers(stop, monitor=None):
     import jobs, clinic_workflows, stripe_payments, twilio_trial
-    monitor = Supervisor(stop)
+    monitor = monitor or Supervisor(stop)
     monitor.start('documents', jobs.tick, .4)
     monitor.start('schedule', clinic_workflows.tick, 30)
     last_poll = [0.0]
@@ -200,4 +205,5 @@ def health(request: Request):
     attention = any(w['attention'] for w in workers) or any(q['issues'] for q in queues)
     return {'checked_at': db.now(), 'clinic_id': clinic, 'status': 'needs_attention' if attention else 'checked',
             'workers': workers, 'queues': queues, 'issue_limit_per_queue': 20,
+            'worker_mode': runtime.worker_mode(),
             'scope': 'Worker progress is shared by this deployment. Queue counts belong only to the selected clinic. This does not verify provider delivery, settlement, backups or physical recording devices.'}

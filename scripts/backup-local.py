@@ -32,10 +32,18 @@ def backup(destination):
     pg_dump=ROOT/'.local/postgres/bin/pg_dump'
     binary=str(pg_dump) if pg_dump.exists() else shutil.which('pg_dump')
     if not binary:raise SystemExit('pg_dump is required')
-    target.mkdir(parents=True,mode=0o700)
+    # An API-only process can be stopped while a separate worker still writes.
+    # Hold both worker ownership locks throughout the coordinated snapshot so
+    # no worker can start between the stopped check and the final file receipt.
+    from worker_runtime import Ownership
+    ownership=Ownership(source)
+    try:ownership.acquire()
+    except Exception:raise SystemExit('Stop all background workers before making a coordinated backup; worker ownership could not be acquired.') from None
     env={**os.environ,'PGPASSWORD':url.password or ''}
-    engine=create_engine(url,isolation_level='REPEATABLE READ')
+    engine=None
     try:
+        target.mkdir(parents=True,mode=0o700)
+        engine=create_engine(url,isolation_level='REPEATABLE READ')
         with engine.connect() as c,c.begin():
             c.execute(text("SET LOCAL TIME ZONE 'UTC'"))
             snapshot=c.execute(text('SELECT pg_export_snapshot()')).scalar_one()
@@ -51,8 +59,11 @@ def backup(destination):
             'warning':'Sensitive backup: includes credentials and sharing grants. Preserve the PostgreSQL dump and data directory together. Environment secrets and browser drafts are excluded.'},indent=2))
         (target/'manifest.json').chmod(0o600)
     except Exception:
-        (target/'INCOMPLETE').write_text('Backup did not complete. Do not restore this directory.');raise
-    finally:engine.dispose()
+        if target.exists():(target/'INCOMPLETE').write_text('Backup did not complete. Do not restore this directory.')
+        raise
+    finally:
+        if engine is not None:engine.dispose()
+        ownership.close()
     print('Coordinated backup created at',target)
 if __name__=='__main__':
     if len(sys.argv)!=2:raise SystemExit('Usage: .venv/bin/python scripts/backup-local.py /new/backup/directory')
