@@ -56,3 +56,5 @@ def migrate(c):
 
     from operations_health import setup as setup_operations
     setup_operations(c)
+    from clinical_escalations import setup as setup_clinical_escalations
+    setup_clinical_escalations(c)

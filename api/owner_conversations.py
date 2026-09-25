@@ -103,7 +103,9 @@ def present(c, g, thread):
             'emergency_phone':data['emergency_phone'],'notice':NOTICE}
 
 def attention(c, thread, reason):
-    """One internal escalation per thread; never claims an external notification."""
+    """Internal attention plus an optional future-only clinical notification policy."""
+    from clinical_escalations import attention as clinical_attention
+    clinical_attention(c,thread)
     id='conversation-escalation:'+thread['id'];existing=get(c,id,thread['clinic_id'])
     data={'patient_id':thread['data']['patient_id'],'owner_thread_id':thread['id'],
           'status':'needs_attention','reason':reason,'delivery':'disabled'}
@@ -142,7 +144,9 @@ def send(token, p):
             existing=turns(c,thread)
             if len(existing)>=100:fail('Start a new conversation after 100 messages',409)
             if any(r['data'].get('state')=='pending' for r in existing):fail('Wait for the current question to finish or recover before sending another',409)
-            old=record(c,'owner_turn',g['clinic_id'],{'patient_id':g['patient_id'],'thread_id':thread['id'],'speaker':'owner','message':p.message,'fingerprint':fingerprint,'state':'pending'},turn_id)
+            from clinical_escalations import question_policy, supersede
+            old=record(c,'owner_turn',g['clinic_id'],{'patient_id':g['patient_id'],'thread_id':thread['id'],'speaker':'owner','message':p.message,'fingerprint':fingerprint,'state':'pending','escalation_policy':question_policy(c,g['clinic_id'])},turn_id)
+            supersede(c,g['clinic_id'],thread['id'])
             timeline_receipt(c,old)
         if any(r['id']!=old['id'] and r['data'].get('state')=='pending' for r in turns(c,thread)):
             fail('Wait for the current question before retrying this one',409)
@@ -231,6 +235,13 @@ def staff_read(id:str,request:Request):
         clinical=__import__('clinical_reconciliation').eligibility(c,clinic)
         return {**thread,'turns':turns(c,thread),'clinical_reconciliation':{'status':'historical_unverified'} if thread['data']['patient_id'] in clinical['patients'] else None}
 
+@router.get('/api/clinical-escalations')
+def escalation_status(request:Request):
+    from main import identity
+    from clinical_escalations import status
+    clinic,_=identity(request)
+    with connection(snapshot=True) as c:return status(c,clinic)
+
 def dispatch(c,a,p,clinic,actor):
     from actions import owned,version,require,fail,integer
     if a=='conversation.policy':
@@ -244,6 +255,12 @@ def dispatch(c,a,p,clinic,actor):
         reason=require(p,'reason')
         if len(reason)>1000:fail('Use a reason of at most 1000 characters')
         data={'ack_minutes':minutes,'reason':reason,'updated_by':actor,'delivery':'disabled'}
+        # Old clients edit only the internal target. They must never clear,
+        # enable or replace an explicitly reviewed external routing policy.
+        if r and 'escalation' in r['data']:data['escalation']=r['data']['escalation']
+        if 'escalation' in p:
+            from clinical_escalations import validate_policy
+            data['escalation']=validate_policy(c,clinic,p['escalation'])
         return update(c,r,data) if r else record(c,'owner_policy',clinic,data,id)
     r=owned(c,require(p,'id'),clinic,'owner_thread');version(r,p)
     if r['data']['status']=='closed':fail('Conversation is already closed',409)
@@ -265,6 +282,8 @@ def dispatch(c,a,p,clinic,actor):
         result=update(c,r,{**r['data'],'status':status,'acknowledged_by':actor,'acknowledged_at':now(),'review_reason':reason,'ack_due_at':None})
         e=get(c,'conversation-escalation:'+r['id'],clinic)
         if e:update(c,e,{**e['data'],'status':'acknowledged','acknowledged_by':actor,'acknowledged_at':now()})
+        from clinical_escalations import acknowledged
+        acknowledged(c,r,actor,reason,a)
         return result
     fail('Unknown conversation action',404)
 

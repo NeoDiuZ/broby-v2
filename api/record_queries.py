@@ -17,6 +17,9 @@ NAMED_KINDS = {'patient', 'observation', 'inventory', 'medication', 'medication_
 class RecordQuery(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     kind: RecordKind
+    presentation: Literal['count','trend'] = Field(default='count', description='Trend plots recorded numeric observations for exactly one patient, code and unit. Maximum 200 points; narrow the dates when exceeded. Does not interpolate missing observations or infer ranges.')
+    record_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='One exact record ID supplied by the operator. Intersects clinic, kind, patient and all other filters; never broadens a missing or foreign ID into a list.')
+    text_contains: StrictStr | None = Field(default=None, min_length=1, max_length=500, description='Literal case-insensitive substring in an event title or recorded body. Events only; no synonyms, semantic search, regular expressions or clinical inference.')
     patient_id: StrictStr | None = Field(default=None, max_length=100)
     owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches current same-clinic primary or additional patient links for patients, appointments, invoices and reminders. This is a current relationship filter, not historical invoice ownership or payment liability.')
     start: StrictStr | None = None
@@ -37,6 +40,16 @@ class RecordQuery(BaseModel):
 
     @model_validator(mode='after')
     def meaningful_filters(self):
+        if self.presentation=='trend':
+            if self.kind!='observation' or not all(isinstance(value,str) and value.strip() for value in (self.patient_id,self.code,self.unit)):
+                raise ValueError('Trend requires observations, one exact patient, recorded code and unit')
+            # A complete series cannot acquire model-selected subsets that hide
+            # points, invalid values, changed labels or the hard point limit.
+            allowed={'kind','presentation','patient_id','code','unit','start','end'}
+            if set(self.model_dump(exclude_none=True,exclude_defaults=True))-allowed:
+                raise ValueError('Trend supports only one patient, exact code/unit and date bounds; use a count query for other filters')
+        if self.text_contains is not None and (self.kind!='event' or not self.text_contains.strip()):
+            raise ValueError('Literal text search requires events and a nonblank phrase')
         if isinstance(self.value_equals,float) and not math.isfinite(self.value_equals):
             raise ValueError('Equality values must be finite')
         if isinstance(self.value_equals,str) and len(self.value_equals)>300:
@@ -97,7 +110,7 @@ def validate_query(c, query, clinic):
 def record_day(row, tz):
     data=row['data']
     # Scheduling/due dates are clinic calendar dates, not ingestion timestamps.
-    value=(data.get('due') if row['kind']=='reminder' else None) or data.get('date') or data.get('occurred_at') or row['created_at']
+    value=(data.get('due') if row['kind']=='reminder' else data.get('observed_at') if row['kind']=='observation' else None) or data.get('date') or data.get('occurred_at') or row['created_at']
     if isinstance(value,str) and len(value)==10:
         try:
             return date.fromisoformat(value).isoformat()
@@ -116,6 +129,9 @@ def query_summary(query, patient=None, owner=None):
     if query.get('start') or query.get('end'):parts.append(f"{query.get('start') or 'earliest'} to {query.get('end') or 'latest'}")
     for key in ('category','name','species','clinician','code','unit','status'):
         if query.get(key):parts.append(f"{key.replace('_',' ')}: {query[key]}")
+    if query.get('record_id'):parts.append('record ID: '+query['record_id'])
+    if query.get('presentation')=='trend':parts.append('recorded numeric trend; no unit conversion or inferred values')
+    if query.get('text_contains'):parts.append('event title/body contains literal text: '+repr(query['text_contains']))
     if query.get('owner_id'):
         parts.append('owner: '+(owner['data']['name'] if owner else query['owner_id']))
         if query['kind'] in {'invoice', 'reminder'}:parts.append('current patient-owner links')
@@ -174,12 +190,15 @@ def select_records(c, clinic, query, records=None):
     selected=[]
     for r in records:
         if r['clinic_id']!=clinic or r['kind']!=query['kind']:continue
+        if query.get('record_id') and r['id']!=query['record_id']:continue
         d=r['data'];day=record_day(r,tz)
+        if query.get('text_contains') and not any(isinstance(d.get(field),str) and query['text_contains'].casefold() in d[field].casefold() for field in ('title','body')):continue
         if query.get('patient_id') and r['id']!=query['patient_id'] and d.get('patient_id')!=query['patient_id']:continue
         if query.get('owner_id'):
             owner_patient=d if query['kind']=='patient' else linked_patient(d)
             if not owner_patient or not linked_to_owner(owner_patient):continue
         if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','code','status')):continue
+        if query.get('presentation')=='trend' and d.get('code')!=query['code']:continue
         if query.get('species'):
             species=d.get('species') if query['kind']=='patient' else linked_species(d)
             if not isinstance(species,str) or species.casefold()!=query['species'].casefold():continue
@@ -208,10 +227,16 @@ def select_records(c, clinic, query, records=None):
         groups[label]=groups.get(label,0)+1
     patient=get(c,query['patient_id'],clinic) if query.get('patient_id') else None
     owner=get(c,query['owner_id'],clinic) if query.get('owner_id') else None
-    return {'query':query,'count':len(selected),'groups':[{'label':k,'count':v} for k,v in sorted(groups.items())],
+    chart={}
+    if query.get('presentation')=='trend':
+        from numeric_trends import series
+        chart['trend']=series(selected,query,tz)
+    return {**chart,'query':query,'count':len(selected),'groups':[{'label':k,'count':v} for k,v in sorted(groups.items())],
             'records':selected,'filter_summary':query_summary(query,patient,owner),'timezone':tz,'refreshed_at':now()}
 
 
 def dashboard(c,clinic,query):
     result=select_records(c,clinic,query)
-    return {**result,'records':result['records'][:100],'record_limit':100,'truncated':result['count']>100}
+    from numeric_trends import POINT_LIMIT
+    limit=POINT_LIMIT if 'trend' in result else 100
+    return {**result,'records':result['records'][:limit],'record_limit':limit,'truncated':result['count']>limit}

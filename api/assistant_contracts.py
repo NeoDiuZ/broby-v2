@@ -212,7 +212,7 @@ GUIDED = {
     **{n: ('Settings', 'Use the migration preview, source file and reconciliation review.') for n in ('import.patients', 'import.records', 'migration.preview', 'migration.apply')},
     **{n: ('Patient', 'Use the recorder and verified audio chunk manifest.') for n in ('recording.create', 'recording.complete', 'recording.refine')},
     **{n: ('Billing', 'Use the provider-priced checkout/refund screen and canonical provider receipt.') for n in ('stripe.checkout', 'stripe.cancel', 'stripe.refresh', 'stripe.refund')},
-    **{n: ('Messages', 'Use the restricted sender setup and delivery/recipient review.') for n in ('twilio.trial_send', 'twilio.reconcile')},
+    **{n: ('Settings', 'Open Integrations for the restricted sender setup and delivery/recipient review.') for n in ('twilio.trial_send', 'twilio.reconcile')},
     'schedule.configure': ('Settings', 'Review the complete staff rota and booking conflicts in the rota editor.'),
     'transfer.accept': ('Settings', 'Review clinic identity, patient matching, original sources and transfer consent.'),
     **{n: ('Settings', 'Use the two-party organization or master-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review')},
@@ -223,7 +223,13 @@ GUIDED = {
 }
 
 # Fixed application sections, never model-supplied routes or mutation payloads.
-GUIDED_SECTIONS = {'ontology.propose': 'Observation catalog', 'ontology.review': 'Observation catalog'}
+GUIDED_SECTIONS = {
+    **{n: 'Observation catalog' for n in ('ontology.propose', 'ontology.review')},
+    **{n: 'Data & migration' for n in ('import.patients', 'import.records', 'migration.preview', 'migration.apply', 'transfer.accept')},
+    **{n: 'Integrations' for n in ('twilio.trial_send', 'twilio.reconcile')},
+    **{n: 'Sync & jobs' for n in ('operations.alert.acknowledge', 'operations.alert.retry')},
+    **{n: 'Clinic' for n in ('schedule.configure', 'organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review')},
+}
 
 
 def catalogue():

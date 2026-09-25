@@ -9,6 +9,19 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 
 ## Supported questions
 
+- A single exact record ID within a supported record kind. “Show event record ID
+  [ID]” or “Show invoice record ID [ID]” retains the ID in the saved query. It
+  intersects the selected patient, clinic and every other filter; a missing,
+  foreign, held or wrong-kind record does not widen the answer into a list.
+- Literal event-title/body search, matching the timeline's case-insensitive
+  substring meaning: “Find events whose text contains \"exact phrase\"”. Quotes
+  make the requested phrase authoritative; a dropped or substituted phrase or
+  record ID yields clarification. `%`, `_`, brackets and other punctuation are
+  literal characters, never patterns. This searches recorded wording only; it
+  does not infer synonyms, diagnoses or equivalent clinical meanings. Saved
+  views re-evaluate current record versions while saved answers retain the
+  versions originally returned. Shared permissions and reconciliation holds
+  apply to both local and native PostgreSQL events.
 - Low stock versus a complete inventory list; positive outstanding invoice
   balances, excluding void invoices.
 - A patient or the clinic, inclusive start/end dates, exact recorded category,
@@ -280,3 +293,17 @@ phases use deterministic mutation keys. No customer message, online payment or
 assistant mutation confirmation is part of this script. Local script regressions
 use fixed intent and API continuation stand-ins; only an observed hosted browser
 run establishes hosted model and navigation acceptance.
+
+Literal-search phrases and exact record/owner ID tokens are data, not scope or filter instructions. Before identity, dates, species, status, medication kind, advice and action detection, the assistant masks those spans and supported quoted exact-name/code/unit values. It retains the exact values separately for the read contract and preserves the original saved question. Conflicting, unterminated or escaped literal phrases clarify before selection metadata or model execution; backslash escapes are not a supported search syntax. A quoted `whole clinic`, `today`, patient name or `start` cannot widen a selected patient, add dates, select an animal or propose a consultation. Genuine outside scope wording still applies.
+
+### Exact numeric trends from chat
+
+Choose a patient, then ask `Plot observations whose code equals "potassium" and unit equals "mmol/L" from 2026-01-01 to 2026-09-25`. One unambiguous recorded name and exact unit also work. The model only selects a strict `presentation: "trend"` query; the shared read executor builds the chart from current eligible records. Code and unit must match exactly, including code case, with no conversion, drug/concept equivalence, diagnosis, fabricated values or inferred reference ranges. Missing patient, unit or ambiguous concept asks for clarification. Supplied ISO ranges and relative clinic-calendar dates remain in the saved query.
+
+Each point includes its observation ID and version, source/event identity, numeric value and supplied bounds. All matching points and receipts are included up to 200; exceeding that limit asks for narrower dates and produces no partial chart. Missing bounds remain missing, and a shaded band needs both bounds. Lines connect recorded points only; gaps do not imply zero or continuous monitoring. Dates use a recorded observation/event timestamp when available; older local observations explicitly label the record timestamp fallback. Chart dates and filter summaries identify the clinic timezone.
+
+Chat and saved views reuse the patient measurement chart. `Save this view` persists the exact query, and refreshing recomputes the complete bounded series. Saved answers retain their original point versions; a changed source version requests a refresh instead of silently showing different values. Reconciliation and permission checks apply to saved answers and live views, and a new reconciliation epoch clears the displayed chart/source. Count queries retain their existing response/query defaults.
+
+The opt-in `scripts/smoke-assistant-visual-reads.py` binds to an explicit existing SYNTHETIC clinic/actor with a private 0600 state file. Run `setup`, `evaluate`, optional `guides`, then perform the manual browser open/save/source/reload steps in `state.browser` before `readback`. Setup adds only two new marked patients and five synthetic native result events (three plotted points, another unit and another patient). Evaluation uses the configured model and checks exact record/text filters and chart/source/range identity without confirming any action. Guide conversations exercise fixed Settings destinations. Readback verifies persisted state and original receipts; it does not claim browser clicks, hosted model acceptance or clinical accuracy from the local stubbed transport/model regression.
+
+Numeric trends accept only the chosen patient, exact concept code/unit and requested dates. Extra record-ID, display-name, category or numeric-value subset filters are rejected by the shared saved-query contract rather than quietly hiding points or bypassing the 200-point limit. The assistant also rejects model-invented date bounds when the operator requested the complete recorded series. Use a count query for other supported filtering combinations.
