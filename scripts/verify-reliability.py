@@ -155,6 +155,21 @@ print(json.dumps({'seeded':True}))''')
         check(operations['patients']['total']==a.patients+9 and operations['appointments']['total']>=expected_appointments and
               operations['stock']['items']>=((a.patients+19)//20),
               'operational report counts complete synthetic clinic records')
+        sequential=[]
+        for _ in range(5):
+            began=time.monotonic();req('GET','reports/operations?days=30')
+            sequential.append(round((time.monotonic()-began)*1000,1))
+        report['report_sequential_ms']=sequential
+        report['report_sql_profile']=python('''import db,json,time,operational_reports
+with db.connection(snapshot=True) as c:
+ original=c.execute;timings=[]
+ def timed(sql,values=()):
+  began=time.monotonic();result=original(sql,values)
+  timings.append({'sql':sql.replace('\\n',' ')[:140],'ms':round((time.monotonic()-began)*1000,2)})
+  return result
+ c.execute=timed
+ began=time.monotonic();operational_reports.build(c,'clinic-east',30)
+ print(json.dumps({'total_ms':round((time.monotonic()-began)*1000,2),'queries':sorted(timings,key=lambda x:x['ms'],reverse=True)[:12]}))''')
         endpoints=['bootstrap','v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25',
                    'operations/health','reports/operations?days=30','dashboards/'+view['id']]
         def read(i):
