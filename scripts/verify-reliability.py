@@ -179,12 +179,28 @@ sequential=[measured(i) for i in range(5)]
 with ThreadPoolExecutor(max_workers=8) as pool: concurrent=list(pool.map(measured,range(16)))
 print(json.dumps({'sequential_ms':sequential,'concurrent_ms':concurrent}))''')
         report['read_sequential_ms']={}
-        for route in ('v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25'):
+        for route in ('bootstrap','v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25'):
             times=[]
             for _ in range(3):
                 began=time.monotonic();req('GET',route)
                 times.append(round((time.monotonic()-began)*1000,1))
             report['read_sequential_ms'][route]=times
+        report['bootstrap_profile']=python('''import db,json,time
+from spine.reader import native_records
+from read_access import filter_records,ALL
+with db.connection(snapshot=True) as c:
+ began=time.monotonic()
+ rows=c.execute('SELECT * FROM records WHERE clinic_id=? ORDER BY created_at DESC',('clinic-east',)).fetchall()
+ sql_ms=round((time.monotonic()-began)*1000,1)
+ began=time.monotonic();records=[db.unpack(row) for row in rows]
+ unpack_ms=round((time.monotonic()-began)*1000,1)
+began=time.monotonic();native=native_records('clinic-east')
+native_ms=round((time.monotonic()-began)*1000,1)
+began=time.monotonic();visible=filter_records(records+native,ALL,'clinic-east-admin')
+filter_ms=round((time.monotonic()-began)*1000,1)
+began=time.monotonic();payload=json.dumps({'records':visible})
+json_ms=round((time.monotonic()-began)*1000,1)
+print(json.dumps({'sql_ms':sql_ms,'unpack_ms':unpack_ms,'native_ms':native_ms,'filter_ms':filter_ms,'json_ms':json_ms,'records':len(visible),'json_bytes':len(payload.encode())}))''')
         endpoints=['bootstrap','v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25',
                    'operations/health','reports/operations?days=30','dashboards/'+view['id']]
         def read(i):

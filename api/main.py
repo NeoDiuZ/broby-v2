@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form, Response, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 try:
     from dotenv import load_dotenv
@@ -91,7 +91,9 @@ def bootstrap(request:Request):
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
         from stripe_payments import configured
         integrations={**providers.available(),'payments':configured(clinic)}
-        return {'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
+        # These persisted records are already JSON values. Returning a response
+        # directly avoids a second recursive conversion of the full clinic set.
+        return JSONResponse({'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'})
 class Command(BaseModel):
     action:str
     payload:dict[str,Any]=Field(default_factory=dict)
