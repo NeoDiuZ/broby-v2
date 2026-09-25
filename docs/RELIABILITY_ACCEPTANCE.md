@@ -84,6 +84,17 @@ Both runs passed all 20 correctness/recovery checks, had zero HTTP errors and
 removed their databases. This does not make first imports, nonidentity clinical
 edits, bulk identity changes or hosted multi-clinic load incremental.
 
+After V2 revision `672b5cc` deployed on 25 September, both V2 Railway services
+reported that exact successful revision. The persisted-data smoke check passed
+17 hosted checks. A separate authenticated synthetic action created a cat and
+its owner, read the typed patient view, changed the patient's name through the
+shared action endpoint, and read the same owner link and revised name from both
+the typed view and full bootstrap. The first typed read took 172.3 ms and the
+post-edit typed read 76.1 ms. The synthetic test ID is retained in the private
+V2 workspace for later readback. No original Broby clinic or service was used.
+This small hosted fixture verifies the deployed path, not 5,000-patient Railway
+latency or an actual clinic migration.
+
 ## Verified on 24 September 2026
 
 - 1,000 added patients; 4,086 PMS records in the final fixture.
