@@ -11,7 +11,7 @@ async function ownerApi(base:string,path:string,options:RequestInit={}){
 
 export function OwnerTransfer({base}:{base:string}){
  const [clinics,setClinics]=useState<any[]>([]),[requests,setRequests]=useState<any[]>([]),[target,setTarget]=useState('');
- const [consent,setConsent]=useState(false),[medications,setMedications]=useState(false),[audio,setAudio]=useState(false),[notice,setNotice]=useState('');
+ const [consent,setConsent]=useState(false),[medications,setMedications]=useState(false),[audio,setAudio]=useState(false),[correction,setCorrection]=useState(false),[notice,setNotice]=useState('');
  const refresh=async()=>{const [cs,rs]=await Promise.all([ownerApi(base,'/transfer-clinics'),ownerApi(base,'/transfers')]);setClinics(cs);setRequests(rs)};
  const run=async(work:()=>Promise<void>)=>{setNotice('');try{await work()}catch(e){setNotice((e as Error).message)}};
  return <details className="panel section-gap" onToggle={e=>{if(e.currentTarget.open)void run(refresh)}}><summary>Share with a registered clinic</summary><div className="modal-body">
@@ -20,10 +20,11 @@ export function OwnerTransfer({base}:{base:string}){
   <label>Receiving clinic<select value={target} onChange={e=>{setTarget(e.target.value);setConsent(false)}}><option value="">Choose clinic</option>{clinics.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
   <label><input type="checkbox" checked={medications} onChange={e=>{setMedications(e.target.checked);setConsent(false)}}/>Include structured medication history (historical prescriptions, not new instructions)</label>
   <label><input type="checkbox" checked={audio} onChange={e=>{setAudio(e.target.checked);setConsent(false)}}/>Include approved, finished voice notes (original audio only; private transcripts are excluded)</label>
+  <label><input type="checkbox" checked={correction} onChange={e=>{setCorrection(e.target.checked);setConsent(false)}}/>Allow receiving staff to correct an earlier patient-record link after reviewing identity and both histories. Currently selected approved facts may be copied to a different record at this same clinic. Earlier accepted medical copies remain on the previous record for separate clinical reconciliation.</label>
   <label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/>I consent to this transfer and the selected information.</label>
-  <BusyButton disabled={!target||!consent} onClick={()=>run(async()=>{await ownerApi(base,'/transfers',{method:'POST',body:JSON.stringify({target_clinic:target,consent,include_medications:medications,include_audio:audio})});await refresh();setConsent(false);setNotice('Transfer request sent to the receiving clinic’s staff queue.')} )}>Request transfer</BusyButton>
+  <BusyButton disabled={!target||!consent} onClick={()=>run(async()=>{await ownerApi(base,'/transfers',{method:'POST',body:JSON.stringify({target_clinic:target,consent,include_medications:medications,include_audio:audio,allow_mapping_correction:correction})});await refresh();setConsent(false);setNotice('Transfer request sent to the receiving clinic’s staff queue.')} )}>Request transfer</BusyButton>
   {notice&&<p role="status">{notice}</p>}
-  {requests.map(r=><div className="file-row" key={r.id}><div><strong>{clinics.find(c=>c.id===r.target_clinic)?.name||r.target_clinic}</strong><small>{r.status} · {r.scope.medications?'medication history included':'notes and files'}{r.scope.audio?' · audio included':''} · expires {new Date(r.expires_at).toLocaleString()}</small></div>{r.status==='pending'&&<BusyButton onClick={()=>run(async()=>{await ownerApi(base,'/transfers/'+r.id,{method:'DELETE'});await refresh();setNotice('Transfer request withdrawn.')} )}>Withdraw pending request</BusyButton>}</div>)}
+  {requests.map(r=><div className="file-row" key={r.id}><div><strong>{clinics.find(c=>c.id===r.target_clinic)?.name||r.target_clinic}</strong><small>{r.status} · {r.scope.medications?'medication history included':'notes and files'}{r.scope.audio?' · audio included':''}{r.scope.mapping_correction?' · reviewed patient-link correction allowed':''} · expires {new Date(r.expires_at).toLocaleString()}</small></div>{r.status==='pending'&&<BusyButton onClick={()=>run(async()=>{await ownerApi(base,'/transfers/'+r.id,{method:'DELETE'});await refresh();setNotice('Transfer request withdrawn.')} )}>Withdraw pending request</BusyButton>}</div>)}
  </div></details>
 }
 
