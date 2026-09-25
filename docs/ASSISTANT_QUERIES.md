@@ -18,6 +18,9 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
   owners. An owner name alone is not an identity key; the assistant must select
   the recorded owner ID before retrieving the complete clinic-scoped set.
   Duplicate owner names require explicit identity selection rather than a guess.
+- Appointments filtered or grouped by the exact recorded species of their
+  linked clinic patient. Missing, malformed or foreign-clinic patient links do
+  not match a requested species; grouping labels them "Not recorded".
 - Observations with an exact concept code, optionally exact unit and typed
   equality. Boolean false remains distinct from zero and the text "false".
 - User-supplied numeric bounds for an exact observation code and unit. No unit
@@ -42,7 +45,8 @@ current read layer still loads records in memory and is not clinic-scale certifi
 ## Acceptance
 
 `api/tests/test_record_queries.py` checks assistant/view parity, exact species
-and clinician filters, primary/additional owner links and live link changes,
+and clinician filters, appointment-to-patient species links,
+primary/additional owner links and live link changes,
 outstanding balances, timezone boundaries,
 reminder due dates, exact units and typed equality, malformed/unsupported filters,
 scope, native facts, bounded output and old saved-query compatibility.
@@ -89,3 +93,9 @@ changed the saved view to one Cat. The deployed browser displayed that one
 matching patient, opened its receipt, then listed and rendered the same view
 after reload and device unlock, with no framework error overlay. This verifies
 one phrasing and this synthetic workflow, not broad owner-language accuracy.
+
+Appointment species filtering and grouping passed a focused synthetic SQLite
+and PostgreSQL test on 25 September. It combined an exact clinician and clinic
+date with Cat appointments, checked saved-view parity, and excluded a patient
+from another clinic and a malformed patient link. Hosted real-model phrasing
+and browser acceptance are pending for this related-record filter.

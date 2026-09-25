@@ -62,10 +62,10 @@ class RecordQuery(BaseModel):
             raise ValueError('Status does not apply to this record kind')
         if self.name and self.kind not in {'patient','observation','inventory'}:
             raise ValueError('Name does not apply to this record kind')
-        if self.species and self.kind!='patient':raise ValueError('Species requires patients')
+        if self.species and self.kind not in {'patient','appointment'}:raise ValueError('Species requires patients or appointments')
         if self.owner_id and self.kind!='patient':raise ValueError('Owner links require patients')
         if self.clinician and self.kind!='appointment':raise ValueError('Clinician requires appointments')
-        if self.group_by=='species' and self.kind!='patient':raise ValueError('Species grouping requires patients')
+        if self.group_by=='species' and self.kind not in {'patient','appointment'}:raise ValueError('Species grouping requires patients or appointments')
         if self.group_by=='clinician' and self.kind!='appointment':raise ValueError('Clinician grouping requires appointments')
         if self.group_by=='name' and self.kind not in {'patient','observation','inventory'}:
             raise ValueError('Name grouping does not apply to this record kind')
@@ -123,6 +123,10 @@ def select_records(c, clinic, query, records=None):
         records=all_records(c,clinic,query['kind'])
         if query['kind'] in {'event','observation'}:
             records+=native_records(clinic,query.get('patient_id'))
+    patient_species={r['id']:r['data'].get('species') for r in all_records(c,clinic,'patient')} if query['kind']=='appointment' and (query.get('species') or query.get('group_by')=='species') else {}
+    def linked_species(data):
+        patient_id=data.get('patient_id')
+        return patient_species.get(patient_id) if isinstance(patient_id,str) else None
     tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore')
     try:
         ZoneInfo(tz)
@@ -137,7 +141,10 @@ def select_records(c, clinic, query, records=None):
         if query.get('owner_id'):
             additional=d.get('additional_owner_ids')
             if d.get('owner_id')!=query['owner_id'] and (not isinstance(additional,list) or query['owner_id'] not in additional):continue
-        if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','species','code','status')):continue
+        if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','code','status')):continue
+        if query.get('species'):
+            species=d.get('species') if query['kind']=='patient' else linked_species(d)
+            if not isinstance(species,str) or species.casefold()!=query['species'].casefold():continue
         if query.get('clinician') and d.get('clinician')!=query['clinician']:continue
         if query.get('unit') and d.get('unit')!=query['unit']:continue
         if query.get('start') and day<query['start'] or query.get('end') and day>query['end']:continue
@@ -155,7 +162,10 @@ def select_records(c, clinic, query, records=None):
     groups={}
     for r in selected:
         d=r['data'];group=query.get('group_by','auto')
-        label=record_day(r,tz) if group=='day' else d.get(group) if group!='auto' else d.get('category') or d.get('status') or d.get('species') or query['kind']
+        if group=='day':label=record_day(r,tz)
+        elif group=='species' and query['kind']=='appointment':label=linked_species(d)
+        elif group!='auto':label=d.get(group)
+        else:label=d.get('category') or d.get('status') or d.get('species') or query['kind']
         label=str(label) if label not in (None,'') else 'Not recorded'
         groups[label]=groups.get(label,0)+1
     patient=get(c,query['patient_id'],clinic) if query.get('patient_id') else None

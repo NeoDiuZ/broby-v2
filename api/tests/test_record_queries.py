@@ -93,6 +93,30 @@ def test_exact_clinician_filter_and_grouping_survive_saved_view(monkeypatch):
     assert [r['id'] for r in saved['records']]==[first['id']]
 
 
+def test_appointment_species_joins_only_clinic_patients_and_survives_saved_view(monkeypatch):
+    with db.connection(True) as c:
+        cat=db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-08-10','time':'09:00','reason':'SYNTHETIC species check','clinician':'clinic-east-vet','status':'scheduled'})
+        dog=db.record(c,'appointment','clinic-east',{'patient_id':'milo','date':'2098-08-10','time':'10:00','reason':'SYNTHETIC species check','clinician':'clinic-east-vet','status':'scheduled'})
+        foreign=db.record(c,'patient','clinic-river',{'name':'SYNTHETIC Foreign Cat','species':'Cat'})
+        db.record(c,'appointment','clinic-east',{'patient_id':foreign['id'],'date':'2098-08-10','time':'11:00','reason':'SYNTHETIC bad link','clinician':'clinic-east-vet','status':'scheduled'})
+        db.record(c,'appointment','clinic-east',{'patient_id':['malformed'],'date':'2098-08-10','time':'12:00','reason':'SYNTHETIC malformed link','clinician':'clinic-east-vet','status':'scheduled'})
+    plan={'read':{'kind':'appointment','scope':'clinic','species':'cat','clinician':'clinic-east-vet',
+                  'start':'2098-08-10','end':'2098-08-10','group_by':'species'}}
+    answer=ask(monkeypatch,'Show Cat appointments for this clinician, grouped by species',plan)
+    assert [r['id'] for r in answer['sources']]==[cat['id']]
+    assert answer['dashboard']['groups']==[{'label':'Cat','count':1}]
+    assert 'species: cat' in answer['text']
+    view=act('dashboard.save',{'name':'SYNTHETIC Cat appointments','query':answer['dashboard']['query']})
+    saved=TestClient(main.app).get('/api/dashboards/'+view['id']).json()['result']
+    assert saved['query']==answer['dashboard']['query']
+    assert [r['id'] for r in saved['records']]==[cat['id']]
+    grouped=query({'kind':'appointment','start':'2098-08-10','end':'2098-08-10','group_by':'species'})
+    assert {'label':'Cat','count':1} in grouped['groups']
+    assert {'label':'Dog','count':1} in grouped['groups']
+    assert {'label':'Not recorded','count':2} in grouped['groups']
+    assert dog['id'] not in {r['id'] for r in answer['sources']}
+
+
 def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch):
     owner=act('owner.create',{'name':'SYNTHETIC Shared Household'})
     primary=act('patient.create',{'name':'SYNTHETIC Primary Pet','species':'Cat','owner_id':owner['id']})
@@ -177,7 +201,7 @@ def test_typed_equality_false_is_not_zero_and_exact_unit_comparisons():
     {'kind':'invoice','low_stock':'false'}, {'kind':'patient','status':'due'},
     {'kind':'invoice','species':'Cat'}, {'kind':'patient','clinician':'clinic-east-vet'},
     {'kind':'patient','owner_id':''}, {'kind':'patient','owner_id':False},
-    {'kind':'patient','group_by':'clinician'},
+    {'kind':'patient','group_by':'clinician'}, {'kind':'inventory','group_by':'species'},
     {'kind':'invoice','start':'20260924'}, {'kind':'invoice','start':'2099-02-30'},
     {'kind':'event','start':'2099-02-01','end':'2099-01-01'},
     {'kind':'event','arbitrary_sql':'SELECT secret'}, {'kind':'event','group_by':'secret'},
