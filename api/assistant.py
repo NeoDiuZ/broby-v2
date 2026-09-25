@@ -38,7 +38,7 @@ def quoted_read_fields(message):
     Recognized data cannot introduce another marker or operator instruction.
     Unsupported escapes and dangling quotes fail closed before metadata reads.
     """
-    pattern=r'\b(?P<literal>text\s+contains)\s+|\b(?P<field>status|species|name|code|unit)\s+(?:equals|is)\s+'
+    pattern=r'\b(?P<literal>text\s+contains)\s+|\b(?P<field>status|species|name|code|unit)\s+(?:(?:equals|is)\s+)?'
     entries=[];position=0
     while marker:=re.search(pattern,message[position:],re.I):
         start=position+marker.end();position=start
