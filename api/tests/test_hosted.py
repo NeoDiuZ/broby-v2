@@ -8,6 +8,7 @@ import auth, db, main, runtime
 def hosted(tmp_path, monkeypatch):
     monkeypatch.setattr('spine.reader.native_records',lambda *a,**k:[])
     monkeypatch.setattr(db, 'DB', tmp_path / 'test.sqlite3')
+    monkeypatch.setattr(db, 'DATA', tmp_path)
     monkeypatch.setattr(main, 'DATA', tmp_path)
     monkeypatch.setenv('BROBY_ENVIRONMENT', 'staging')
     monkeypatch.setenv('BROBY_AUTH_MODE', 'password')
