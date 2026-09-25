@@ -125,6 +125,29 @@ def test_relative_day_cannot_be_replaced_by_model_date(monkeypatch):
     assert correct['dashboard']['query']['end']=='2098-07-10'
 
 
+def test_patient_chat_cannot_change_identity_or_silently_widen_scope(monkeypatch):
+    base='Show this patient events'
+    for read in ({'kind':'event','scope':'clinic'},
+                 {'kind':'event','patient_id':'milo'},
+                 {'kind':'event','scope':'clinic','patient_id':'milo'}):
+        answer=ask(monkeypatch,base,{'read':read},'luna')
+        assert answer['sources']==[] and 'dashboard' not in answer
+    valid=ask(monkeypatch,base,{'read':{'kind':'event','patient_id':'luna'}},'luna')
+    assert valid['dashboard']['query']['patient_id']=='luna'
+    named=ask(monkeypatch,'Show Luna events',{'read':{'kind':'event','patient_id':'milo'}})
+    assert named['sources']==[] and 'dashboard' not in named
+
+
+def test_explicit_whole_clinic_can_override_selected_patient_without_narrowing(monkeypatch):
+    message='Show clinic-wide events'
+    valid=ask(monkeypatch,message,{'read':{'kind':'event','scope':'clinic'}},'luna')
+    assert not valid['dashboard']['query'].get('patient_id')
+    for read in ({'kind':'event','scope':'patient'},
+                 {'kind':'event','scope':'clinic','patient_id':'luna'}):
+        answer=ask(monkeypatch,message,{'read':read},'luna')
+        assert answer['sources']==[] and 'dashboard' not in answer
+
+
 def test_species_filter_is_exact_and_saved_view_matches_assistant(monkeypatch):
     with db.connection(True) as c:
         cat=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Cat','species':'Cat'})
