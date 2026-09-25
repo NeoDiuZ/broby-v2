@@ -58,6 +58,19 @@ seconds. These are concrete scaling limits. Full bootstrap pagination and
 incremental projection of clinical changes remain release work; passing without
 HTTP errors is not a latency or hosted-capacity certification.
 
+A follow-up 5,000-patient/16-client run on the same disposable workflow profiled
+21,325 bootstrap records. The database read took 190.4 ms, JSON decoding 165.6
+ms, native clinical reads 22.2 ms and direct JSON encoding 45.6 ms; the original
+full HTTP read took 1,077.8–1,275.0 ms. Returning the already-JSON clinic data
+without a second framework conversion reduced the three standalone HTTP reads
+to 493.8–731.7 ms. Across an otherwise identical 96-request mixed burst,
+bootstrap p95 changed from 9,195.6 to 4,173.7 ms and total elapsed time from
+18.493 to 8.784 seconds. Both runs passed all 19 checks and removed their
+databases. These are two disposable CI runners, not a controlled hosted latency
+guarantee. The 7.84 MB uncompressed bootstrap and full projection after genuine
+clinical changes remain. The frontend also stops six-second full refreshes in
+hidden tabs and refreshes when they become visible again.
+
 ## Verified on 24 September 2026
 
 - 1,000 added patients; 4,086 PMS records in the final fixture.
