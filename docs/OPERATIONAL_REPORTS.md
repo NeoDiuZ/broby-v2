@@ -56,3 +56,20 @@ the same 30-day period. The deployed Reports browser showed 32 / 32 with no
 framework error. Additional-only, merged, foreign and malformed link cases
 passed isolated SQLite and PostgreSQL tests; the hosted fixture did not contain
 those historical anomalies, so its readback does not certify those cases live.
+
+The later disposable PostgreSQL scale fixture included 1,000 synthetic patients,
+100 appointments, 100 unsent message drafts and 50 stock items. SQL profiling
+found that the current-owner count's JSON-expression join consumed 1,492 ms of
+a 1,503 ms report build. The report now reads same-clinic owner IDs and patient
+links once each, preserving primary/additional link semantics without that join.
+Five sequential full-report HTTP reads then measured 31.6–33.5 ms, and all 19
+load/recovery checks passed. This is isolated synthetic performance evidence;
+the earlier 21,000-record benchmark and the hosted browser checks remain
+separate fixtures and do not establish real-clinic or Railway capacity.
+
+At 5,000 added patients and 16 concurrent clients, five standalone reports
+took 82.0–85.3 ms, but report p95 rose to 4,671.7 ms in the 400-request mixed
+burst while full bootstrap responses reached 7.84 MB. The concurrent workload
+had zero HTTP errors; this latency is still too high to claim clinic-scale
+responsiveness. See RELIABILITY_ACCEPTANCE.md for the complete scope and the
+27.096-second first clinical projection limit.

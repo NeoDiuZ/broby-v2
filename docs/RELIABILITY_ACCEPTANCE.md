@@ -27,6 +27,37 @@ the separate 24 September run below already covered backup integrity. A scale
 run does **not** certify hosted Railway capacity, a prolonged soak, external
 provider delivery or a real clinic's records.
 
+## Verified on 25 September 2026
+
+The disposable GitHub Actions PostgreSQL run with 1,000 added patients and
+48 authenticated reads across eight clients passed all 19 correctness,
+concurrency and forced-process-loss checks, with zero HTTP errors. It removed
+its disposable database. Operational-report sequential reads measured 31.6–33.5
+ms; before the same report's owner-link counting fix, they measured 1,500–1,531
+ms and SQL profiling assigned 1,492 ms to one JSON-expression owner join.
+
+A separate diagnostic run found that saving an unrelated dashboard queued a
+full clinical projection. That refresh took 3,248.5 ms at 1,000 patients and
+delayed otherwise small patient search and timeline responses. PostgreSQL and
+SQLite triggers now enqueue only record kinds the clinical projection consumes;
+membership changes remain tracked. The rerun's steady projection checks took
+2.9–3.3 ms sequentially. In its mixed concurrent read burst, patient search
+p95 was 489.7 ms and timeline p95 was 432.5 ms. The first full projection of
+the 1,000-patient fixture still took 5.386 seconds. The test does not establish
+incremental projection for genuine clinical changes or a hosted capacity bound.
+
+The larger disposable run added 5,000 patients, verified 21,337 records and
+completed 400 authenticated reads across 16 clients with zero HTTP errors. All
+19 correctness/recovery checks passed again; the database was removed. Five
+sequential operational reports took 82.0–85.3 ms, and sequential patient search
+and timeline reads took 35.2–38.1 ms and 19.7–22.4 ms respectively. Under the
+mixed concurrent burst, however, full bootstrap returned up to 7.84 MB and
+reached 8,361.4 ms p95; search, timeline and operational report reached 3,945.2,
+3,952.4 and 4,671.7 ms p95. The first full clinical projection took 27.096
+seconds. These are concrete scaling limits. Full bootstrap pagination and
+incremental projection of clinical changes remain release work; passing without
+HTTP errors is not a latency or hosted-capacity certification.
+
 ## Verified on 24 September 2026
 
 - 1,000 added patients; 4,086 PMS records in the final fixture.
