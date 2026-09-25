@@ -131,3 +131,16 @@ owner-linked invoice question returned HTTP 200 with a limitation, no dashboard,
 records or action, and persisted as a completed private conversation. This
 verifies these synthetic examples only; representative model evaluation and
 clinic-scale query performance remain unfinished.
+
+At deployed V2 revision `8b94dfb`, another 13 synthetic real-model questions
+passed exact query/clarification checks. They covered owner-linked patients and
+appointments, owner plus species/date/clinician, explicit appointment status,
+whole-clinic Cat and Dog patients, outstanding invoices, low stock, a supplied
+owner ID and an unknown owner ID. The unsupported owner/invoice combination
+returned no records or action. The first wording “appointments scheduled on
+2098-08-04” selected the date but no status: “scheduled on” is ambiguous
+between a booking date and the stored status. Rephrasing it as “recorded status
+equals scheduled” produced both the exact date and status filters. The 13/13
+result therefore applies to the explicit wording, not the ambiguous variant.
+These cases do not certify clinical terminology, every phrasing or every
+combination of read filters.
