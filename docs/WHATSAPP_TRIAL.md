@@ -69,3 +69,13 @@ linked and credentials/template are connected. Deployment of this code does
 not prove WhatsApp delivery. The trial expires and cannot stand in for a
 registered production sender, consent/template approval or a staffed escalation
 policy.
+
+## Read-only provider recheck — 25 September 2026
+
+Using only the existing V2 trial credential, a read-only Content API request
+returned HTTP 401, Twilio code 20003: “This feature is not available on a Trial
+account. Please upgrade your account to gain access.” It returned no usable
+template ID. The native WhatsApp app does not show Twilio account provisioning;
+it was inspected without changing or sending a message. No provider account,
+sender, webhook, backend configuration, customer data or original Broby service
+was changed. Real Broby-originated template delivery remains unverified.
