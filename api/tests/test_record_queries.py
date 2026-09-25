@@ -93,6 +93,32 @@ def test_exact_clinician_filter_and_grouping_survive_saved_view(monkeypatch):
     assert [r['id'] for r in saved['records']]==[first['id']]
 
 
+def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch):
+    owner=act('owner.create',{'name':'SYNTHETIC Shared Household'})
+    primary=act('patient.create',{'name':'SYNTHETIC Primary Pet','species':'Cat','owner_id':owner['id']})
+    additional=act('patient.create',{'name':'SYNTHETIC Additional Pet','species':'Dog','owner_name':'Another Synthetic Owner'})
+    additional=act('patient.owners',{'id':additional['id'],'version':additional['version'],
+                                     'owner_id':additional['data']['owner_id'],'additional_owner_ids':[owner['id']]})
+    plan={'read':{'kind':'patient','scope':'clinic','owner_id':owner['id'],'group_by':'species'}}
+    answer=ask(monkeypatch,'Show all pets linked to SYNTHETIC Shared Household, grouped by species',plan)
+    assert {r['id'] for r in answer['sources']}=={primary['id'],additional['id']}
+    assert answer['dashboard']['groups']==[{'label':'Cat','count':1},{'label':'Dog','count':1}]
+    assert 'owner: SYNTHETIC Shared Household' in answer['text']
+    view=act('dashboard.save',{'name':'SYNTHETIC owner pets','query':answer['dashboard']['query']})
+    client=TestClient(main.app)
+    saved=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert {r['id'] for r in saved['records']}=={primary['id'],additional['id']}
+    act('patient.owners',{'id':additional['id'],'version':additional['version'],
+                          'owner_id':additional['data']['owner_id'],'additional_owner_ids':[]})
+    refreshed=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert [r['id'] for r in refreshed['records']]==[primary['id']]
+    with db.connection(True) as c:
+        foreign=db.record(c,'owner','clinic-river',{'name':'SYNTHETIC Other Clinic'})
+        db.record(c,'patient','clinic-east',{'name':'SYNTHETIC malformed links','species':'Cat','owner_id':'owner-luna','additional_owner_ids':None})
+    err(404,lambda:query({'kind':'patient','owner_id':foreign['id']}))
+    err(422,lambda:query({'kind':'appointment','owner_id':owner['id']}))
+
+
 def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
     with db.connection(True) as c:
         first=db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Midnight clinic time','occurred_at':'2026-09-23T16:30:00Z'})

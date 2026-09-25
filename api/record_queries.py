@@ -16,6 +16,7 @@ class RecordQuery(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     kind: RecordKind
     patient_id: StrictStr | None = Field(default=None, max_length=100)
+    owner_id: StrictStr | None = Field(default=None, max_length=100, description='Exact clinic owner ID; matches primary or additional owner links on patients.')
     start: StrictStr | None = None
     end: StrictStr | None = None
     category: StrictStr | None = Field(default=None, max_length=120)
@@ -62,6 +63,7 @@ class RecordQuery(BaseModel):
         if self.name and self.kind not in {'patient','observation','inventory'}:
             raise ValueError('Name does not apply to this record kind')
         if self.species and self.kind!='patient':raise ValueError('Species requires patients')
+        if self.owner_id and self.kind!='patient':raise ValueError('Owner links require patients')
         if self.clinician and self.kind!='appointment':raise ValueError('Clinician requires appointments')
         if self.group_by=='species' and self.kind!='patient':raise ValueError('Species grouping requires patients')
         if self.group_by=='clinician' and self.kind!='appointment':raise ValueError('Clinician grouping requires appointments')
@@ -79,6 +81,7 @@ def validate_query(c, query, clinic):
         details='; '.join(str(e['msg']) for e in exc.errors(include_input=False))
         fail('Invalid record query: '+details)
     if parsed.patient_id:owned(c,parsed.patient_id,clinic,'patient')
+    if parsed.owner_id:owned(c,parsed.owner_id,clinic,'owner')
     return parsed.model_dump(exclude_none=True,exclude_defaults=True)
 
 
@@ -99,11 +102,12 @@ def record_day(row, tz):
         return row['created_at'][:10]
 
 
-def query_summary(query, patient=None):
+def query_summary(query, patient=None, owner=None):
     parts=[patient['data']['name'] if patient else 'Whole clinic']
     if query.get('start') or query.get('end'):parts.append(f"{query.get('start') or 'earliest'} to {query.get('end') or 'latest'}")
     for key in ('category','name','species','clinician','code','unit','status'):
         if query.get(key):parts.append(f"{key.replace('_',' ')}: {query[key]}")
+    if query.get('owner_id'):parts.append('owner: '+(owner['data']['name'] if owner else query['owner_id']))
     if query.get('low_stock'):parts.append('stock at or below reorder level')
     if query.get('outstanding'):parts.append('positive outstanding balance, excluding void invoices')
     for key,label in [('value_min','value at least'),('value_max','value at most'),('value_equals','value equals')]:
@@ -130,6 +134,9 @@ def select_records(c, clinic, query, records=None):
         if r['clinic_id']!=clinic or r['kind']!=query['kind']:continue
         d=r['data'];day=record_day(r,tz)
         if query.get('patient_id') and r['id']!=query['patient_id'] and d.get('patient_id')!=query['patient_id']:continue
+        if query.get('owner_id'):
+            additional=d.get('additional_owner_ids')
+            if d.get('owner_id')!=query['owner_id'] and (not isinstance(additional,list) or query['owner_id'] not in additional):continue
         if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','species','code','status')):continue
         if query.get('clinician') and d.get('clinician')!=query['clinician']:continue
         if query.get('unit') and d.get('unit')!=query['unit']:continue
@@ -152,8 +159,9 @@ def select_records(c, clinic, query, records=None):
         label=str(label) if label not in (None,'') else 'Not recorded'
         groups[label]=groups.get(label,0)+1
     patient=get(c,query['patient_id'],clinic) if query.get('patient_id') else None
+    owner=get(c,query['owner_id'],clinic) if query.get('owner_id') else None
     return {'query':query,'count':len(selected),'groups':[{'label':k,'count':v} for k,v in sorted(groups.items())],
-            'records':selected,'filter_summary':query_summary(query,patient),'timezone':tz,'refreshed_at':now()}
+            'records':selected,'filter_summary':query_summary(query,patient,owner),'timezone':tz,'refreshed_at':now()}
 
 
 def dashboard(c,clinic,query):
