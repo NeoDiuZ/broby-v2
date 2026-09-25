@@ -217,6 +217,7 @@ GUIDED = {
     **{n: ('Settings', 'Use the two-party organization or master-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review')},
     **{n: ('Patient', 'Use the original clinical source and typed observation approval screen.') for n in ('clinical.ingest', 'clinical.approve', 'ontology.propose', 'ontology.review')},
     'conversation.policy': ('Handover', 'Review the clinic-approved owner-conversation policy and staffed escalation arrangements.'),
+    **{n: ('Settings', 'Review the operational incident details and webhook receipts in Sync & jobs, and enter an explicit reason. Acknowledgement does not mark recovery or delivery.') for n in ('operations.alert.acknowledge', 'operations.alert.retry')},
 }
 
 

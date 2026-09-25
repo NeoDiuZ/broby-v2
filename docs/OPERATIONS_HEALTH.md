@@ -105,10 +105,13 @@ ownership during a blocked call, and refusing backup with a live external worker
 Isolated production browser acceptance exercises a controlled worker failure plus a failed document,
 then reviews/retries it and verifies the exact assembled source and receipt.
 
-This is in-app operational visibility and bounded loop recovery. It does not add
-external/on-call alerts, acknowledge incidents, verify backup recovery, certify
-message delivery or settlement, kill hung provider calls, or deploy independent
-cloud worker services. `/api/ready` continues to check storage readiness separately.
+Optional external operational webhook transport, durable incident review and
+delivery receipts are documented in [OPERATIONAL_ALERTS.md](OPERATIONAL_ALERTS.md).
+They are disabled by default; synthetic local HTTP acceptance does not prove
+hosted notification delivery or an on-call response. This feature does not verify
+backup recovery, certify owner-message delivery or settlement, kill hung provider
+calls, or deploy independent cloud worker services. `/api/ready` continues to
+check storage readiness separately.
 Shared object storage, multiple hosts/replicas, file-volume outage recovery and a
 cloud restore drill remain unverified. The single-backend Railway deployment
 constraint remains. Hosted revision, real-cycle acceptance and remaining

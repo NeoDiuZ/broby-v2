@@ -26,6 +26,8 @@ def setup(c):
         stopped_at TEXT, snapshot TEXT NOT NULL)''')
     c.execute('CREATE INDEX IF NOT EXISTS jobs_clinic_status ON jobs(clinic_id,status,created_at)')
     c.execute('CREATE INDEX IF NOT EXISTS stripe_tasks_clinic_status ON stripe_tasks(clinic_id,status,created_at)')
+    from operational_alerts import setup as setup_alerts
+    setup_alerts(c)
 
 
 class Supervisor:
@@ -198,12 +200,15 @@ def health(request: Request):
             fail('Administrator access required', 403)
         queues = queue_summary(c, clinic)
         history = {r['name']:dict(r) for r in c.execute('SELECT * FROM worker_history')}
+        from operational_alerts import status as alert_status
+        alerts = alert_status(c, clinic)
     monitor = getattr(request.app.state, 'workers', None)
     workers = (monitor or Supervisor(threading.Event())).snapshot()
     for worker in workers:
         worker['history'] = history.get(worker['name'], {'failures':0,'last_failure_at':None,'last_recovery_at':None})
-    attention = any(w['attention'] for w in workers) or any(q['issues'] for q in queues)
+    attention = any(w['attention'] for w in workers) or any(q['issues'] for q in queues) or alerts['needs_attention']
     return {'checked_at': db.now(), 'clinic_id': clinic, 'status': 'needs_attention' if attention else 'checked',
             'workers': workers, 'queues': queues, 'issue_limit_per_queue': 20,
             'worker_mode': runtime.worker_mode(),
+            'operational_alerts': alerts,
             'scope': 'Worker progress is shared by this deployment. Queue counts belong only to the selected clinic. This does not verify provider delivery, settlement, backups or physical recording devices.'}

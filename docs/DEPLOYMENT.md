@@ -44,6 +44,7 @@ Railway service configuration uses root directories and Dockerfile detection in 
 | `PORT=8000` | Backend listener |
 | `BROBY_WORKER_MODE=embedded` (default) | Current deployment runs the guarded background runtime in the API; `external` is available only with a verified same-host shared file volume |
 | `BROBY_PROCESS_ROLE=api` (default) | Hosted image entrypoint; `worker` skips migrations and runs the separate worker, requiring external mode |
+| `BROBY_OPS_ALERT_MODE=disabled` (default) | Optional standalone operational webhook monitor; no destination is configured by default. See [operational alerts](OPERATIONAL_ALERTS.md) for HTTPS transport, secret configuration and remaining on-call gates |
 
 Only the two provider keys required by this code were copied. V1 database, Redis, JWT, storage, RunPod, OpenAI and messaging keys were not needed. Shared provider keys share existing provider billing/quota. Both copied values were verified to match V1 without displaying them, and both providers completed real requests with synthetic inputs.
 

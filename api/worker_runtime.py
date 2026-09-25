@@ -220,7 +220,9 @@ class ExternalWorkers:
         if not row:
             return Supervisor(threading.Event()).snapshot()
         age = max(0, (datetime.now(timezone.utc)-datetime.fromisoformat(row['heartbeat_at'])).total_seconds())
-        mismatch = row['storage_id'] != self.storage_id or row['mode'] != 'external'
+        storage_matches = row['storage_id'] == self.storage_id
+        mode_matches = row['mode'] == 'external'
+        mismatch = not storage_matches or not mode_matches
         values = json.loads(row['snapshot'])
         by_name = {value['name']: value for value in values}
         result = []
@@ -229,7 +231,8 @@ class ExternalWorkers:
             value['process_started_at'] = row['started_at']
             value['heartbeat_at'] = row['heartbeat_at']
             value['heartbeat_age_seconds'] = round(age)
-            value['storage_matches'] = not mismatch
+            value['storage_matches'] = storage_matches
+            value['mode_matches'] = mode_matches
             if mismatch or row['stopped_at']:
                 value.update(state='stopped', attention=True)
             elif age > STALE_SECONDS:
