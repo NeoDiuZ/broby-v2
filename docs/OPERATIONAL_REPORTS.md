@@ -47,3 +47,12 @@ full clinic dataset. After PR #51 deployed as `84b76fc`, the V2 browser's
 metric rows, 2,476 bytes and no empty rows. The browser displayed no framework
 error overlay. These checks show deployed V2 rendering, download and clinic
 scoping with synthetic data, not real-clinic or physical-device acceptance.
+
+After V2 revision `ae5347e` deployed on 25 September, an authenticated API
+readback independently compared every persisted synthetic patient link with the
+same-clinic unmerged owner IDs. The operational JSON report and CSV both showed
+32 of 32 patients linked to a current owner for the East Coast test clinic and
+the same 30-day period. The deployed Reports browser showed 32 / 32 with no
+framework error. Additional-only, merged, foreign and malformed link cases
+passed isolated SQLite and PostgreSQL tests; the hosted fixture did not contain
+those historical anomalies, so its readback does not certify those cases live.
