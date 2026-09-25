@@ -52,6 +52,18 @@ result, internal-only escalation and revoked owner link. The separate persisted
 V2 smoke passed 17/17. These checks do not validate arbitrary owner language,
 on-call delivery, or real-clinic policy.
 
+The extended reply-and-closure script passed on 25 September at V2 revision
+`dab49ead6fda8f73819a74c4ae21bc1201ff0f48`, including a real-model
+proposal, unchanged review state, exact owner-portal reply, open urgent alert,
+idempotent reply and closure, persisted readback and two exact patient-timeline
+receipts. Before the exact-command fix, a model field substitution was safely
+rejected with no reply saved. The fix derived the thread ID, staff text and
+current version from the operator request and clinic records. Its exact-commit
+push CI passed frontend, SQLite, PostgreSQL and packaged API checks. A separate
+deployed-browser test displayed the exact owner/staff text and effect before
+confirmation; staff/owner API readback matched the single confirmed reply and
+the synthetic link was revoked. Twilio and external email remained unused.
+
 New reviews validate exact clinic and patient references, calendar dates, finite
 values, explicit tax/discount fields, replacement contact fields and workflow
 states. Confirmation checks every referenced record version under the shared
