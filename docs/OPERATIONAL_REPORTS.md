@@ -8,6 +8,10 @@ because they combine patient, clinical, scheduling, message and stock data.
 
 The report counts the full persisted clinic record set, not the browser's
 bootstrap cache or current page. Patient, owner and species totals are all time.
+“Patients linked to a current owner” counts each patient once when a primary or
+additional link points to an unmerged owner in the same clinic. Missing,
+merged and foreign-clinic owners do not count. Historical malformed additional
+links are ignored without changing any patient record.
 Consultations and messages use their creation timestamp in the clinic timezone;
 appointments use the scheduled date; reminders use the due date. Current open
 intakes, failed/conflicting jobs and stock are point-in-time counts. A message
@@ -22,7 +26,7 @@ This is a clinic operations view alongside the existing clinical and financial
 reports. General-ledger accounting, independent settlement reconciliation and
 performance at a real clinic's data volume are separate release work. The
 focused tests cover clinic isolation, local-day
-boundaries, owner links, status counts, invalid stock, CSV parity and read
+boundaries, primary/additional/current owner links, status counts, invalid stock, CSV parity and read
 permissions; their passing result alone is not a launch certification.
 
 A disposable local PostgreSQL benchmark with 21,000 synthetic records (10,000

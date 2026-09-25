@@ -82,6 +82,29 @@ def test_api_and_csv_export_share_full_clinic_counts_and_require_all_reads():
         assert client.get('/api/reports/operations/export?days=7').status_code == 403
 
 
+def test_current_owner_count_includes_additional_links_and_excludes_merged_or_foreign_owners():
+    before = built()
+    with db.connection(True) as c:
+        active = db.record(c, 'owner', 'clinic-east', {'name': 'SYNTHETIC active owner'})
+        merged = db.record(c, 'owner', 'clinic-east', {'name': 'SYNTHETIC merged owner', 'merged_into': active['id']})
+        foreign = db.record(c, 'owner', 'clinic-river', {'name': 'SYNTHETIC foreign owner'})
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC additional only', 'species': 'Cat',
+                                                 'owner_id': merged['id'], 'additional_owner_ids': [active['id']]})
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC no primary', 'species': 'Cat',
+                                                 'owner_id': 'missing', 'additional_owner_ids': [active['id']]})
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC primary and additional', 'species': 'Cat',
+                                                 'owner_id': active['id'], 'additional_owner_ids': [active['id']]})
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC merged only', 'species': 'Cat',
+                                                 'owner_id': merged['id']})
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC foreign links', 'species': 'Cat',
+                                                 'owner_id': foreign['id'], 'additional_owner_ids': [foreign['id']]})
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC malformed additional', 'species': 'Cat',
+                                                 'owner_id': 'missing', 'additional_owner_ids': [{'id': active['id']}]})
+    after = built()
+    assert after['patients']['total'] == before['patients']['total'] + 6
+    assert after['patients']['linked_to_owner'] == before['patients']['linked_to_owner'] + 3
+
+
 def test_malformed_legacy_values_are_counted_without_breaking_the_report():
     with db.connection(True) as c:
         db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC malformed legacy',
