@@ -31,6 +31,12 @@ Confirmation rechecks the thread and referenced records under the writer lock;
 a newer owner message requires a fresh review. Neither action sends a reply or
 an external notification.
 
+For hosted synthetic acceptance, run `scripts/smoke-assistant-conversations.py`
+with private credentials and a fresh state file in `setup`, `review`, then
+`readback` phases. It tests the real model proposal, unchanged record at review,
+exact owner text, confirmation/replay, persisted result, internal alert and
+revoked owner link without sending a customer message.
+
 New reviews validate exact clinic and patient references, calendar dates, finite
 values, explicit tax/discount fields, replacement contact fields and workflow
 states. Confirmation checks every referenced record version under the shared

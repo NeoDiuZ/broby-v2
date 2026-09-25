@@ -221,6 +221,8 @@ def catalogue():
         if 'version' in fields:
             owner = 'invoice linked by the selected payment.data.invoice_id' if name == 'payment.refund' else kind
             if owner: fields['version']['description'] = f'Current version of the {owner} record from records.'
+        if name in ('conversation.acknowledge', 'conversation.close'):
+            fields['reason']['description'] = 'Copy the text after "reason:" in the current operator request exactly. Never infer, shorten or paraphrase it.'
         result[name] = {'description': effect, 'target_kind': kind, 'payload_schema': shape}
     return result
 
