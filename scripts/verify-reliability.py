@@ -15,6 +15,8 @@ from sqlalchemy.engine import make_url
 
 ROOT=Path(__file__).resolve().parents[1]
 PYTHON=ROOT/'.venv/bin/python'
+if not PYTHON.is_file():
+    PYTHON=Path(sys.executable)
 p=argparse.ArgumentParser()
 p.add_argument('--output',type=Path,required=True)
 p.add_argument('--patients',type=int,default=1000)
