@@ -44,6 +44,12 @@ fresh converter output without reconciliation and a rollback rehearsal.
   consent, appointments or owner accounts. Those need separate approved
   export contracts, reconciliation and whole-clinic cutover testing.
 
+V2 now also has a **separate**, reviewed text-history preparation path for the
+V1 consultation table: [V1_CONSULTATION_IMPORT_PREP.md](V1_CONSULTATION_IMPORT_PREP.md).
+Its per-consultation patient crosswalk is necessary because the V1 consultation
+thread ID may be absent and is not proof of a patient-table identity. The two
+previews do not automatically merge their provisional owners or patients.
+
 Synthetic tests exercise converter refusal, file privacy, deterministic V2
 preview/apply/replay and non-merging of same-contact owner rows in both SQLite
 and PostgreSQL PMS modes. They do not constitute a live V1 migration or proof

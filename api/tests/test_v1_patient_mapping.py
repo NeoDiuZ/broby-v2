@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 import db
+import main
 from test_integrity import act, isolated, rows
 from v1_patient_mapping import MappingError, prepare
 
@@ -44,6 +46,12 @@ def test_v1_rows_rehearse_replay_without_false_owner_merge_or_public_note():
     source = next(r for r in rows('source') if r['data'].get('migration_origin', {}).get('source_id') == 'note:' + first)
     assert source['data']['text'] == 'Exact V1 general note.'
     assert source['data']['patient_id'] in {p['id'] for p in imported}
+    grant = act('share.create', {'patient_id': source['data']['patient_id']})
+    owner_view = TestClient(main.app).get('/api/owner/' + grant['id']).json()
+    assert owner_view['events'] == []
+    assert 'v1_custom_fields' not in owner_view['patient']['data']
+    assert 'identity_review' not in owner_view['patient']['data']
+    assert 'Exact V1 general note.' not in json.dumps(owner_view)
     assert act('migration.preview', payload, actor='clinic-east-admin')['unchanged_count'] == 5
 
 
