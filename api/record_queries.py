@@ -16,7 +16,7 @@ class RecordQuery(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     kind: RecordKind
     patient_id: StrictStr | None = Field(default=None, max_length=100)
-    owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches primary or additional owner links on patients.')
+    owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches primary or additional owner links on patients and appointments for those patients.')
     start: StrictStr | None = None
     end: StrictStr | None = None
     category: StrictStr | None = Field(default=None, max_length=120)
@@ -63,7 +63,7 @@ class RecordQuery(BaseModel):
         if self.name and self.kind not in {'patient','observation','inventory'}:
             raise ValueError('Name does not apply to this record kind')
         if self.species and self.kind not in {'patient','appointment'}:raise ValueError('Species requires patients or appointments')
-        if self.owner_id and self.kind!='patient':raise ValueError('Owner links require patients')
+        if self.owner_id and self.kind not in {'patient','appointment'}:raise ValueError('Owner links require patients or appointments')
         if self.clinician and self.kind!='appointment':raise ValueError('Clinician requires appointments')
         if self.group_by=='species' and self.kind not in {'patient','appointment'}:raise ValueError('Species grouping requires patients or appointments')
         if self.group_by=='clinician' and self.kind!='appointment':raise ValueError('Clinician grouping requires appointments')
@@ -123,10 +123,16 @@ def select_records(c, clinic, query, records=None):
         records=all_records(c,clinic,query['kind'])
         if query['kind'] in {'event','observation'}:
             records+=native_records(clinic,query.get('patient_id'))
-    patient_species={r['id']:r['data'].get('species') for r in all_records(c,clinic,'patient')} if query['kind']=='appointment' and (query.get('species') or query.get('group_by')=='species') else {}
-    def linked_species(data):
+    linked_patients={r['id']:r['data'] for r in all_records(c,clinic,'patient')} if query['kind']=='appointment' and (query.get('species') or query.get('owner_id') or query.get('group_by')=='species') else {}
+    def linked_patient(data):
         patient_id=data.get('patient_id')
-        return patient_species.get(patient_id) if isinstance(patient_id,str) else None
+        return linked_patients.get(patient_id) if isinstance(patient_id,str) else None
+    def linked_species(data):
+        patient=linked_patient(data)
+        return patient.get('species') if patient else None
+    def linked_to_owner(data):
+        additional=data.get('additional_owner_ids')
+        return data.get('owner_id')==query['owner_id'] or isinstance(additional,list) and query['owner_id'] in additional
     tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore')
     try:
         ZoneInfo(tz)
@@ -139,8 +145,8 @@ def select_records(c, clinic, query, records=None):
         d=r['data'];day=record_day(r,tz)
         if query.get('patient_id') and r['id']!=query['patient_id'] and d.get('patient_id')!=query['patient_id']:continue
         if query.get('owner_id'):
-            additional=d.get('additional_owner_ids')
-            if d.get('owner_id')!=query['owner_id'] and (not isinstance(additional,list) or query['owner_id'] not in additional):continue
+            owner_patient=d if query['kind']=='patient' else linked_patient(d)
+            if not owner_patient or not linked_to_owner(owner_patient):continue
         if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','code','status')):continue
         if query.get('species'):
             species=d.get('species') if query['kind']=='patient' else linked_species(d)

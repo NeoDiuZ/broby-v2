@@ -14,9 +14,11 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 - A patient or the clinic, inclusive start/end dates, exact recorded category,
   status or name; exact patient species and appointment clinician ID; counts
   grouped by category, status, species, name, clinician or day.
-- Patients linked to an exact clinic owner ID, including primary and additional
-  owners. An owner name alone is not an identity key; the assistant must select
-  the recorded owner ID before retrieving the complete clinic-scoped set.
+- Patients and their appointments linked to an exact clinic owner ID, including
+  primary and additional owner links. Appointment matching uses the current
+  patient link within the same clinic. An owner name alone is not an identity
+  key; the assistant must select the recorded owner ID before retrieving the
+  complete clinic-scoped set.
   Duplicate owner names require explicit identity selection rather than a guess.
 - Appointments filtered or grouped by the exact recorded species of their
   linked clinic patient. Missing, malformed or foreign-clinic patient links do
@@ -29,7 +31,10 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 
 For example: “Show due reminders on 2098-07-10 grouped by day” or “Show recorded
 potassium at least 5 mmol/L on 2026-09-24 for this patient.” Unsupported conditions
-must be clarified; arbitrary query fields are rejected by the server.
+must be clarified; arbitrary query fields are rejected by the server. An invalid
+model-produced read now becomes a saved clarification with no records or action,
+rather than an unsuccessful conversation turn. Saved-view and direct API query
+validation still reject the invalid filter.
 
 Dates follow the clinic timezone. Reminders use due dates, appointments use their
 scheduled date, and timestamped clinical facts use their occurrence date in that
@@ -46,7 +51,8 @@ current read layer still loads records in memory and is not clinic-scale certifi
 
 `api/tests/test_record_queries.py` checks assistant/view parity, exact species
 and clinician filters, appointment-to-patient species links,
-primary/additional owner links and live link changes,
+primary/additional owner links and live link changes on patients and
+appointments, including clinic isolation and malformed links,
 outstanding balances, timezone boundaries,
 reminder due dates, exact units and typed equality, malformed/unsupported filters,
 scope, native facts, bounded output and old saved-query compatibility.
@@ -97,5 +103,16 @@ one phrasing and this synthetic workflow, not broad owner-language accuracy.
 Appointment species filtering and grouping passed a focused synthetic SQLite
 and PostgreSQL test on 25 September. It combined an exact clinician and clinic
 date with Cat appointments, checked saved-view parity, and excluded a patient
-from another clinic and a malformed patient link. Hosted real-model phrasing
-and browser acceptance are pending for this related-record filter.
+from another clinic and a malformed patient link. After V2 revision `1f43d00`
+deployed, a hosted real-model question selected the exact Cat, clinician, date
+and grouping filters. A separate authenticated session read back the saved view;
+the deployed browser rendered its one matching appointment and exact receipt,
+then showed the same saved view after reload and unlock.
+
+Nine further hosted real-model synthetic prompts at revision `1f43d00` mapped
+to the expected exact structured filters: Cat and feline patients, two owner
+phrases, clinician/date, Cat plus clinician/date, Dog/date, outstanding invoices
+and low stock. These are nine specific examples, not a representative language
+or clinical evaluation. An owner-linked appointment question exposed a 422
+invalid-query failure. The new clinic-scoped owner-to-appointment join and
+completed clarification fallback address that gap; hosted acceptance is pending.
