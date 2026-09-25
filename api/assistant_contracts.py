@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, StrictBool, StrictFloat, StrictInt, create_model, model_validator
 from assistant_operations import Payload, Target, Versioned, Identifier, Text
 from record_queries import RecordQuery
+from read_access import READS
 
 
 def calendar(value):
@@ -133,6 +134,9 @@ LeaveReview = schema('LeaveReview', Reasoned, decision=(Literal['approved', 'rej
 RecallPrepare = schema('RecallPrepare', title=(Annotated[str, Field(min_length=3, max_length=160)], ...),
                        start=(Day, ...), end=(Day, ...),
                        reminder_ids=(Annotated[list[Identifier], Field(min_length=1, max_length=20)], ...))
+AdministrativeReason = schema('AdministrativeReason', Versioned, reason=(Annotated[str, Field(min_length=3, max_length=500)], ...))
+MemberReadAccess = schema('MemberReadAccess', AdministrativeReason,
+                          restrictions=(Annotated[list[Literal[tuple(READS)]], Field(max_length=len(READS))], ...))
 
 
 # schema, primary record kind (if id is present), description/effect
@@ -193,6 +197,8 @@ SPECS = {
     'recall.cancel': (Reasoned, 'recall_campaign', 'Cancel pending drafts in this campaign. Already delivered or uncertain messages are unchanged.'),
     'recall.prepare': (RecallPrepare, None, 'Prepare manual recall drafts for 1–20 exact operator-selected reminder IDs. Use the exact command: Prepare recall campaign [title] from [YYYY-MM-DD] to [YYYY-MM-DD] reminders: [comma-separated IDs]. The server derives recipients, message text and the current preview digest. Does not send messages or establish real-clinic consent approval.'),
     'escalation.acknowledge': (Versioned, 'escalation', 'Acknowledge the exact internal alert after reviewing its source. Use the exact command: Acknowledge escalation [ID]. Does not contact anyone, reply to an owner or close their conversation; external delivery remains disabled.'),
+    'organization.join_cancel': (AdministrativeReason, 'organization_adoption', 'Withdraw only this clinic’s exact pending organization adoption request. Use: Withdraw organization request [ID] reason: [exact reason]. Does not join an organization, change memberships or transfer records.'),
+    'access.member': (MemberReadAccess, 'member', 'Replace another member’s COMPLETE read-restriction list. Use: Set member [ID] read restrictions: [comma-separated read capability IDs, or none] reason: [exact reason]. No role, membership, write permission or inherited restriction is changed. Review all current and resulting effective read capabilities. Cannot change your own restrictions or organization-master recovery access.'),
     'leave.request': (LeaveRequest, None, 'Submit full-day leave for the exact staff member and inclusive dates. Availability changes only after a separate administrator approves.'),
     'leave.review': (LeaveReview, 'staff_leave', 'Approve or reject pending leave with a reason. Approval rechecks rota and booking conflicts; you cannot approve your own request.'),
     'leave.cancel': (Reasoned, 'staff_leave', 'Withdraw pending or current/future approved leave, retaining the review history.'),
@@ -208,7 +214,7 @@ GUIDED = {
     **{n: ('Messages', 'Use the restricted sender setup and delivery/recipient review.') for n in ('twilio.trial_send', 'twilio.reconcile')},
     'schedule.configure': ('Settings', 'Review the complete staff rota and booking conflicts in the rota editor.'),
     'transfer.accept': ('Settings', 'Review clinic identity, patient matching, original sources and transfer consent.'),
-    **{n: ('Settings', 'Use the two-party organization or explicit member-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review', 'organization.join_cancel', 'access.member')},
+    **{n: ('Settings', 'Use the two-party organization or master-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review')},
     **{n: ('Patient', 'Use the original clinical source and typed observation approval screen.') for n in ('clinical.ingest', 'clinical.approve', 'ontology.propose', 'ontology.review')},
     'conversation.policy': ('Handover', 'Review the clinic-approved owner-conversation policy and staffed escalation arrangements.'),
 }
@@ -393,7 +399,6 @@ def prepare(c, clinic, actor, name, payload, patient_id=None):
     if name in ('settings.save', 'automation.save'): ref('settings-' + clinic, 'settings', True)
     if name == 'feature_locks.save':
         from actions import PERMISSIONS
-        from read_access import READS
         ref(clinic, 'clinic', True)
         if len(set(p['actions'])) != len(p['actions']) or any(x not in PERMISSIONS and x not in READS for x in p['actions']): fail('Use known, unique restrictions.')
     if name == 'member.save':
@@ -468,6 +473,48 @@ def prepare(c, clinic, actor, name, payload, patient_id=None):
             field('Exact owner intake', intake['data']['text'])
             field('Intake status', intake['data']['status'])
         else: fail('Open Handover to review this alert: its original source is unavailable.')
+    if name in ('access.member', 'organization.join_cancel') and patient_id:
+        fail('Open clinic-wide chat to review administrative access changes.')
+    if name == 'access.member':
+        from access_controls import review
+        from read_access import ALL, BILLING, CLINICAL, INVENTORY, MESSAGES, PATIENT, SCHEDULE
+        if len(set(p['restrictions'])) != len(p['restrictions']): fail('Choose each read restriction once.')
+        checked = review(c, clinic, actor, p)
+        ref(clinic, 'clinic'); ref(actor, 'member')
+        p['expected_access_digest'] = checked['digest']
+        def capabilities(values):
+            return '\n'.join(key + ' — ' + READS.get(key, 'Unknown stored restriction') for key in values) or 'None'
+        field('Member role', r['data']['role']); field('Member active', bool(r['data'].get('active')))
+        field('Organization', checked['organization_name'] or 'None')
+        field('Current member restrictions', capabilities(sorted(r['data'].get('read_restrictions', []))))
+        field('New complete member restrictions', capabilities(checked['restrictions']))
+        field('Inherited read restrictions retained', capabilities(checked['inherited_restrictions']))
+        field('Current effective read access', capabilities(checked['current_allowed']))
+        field('Effective read access after confirmation', capabilities(checked['proposed_allowed']))
+        # A granted capability can still depend on another area (for example,
+        # billing requires patients). Show those route-level dependencies too.
+        view_requirements = {'Patient directory': PATIENT, 'Observations': CLINICAL,
+            'Billing': BILLING, 'Inventory': INVENTORY, 'Appointments and rota': SCHEDULE,
+            'Messages and recalls': MESSAGES, 'Other staff': {'read.staff'},
+            'Mixed histories, assistant chat, reports and full exports': ALL}
+        def views(values):
+            return '\n'.join(label + ': ' + ('Available' if requirements <= set(values) else 'Blocked')
+                             for label, requirements in view_requirements.items())
+        field('Current views with required dependencies', views(checked['current_allowed']))
+        field('Views after confirmation with required dependencies', views(checked['proposed_allowed']))
+        effect += ' Mixed histories, assistant conversations, combined files and full exports require every record area. Restoring one area cannot override clinic or organization restrictions.'
+    if name == 'organization.join_cancel':
+        if r['data']['status'] != 'pending': fail('Only pending organization requests can be withdrawn.')
+        consent = r['data']['consent']
+        if consent['clinic_id'] != clinic: fail('The request does not belong to this clinic.')
+        ref(clinic, 'clinic'); requester = ref(r['data']['requested_by'], 'member')
+        field('Requested organization', consent['organization_name'] + ' (' + consent['organization_id'] + ')')
+        field('Requesting clinic', consent['clinic_name'] + ' (' + consent['clinic_id'] + ')')
+        field('Requested by', label(requester)); field('Original request reason', r['data']['reason'])
+        field('Requested at', r['data']['requested_at']); field('Request expires at', r['data']['expires_at'])
+        field('Original proposed access', consent['access'])
+        field('Original proposed inherited restrictions', '\n'.join(consent['locked_actions']) or 'None')
+        effect += ' The original request and its consent snapshot remain in the audit history; no organization access is granted.'
     if name == 'leave.request':
         member = ref(p['member_id'], 'member')
         if not member['data'].get('active'): fail('Choose an active staff member.')
@@ -489,7 +536,7 @@ def prepare(c, clinic, actor, name, payload, patient_id=None):
         for key in ('stock', 'status'):
             if key in r['data']: field('Current ' + key, r['data'][key])
     for key, value in p.items():
-        if key in ('version', 'schedule_version', 'token', 'digest'): continue
+        if key in ('version', 'schedule_version', 'token', 'digest', 'expected_access_digest'): continue
         if key == 'id' and r: continue
         field(key.replace('_', ' ').capitalize(), display(value, key, sources))
     if not fields: field('Clinic', owned(c, clinic, clinic, 'clinic')['data']['name'])

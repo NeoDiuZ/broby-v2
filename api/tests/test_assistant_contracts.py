@@ -48,6 +48,10 @@ def fixtures(monkeypatch):
         intake = db.record(c, 'intake', 'clinic-east', {'patient_id': 'luna', 'text': 'Exact owner statement.', 'status': 'new'})
         escalation = db.record(c, 'escalation', 'clinic-east', {'patient_id': 'luna', 'intake_id': intake['id'], 'status': 'needs_attention', 'delivery': 'disabled'})
         campaign = db.record(c, 'recall_campaign', 'clinic-east', {'title': 'Synthetic campaign', 'status': 'prepared', 'items': []})
+        adoption = db.record(c, 'organization_adoption', 'clinic-east', {'status': 'pending',
+            'consent': {'clinic_id': 'clinic-east', 'clinic_name': 'Synthetic clinic', 'organization_id': 'synthetic-org',
+                        'organization_name': 'Synthetic organization', 'access': 'Synthetic original organization consent.', 'locked_actions': []},
+            'requested_by': admin, 'reason': 'Synthetic original request', 'requested_at': db.now(), 'expires_at': '2098-12-01T00:00:00+00:00'})
         thread_id = db.uid()
         owner_turn = db.record(c, 'owner_turn', 'clinic-east', {'patient_id': 'luna', 'thread_id': thread_id,
             'speaker': 'owner', 'message': 'Exact synthetic owner question.', 'state': 'completed'})
@@ -109,6 +113,8 @@ def fixtures(monkeypatch):
         'recall.cancel': {**target(campaign), 'reason': 'Synthetic cancellation'},
         'recall.prepare': {'title': 'Synthetic reviewed campaign', 'start': '2098-09-01', 'end': '2098-09-30', 'reminder_ids': [reminder['id']]},
         'escalation.acknowledge': target(escalation),
+        'organization.join_cancel': {**target(adoption), 'reason': 'Synthetic clinic withdrew consent'},
+        'access.member': {**target(get('clinic-east-nurse')), 'restrictions': ['read.billing'], 'reason': 'Synthetic access review'},
         'leave.request': {'member_id': 'clinic-east-nurse', 'start': '2098-08-01', 'end': '2098-08-02', 'reason': 'Synthetic leave'},
         'leave.review': {**target(leave), 'decision': 'approved', 'reason': 'Synthetic approval'},
         'leave.cancel': {**target(leave), 'reason': 'Synthetic withdrawal'},
@@ -124,6 +130,8 @@ def test_every_contract_saved_review_confirm_and_replay(monkeypatch, name):
                else f"{name.split('.')[1].capitalize()} conversation {payload['id']} reason: {payload['reason']}" if name.startswith('conversation.')
                else f"Prepare recall campaign {payload['title']} from {payload['start']} to {payload['end']} reminders: {', '.join(payload['reminder_ids'])}" if name == 'recall.prepare'
                else f"Acknowledge escalation {payload['id']}" if name == 'escalation.acknowledge'
+               else f"Withdraw organization request {payload['id']} reason: {payload['reason']}" if name == 'organization.join_cancel'
+               else f"Set member {payload['id']} read restrictions: {', '.join(payload['restrictions']) or 'none'} reason: {payload['reason']}" if name == 'access.member'
                else 'Synthetic explicit operator request')
     turn = proposal(monkeypatch, name, payload, message=message)
     monkeypatch.setattr('providers.available', lambda: {'ai': True, 'transcription': True})

@@ -2,12 +2,12 @@
 
 ## Current coverage — 25 September 2026
 
-All 72 directly proposed assistant operations now have strict typed contracts,
+All 74 directly proposed assistant operations now have strict typed contracts,
 read-only preparation and labelled deterministic reviews. This replaces the old
 49 untyped field descriptions and adds ten routine operations: speaker labels,
 automation settings, save/archive dashboards, recall preference/cancellation,
 leave request/review/withdrawal and discharge draft preparation. Every one of the
-105 shared operations is explicitly classified: 72 reviewed proposals, 27 routed
+105 shared operations is explicitly classified: 74 reviewed proposals, 25 routed
 to their dedicated review screen, and six internal test-adapter operations that
 are never advertised to the model. Guided operations are not direct AI execution.
 
@@ -37,8 +37,9 @@ Both retain shared permission/dependency locks and the saved turn's idempotency
 key. Their strict schemas reject unsupported fields, duplicate/oversized recall
 selections, invalid dates and cross-clinic or selected-patient references. The
 exact alert target adds selection metadata to the model context; its original
-owner source text is read directly for the deterministic human review. Provider dispatch, policy decisions, clinic
-transfer, organization access and binary capture retain dedicated screens.
+owner source text is read directly for the deterministic human review. Provider
+dispatch, master-policy decisions, clinic transfer/adoption approval and binary
+capture retain dedicated screens.
 
 `scripts/smoke-assistant-guided-completion.py` provides V2-only synthetic `setup`,
 `review` and `readback` phases. Run setup/review, inspect and confirm both saved
@@ -50,6 +51,41 @@ state files outside Git. The script itself is covered through authenticated loca
 APIs with a stubbed intent model; hosted real-model/browser acceptance is still
 required after deployment. These workflows do not establish emergency-service,
 real-provider or real-clinic acceptance.
+
+Two administrative operations also support exact saved proposals:
+
+- `organization.join_cancel`: “Withdraw organization request [ID] reason:
+  [exact reason]” identifies only this clinic's pending request. Review shows the
+  originally requested organization, clinic, requester, dates, reason, access
+  consent and inherited restrictions. Confirmation withdraws that request while
+  preserving its history. It grants no organization access, changes no membership
+  and transfers no records. Changed requests, clinic details or requester records
+  require a fresh review; already accepted or withdrawn requests cannot be used.
+- `access.member`: “Set member [ID] read restrictions: [comma-separated read
+  capability IDs, or none] reason: [exact reason]” replaces the complete list for
+  another clinic member. Review shows current/new member restrictions, all current
+  and resulting capabilities, inherited restrictions, and view availability with
+  dependencies (billing also needs patients; mixed views need every area). An
+  inactive member stays inactive. Member roles, write permissions and memberships
+  are unchanged; clinic/master restrictions still apply. Own-account restriction
+  changes and organization-master recovery-access changes are rejected.
+
+The server extracts these administrative targets, complete lists and reasons from
+that exact operator turn, ignoring model substitutions, and supplies current
+versions. Both require clinic-wide chat and retain current administrator checks.
+Member-access reviews also pin an internally generated digest of organization
+policy and actor/target account relationships, covering authoritative state kept
+outside versioned clinic records. The shared executor checks it under its writer
+lock before applying the restriction change. Existing direct UI calls remain
+compatible. Completed confirmations replay the original receipt even if the
+reviewed policy subsequently changes.
+
+`api/tests/test_assistant_administration.py` exercises the real shared proposal,
+saved confirmation and read-permission paths with synthetic records, including
+inherited restrictions, route dependencies, inactive members, protected masters,
+permission revocation, concurrent adoption acceptance and policy/account changes.
+Model intent is stubbed in these regressions. Hosted model/browser acceptance and
+real-clinic administrative sign-off remain separate from these engineering checks.
 
 Four formerly advertised low-level operations (raw imports and binary recording
 creation/finalization) now route to the existing import/recorder screens, where
@@ -118,7 +154,7 @@ complete source facts. This is not a limit on factual queries: deterministic
 reads still count/filter the complete authorized clinic dataset. Missing context
 requires exact identification or clarification, not guessed IDs or facts.
 
-New acceptance covers all 60 expanded contracts through saved proposal, actual
+New acceptance covers all 62 expanded contracts through saved proposal, actual
 confirmation, persisted result and replay, plus invalid values, unknown fields,
 patient isolation, reference changes and permission revocation. The hosted
 real-model scenario is repeatable with scripts/smoke-assistant-completion.py.
