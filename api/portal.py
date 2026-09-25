@@ -42,10 +42,17 @@ def view(c,g):
     from spine.reader import native_records
     patient=owned(c,g['patient_id'],g['clinic_id'],'patient');rs=all_records(c,g['clinic_id'])+native_records(g['clinic_id'],g['patient_id'])
     selected=[r for r in rs if r['data'].get('patient_id')==patient['id']]
+    owner_patient_fields={'name','species','breed','sex','age','weight','date_of_birth','microchip_id','color'}
     def safe(r):
         r={**r,'data':dict(r['data'])}
         if 'observations' in r['data']:r['data']['observations']=[{k:v for k,v in o.items() if k!='source'} for o in r['data']['observations']]
-        return {**r,'data':{k:v for k,v in r['data'].items() if k not in ('path','source_ids','source_id','owner_id','additional_owner_ids','owner_access','fingerprint','edit_key','edit_fingerprint','receipt')}}
+        if r['kind']=='patient':
+            data={k:v for k,v in r['data'].items() if k in owner_patient_fields}
+        else:
+            data={k:v for k,v in r['data'].items()
+                  if k not in ('path','source_ids','source_id','owner_id','additional_owner_ids','owner_access','fingerprint','edit_key','edit_fingerprint','receipt','migration_origin')
+                  and not k.startswith('v1_')}
+        return {**r,'data':data}
     selected.sort(key=lambda r:r['data'].get('occurred_at',r['created_at']),reverse=True)
     return {'patient':safe(patient),'events':[safe(r) for r in selected if r['kind']=='event' and r['data'].get('approved')],
             'medications':[safe(r) for r in selected if r['kind']=='medication'],'reminders':sorted([safe(r) for r in selected if r['kind']=='reminder'],key=lambda r:r['data']['due']),

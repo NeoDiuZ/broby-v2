@@ -264,6 +264,45 @@ def test_migration_preview_stable_mapping_replay_and_conflict():
     err(409,lambda:act('migration.preview',payload,actor='clinic-east-admin'))
 
 
+def test_migration_existing_patient_edit_invalidates_preview_before_apply():
+    records=[
+        {'id':'v1-consultation-source','kind':'source','data':{'patient_id':'luna','text':'Historical source text'}},
+        {'id':'v1-consultation-event','kind':'event','data':{'patient_id':'luna','category':'consultation',
+            'title':'Historical consultation','body':'Review original source',
+            'source_ids':['v1-consultation-source']}},
+    ]
+    payload={'source_system':'synthetic-v1-consultations','records':records}
+    preview=act('migration.preview',payload,actor='clinic-east-admin')
+    assert [(r['id'],r['kind']) for r in preview['existing_references']]==[('luna','patient')]
+    with db.connection(True) as c:
+        patient=db.get(c,'luna')
+        db.update(c,patient,{**patient['data'],'name':'Luna reviewed during migration'})
+    err(409,lambda:act('migration.apply',{**payload,'expected_digest':preview['digest']},actor='clinic-east-admin'))
+    assert not get(preview['mapping']['v1-consultation-event'])
+    fresh=act('migration.preview',payload,actor='clinic-east-admin')
+    assert fresh['digest']!=preview['digest']
+    applied=act('migration.apply',{**payload,'expected_digest':fresh['digest']},actor='clinic-east-admin')
+    assert get(applied['mapping']['v1-consultation-event'])['data']['patient_id']=='luna'
+
+
+def test_migration_existing_patient_identity_assertion_is_checked():
+    patient=get('luna')
+    records=[{'id':'v1-consultation-source','kind':'source',
+              'data':{'patient_id':'luna','text':'Historical source text'}}]
+    assertion={'id':'luna','kind':'patient','version':patient['version'],
+               'name':patient['data']['name'],'species':patient['data']['species']}
+    payload={'source_system':'synthetic-v1-consultations','records':records,
+             'reference_assertions':[assertion]}
+    preview=act('migration.preview',payload,actor='clinic-east-admin')
+    assert preview['existing_references'][0]['id']=='luna'
+    err(409,lambda:act('migration.preview',{**payload,'reference_assertions':[{**assertion,'name':'Wrong pet'}]},actor='clinic-east-admin'))
+    with db.connection(True) as c:
+        current=db.get(c,'luna')
+        db.update(c,current,{**current['data'],'breed':'Reviewed during preview'})
+    err(409,lambda:act('migration.apply',{**payload,'expected_digest':preview['digest']},actor='clinic-east-admin'))
+    assert not get(preview['mapping']['v1-consultation-source'])
+
+
 def test_totp_rfc_test_vector():
     # RFC 6238 Appendix B SHA-1 vector, reduced to six decimal digits.
     import base64

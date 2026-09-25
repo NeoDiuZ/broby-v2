@@ -6,6 +6,8 @@ PERMISSIONS={'migration.preview':{'admin'},'migration.apply':{'admin'}}
 def plan(c,clinic,p):
     from actions import fail,require
     from import_validation import validate
+    if 'target_clinic_id' in p and p['target_clinic_id']!=clinic:
+        fail('Migration preview targets a different V2 clinic',409)
     source=require(p,'source_system');items=copy.deepcopy(p.get('records'))
     if not isinstance(items,list) or not 1<=len(items)<=5000:fail('Provide 1–5000 clinical records')
     kinds={'owner','patient','source','event','observation','consultation','template','reminder'}
@@ -33,6 +35,38 @@ def plan(c,clinic,p):
         for sid in r['data'].get('source_ids',[]):
             if sid not in by_id or by_id[sid]['kind']!='source' or by_id[sid]['data'].get('patient_id')!=r['data'].get('patient_id'):fail('Invalid patient source receipt')
     validate(items,by_id)
+    # A preview that links new history to an existing patient or source must be
+    # invalidated if that receiving record changes before Apply. Repeated source
+    # rows are protected separately by the exact-content replay check below.
+    imported_ids={r['id'] for r in items}
+    referenced=set()
+    for r in items:
+        d=r['data']
+        referenced.update(d[f] for f in fields if d.get(f))
+        for f in ('source_ids','additional_owner_ids'):
+            referenced.update(d.get(f,[]))
+        for section in d.get('summary',[]):
+            referenced.update(section.get('source_ids',[]))
+    existing_references=[]
+    for id in sorted(referenced-imported_ids):
+        row=known[id]
+        fingerprint=hashlib.sha256(json.dumps(row['data'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        existing_references.append({'id':id,'kind':row['kind'],'version':row['version'],'fingerprint':fingerprint})
+    assertions=p.get('reference_assertions',[])
+    if not isinstance(assertions,list):fail('Reference assertions must be a list')
+    asserted=set()
+    for check in assertions:
+        if not isinstance(check,dict) or set(check)!={'id','kind','version','name','species'} or check.get('kind')!='patient':
+            fail('Use exact patient identity and version assertions for existing migration targets')
+        id=check['id']
+        if not isinstance(id,str) or id in asserted or id not in referenced-imported_ids:
+            fail('Each asserted patient must be one distinct existing migration reference')
+        asserted.add(id)
+        row=known[id]
+        if row['kind']!='patient' or type(check['version']) is not int or check['version']<1 or not isinstance(check['name'],str) or not isinstance(check['species'],str):
+            fail('Invalid existing patient identity assertion')
+        if (row['version'],row['data'].get('name'),row['data'].get('species'))!=(check['version'],check['name'],check['species']):
+            fail('Existing patient identity or version changed; review the migration mapping again',409)
     counts={};unchanged=0;new=[]
     for r in items:
         counts[r['kind']]=counts.get(r['kind'],0)+1
@@ -41,8 +75,10 @@ def plan(c,clinic,p):
             if old['clinic_id']!=clinic or old['kind']!=r['kind'] or old['data']!=r['data']:fail('Source identity already exists with different content. Reconcile explicitly; no records were overwritten.',409)
             unchanged+=1
         else:new.append(r)
-    digest=hashlib.sha256(json.dumps({'clinic':clinic,'source':source,'records':items},sort_keys=True).encode()).hexdigest()
-    return {'digest':digest,'mapping':mapping,'counts':counts,'new_count':len(new),'unchanged_count':unchanged,'new_records':new,'financial_import':False,'media_import':False}
+    digest=hashlib.sha256(json.dumps({'clinic':clinic,'source':source,'records':items,
+                                      'existing_references':existing_references,'reference_assertions':assertions},sort_keys=True).encode()).hexdigest()
+    return {'digest':digest,'mapping':mapping,'counts':counts,'new_count':len(new),'unchanged_count':unchanged,
+            'new_records':new,'existing_references':existing_references,'financial_import':False,'media_import':False}
 
 def dispatch(c,a,p,clinic,actor):
     from actions import fail
