@@ -1,13 +1,13 @@
 # Reviewed assistant operations
 
-## Current coverage — 24 September completion release
+## Current coverage — 25 September 2026
 
-All 67 directly proposed assistant operations now have strict typed contracts,
+All 69 directly proposed assistant operations now have strict typed contracts,
 read-only preparation and labelled deterministic reviews. This replaces the old
 49 untyped field descriptions and adds ten routine operations: speaker labels,
 automation settings, save/archive dashboards, recall preference/cancellation,
 leave request/review/withdrawal and discharge draft preparation. Every one of the
-105 shared operations is explicitly classified: 67 reviewed proposals, 32 routed
+105 shared operations is explicitly classified: 69 reviewed proposals, 30 routed
 to their dedicated review screen, and six internal test-adapter operations that
 are never advertised to the model. Guided operations are not direct AI execution.
 
@@ -17,6 +17,19 @@ the source file, manifest and migration review can actually be inspected. Stripe
 Twilio, clinic transfer/adoption, complex rota changes and owner-conversation
 replies similarly retain their purpose-built reviews. No arbitrary untyped
 mutation fallback remains.
+
+Owner-conversation acknowledgement and closure now have direct assistant
+proposals. The operator must use the exact command “Acknowledge conversation
+[ID] reason: [reason]” or “Close conversation [ID] reason: [reason]”. The server
+requires the exact thread ID and the exact reason in that same request; neither
+can be supplied only by the model. The model receives status, urgency, patient
+ID and version metadata, never the owner's message text or access-link digest.
+The deterministic review displays every human message, the latest owner-turn
+ID, urgency and effect. Conversations with more than 20 messages remain in
+Handover for full review. Pending or closed conversations cannot be proposed.
+Confirmation rechecks the thread and referenced records under the writer lock;
+a newer owner message requires a fresh review. Neither action sends a reply or
+an external notification.
 
 New reviews validate exact clinic and patient references, calendar dates, finite
 values, explicit tax/discount fields, replacement contact fields and workflow
@@ -32,7 +45,7 @@ complete source facts. This is not a limit on factual queries: deterministic
 reads still count/filter the complete authorized clinic dataset. Missing context
 requires exact identification or clarification, not guessed IDs or facts.
 
-New acceptance covers all 55 expanded contracts through saved proposal, actual
+New acceptance covers all 57 expanded contracts through saved proposal, actual
 confirmation, persisted result and replay, plus invalid values, unknown fields,
 patient isolation, reference changes and permission revocation. The hosted
 real-model scenario is repeatable with scripts/smoke-assistant-completion.py.
