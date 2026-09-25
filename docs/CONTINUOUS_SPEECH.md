@@ -95,3 +95,12 @@ cleanup after acknowledgement. Its upload endpoint was simulated; the hosted
 fixture above separately exercised the real server/provider. No ambient
 microphone audio was captured. Physical microphone and long-running mobile
 acceptance remain unverified.
+
+
+### Fixture clinic binding (2026-09-25)
+
+The staged acceptance state now pins the host, clinic and actor. Adding another clinic can change the login default, because login chooses the first clinic identifier in sorted order. Existing recordings must never follow that changing default.
+
+A legacy state without binding is recovered only after exactly one active authorized clinic proves the saved recording, patient, consultation and (when saved) transcript-source relationship through a read-only history request. The verified binding is persisted atomically with private file permissions. Ambiguous/missing identity, changed membership, partial state or a different host fails closed. New previews require a fresh state path. Current clinical holds/read restrictions are checked independently; locating preserved history never makes it available for current use.
+
+The September 25 old-fixture failure was reproduced as login-default drift: the fixture remained in clinic-east, while a newly created synthetic clinic became the login default. Read-only checks found all original fixture records, a completed job without reconciliation qualification, and the exact original audio checksum in clinic-east. The corrected verify phase passed using a private copy of the legacy state, with no audio upload, clinical changes or new speech-provider request. The original state remains available for comparison.
