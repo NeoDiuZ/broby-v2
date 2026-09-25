@@ -91,3 +91,25 @@ a fresh authorized read and replaced it with “Access restricted”; independen
 readback contained zero billing records, compared with two before restriction.
 The fixture contained no reconciliation review. This local acceptance does not
 claim the shortcut runs in a hosted deployment after reconciliation is exercised.
+
+## Whole-workspace pagination assessment
+
+The source specification already has cursor/limit patient and timeline APIs.
+It gives no whole-workspace pagination or clinic capacity threshold. Full-bootstrap
+pagination remains scaling work, not a missing named read endpoint.
+
+A disposable two-store probe showed why a local revision cursor is insufficient:
+changing only original attachment bytes opens the correct clinical hold while
+all PMS revisions and reconciliation ledger rows remain identical. A 5,059-record
+PMS-only snapshot materialized 10,118 rows; repeating existing eligibility for 21
+hypothetical 250-row pages materialized 106,239 rows, before native/page/HTTP work.
+Native dependencies were stubbed empty: this is a lower bound, not a hosted
+benchmark or implemented paging endpoint.
+
+Genuine bounded paging needs an authoritative dependency/integrity read model
+covering PMS, native and cross-clinic changes plus media integrity, bounded native
+reads, and consistent snapshot assembly. Complete-clinic versus explicit downloaded
+working-set offline availability must also be defined before changing 24 consumers
+that currently expect complete snapshots. Superficial JSON chunking does not solve
+backend or offline-memory scaling. Preserve the global reconciliation fallback
+until those contracts are proven; hosted capacity remains unaccepted.

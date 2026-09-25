@@ -1,15 +1,18 @@
 # Broby V2 requirements audit — 25 September 2026
 
-For the concise launch classification and release gates, see
-[the 24 September launch audit](LAUNCH_AUDIT_2026-09-24.md).
+For the current complete/partial/blocked classification, per-item evidence,
+remaining work and consolidated inputs, see the
+[full 58-item acceptance report](VISION_ACCEPTANCE_2026-09-26.md).
+The [24 September launch audit](LAUNCH_AUDIT_2026-09-24.md) is historical context.
 
 Source: [Broby V2 Google Doc](https://docs.google.com/document/d/1Oca1mRqo32iZ7OjH_nz24OjChAuxAUo369uWJmq1kR0/edit), both tabs re-read on 25 September. The 58-item **THE VISION** tab is the full scope. **FIRST BUILD** describes an earlier, smaller milestone; completing it does not complete the product.
 
 This replaces the obsolete status table, which incorrectly continued to list features shipped in PR #5 as missing. The first-build PostgreSQL contract is implemented. The whole vision is **not ready for a real-clinic cutover**. Broby New is a live, authenticated deployment with synthetic data. Stripe sandbox checkout/refunds are deployed and verified; WhatsApp trial activation and an own-number join/reply exchange are verified; the provider setup screen still withholds the supplied template controls, and backend configuration remains pending. Lab feeds remain simulations. “Implemented” below describes the named capability in that agreed release scope, not a guarantee of clinical accuracy or an end-to-end production certification.
 
-Current Doc-scope classification: **40 implemented, 16 partial, one lab test-mode
+Historical code-capability census (not current launch acceptance): **40 implemented, 16 partial, one lab test-mode
 integration and one WhatsApp provider integration in progress** (58 total).
-Real-clinic launch gates below are tracked separately from those counts.
+The linked current acceptance report uses stricter completion/acceptance categories;
+these older implementation counts must not be interpreted as completed real-clinic features.
 
 ## Every requested feature
 
