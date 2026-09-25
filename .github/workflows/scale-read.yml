@@ -42,7 +42,7 @@ jobs:
       SCALE_PATIENTS: ${{ inputs.patients }}
       SCALE_REQUESTS: ${{ inputs.requests }}
       SCALE_CONCURRENCY: ${{ inputs.concurrency }}
-      SCALE_OUTPUT: ${{ runner.temp }}/broby-v2-scale-${{ github.run_id }}
+      SCALE_OUTPUT: /tmp/broby-v2-scale-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
