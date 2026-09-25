@@ -15,13 +15,13 @@ status describes the stored outbox state and does not certify delivery.
 Inventory records with invalid quantities or malformed legacy data are reported
 separately and excluded from stock totals. Unusual legacy species/status values
 remain visible as labelled counts instead of crashing the report. Service items
-are excluded from stock. The report never
-infers a tax position, bank settlement or a clinical outcome.
+are excluded from stock. The report never infers a tax position, bank
+settlement or a clinical outcome.
 
 This is a clinic operations view alongside the existing clinical and financial
-reports. General-ledger accounting, independent settlement reconciliation,
-performance at a real clinic's data volume and hosted browser acceptance are
-separate release work. The focused tests cover clinic isolation, local-day
+reports. General-ledger accounting, independent settlement reconciliation and
+performance at a real clinic's data volume are separate release work. The
+focused tests cover clinic isolation, local-day
 boundaries, owner links, status counts, invalid stock, CSV parity and read
 permissions; their passing result alone is not a launch certification.
 
@@ -30,3 +30,14 @@ patients, 5,000 appointments, 5,000 messages and 1,000 stock items) returned
 the full report in 21, 20 and 20 ms across three reads. This tests the server
 query path at that fixture size; it does not measure a concurrent clinic workload
 or hosted latency.
+
+On 25 September 2026, the deployed V2 browser rendered the operational report
+for the East Coast synthetic clinic with 28 registered patients, 15
+consultations, 8 appointments and 5 messages in the displayed 30-day period.
+Switching to 7 days changed the displayed period to 19–25 September. Switching
+to a separate synthetic receiving clinic and opening Reports displayed 6
+registered patients, 4 consultations, no appointments and 1 message. A direct
+authenticated CSV readback and JSON comparison were also checked against the
+full clinic dataset; the browser's operating-system download event was not
+observed. These checks show deployed V2 rendering and clinic scoping with
+synthetic data, not real-clinic or physical-device acceptance.
