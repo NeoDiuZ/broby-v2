@@ -21,6 +21,11 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     matches=[p for p in patients if re.search(r'(?<!\w)'+re.escape(p['data']['name'].lower())+r'(?!\w)',q)]
     if not patient and len(matches)>1:return {'text':'Choose the exact patient before retrieving or changing their record.','choices':matches,'sources':[]}
     if not patient and matches:patient=matches[0]
+    if re.search(r'\b(?:owners?|clients?|households?|pets?|belong\w*|linked)\b',q):
+        owners=[r for r in rs if r['kind']=='owner' and not r['data'].get('merged_into')]
+        named=[r for r in owners if r['data'].get('name') and re.search(r'(?<!\w)'+re.escape(r['data']['name'].casefold())+r'(?!\w)',q)]
+        if len(named)>1 and not any(re.search(r'(?<!\w)'+re.escape(r['id'].casefold())+r'(?!\w)',q) for r in named):
+            return {'text':'Multiple clinic owners match this request. Open Clients and specify the exact owner ID before I retrieve linked patients.','sources':[]}
     if any(x in q for x in ('differential','what disease','what should i prescribe','diagnose','recommend treatment')):
         return {'text':'I can retrieve recorded findings and prescribed instructions. Diagnosis and treatment decisions stay with the veterinarian.','sources':[]}
     clinic_timezone=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore')

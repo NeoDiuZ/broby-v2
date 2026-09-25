@@ -120,6 +120,20 @@ def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch
     err(422,lambda:query({'kind':'appointment','owner_id':owner['id']}))
 
 
+def test_duplicate_owner_names_require_exact_identity_before_model_query(monkeypatch):
+    first=act('owner.create',{'name':'SYNTHETIC Same Client'})
+    act('owner.create',{'name':'SYNTHETIC Same Client'})
+    monkeypatch.setattr(assistant.providers,'available',lambda:{'ai':True})
+    monkeypatch.setattr(assistant.providers,'model_json',lambda *args:pytest.fail('Ambiguous owner reached the model'))
+    with db.connection() as c:
+        result=assistant.answer(c,'clinic-east','clinic-east-vet','Show pets linked to SYNTHETIC Same Client')
+    assert 'exact owner ID' in result['text'] and 'dashboard' not in result
+    selected=ask(monkeypatch,'Show pets linked to SYNTHETIC Same Client, owner ID '+first['id'],
+                 {'read':{'kind':'patient','scope':'clinic','owner_id':first['id']}})
+    assert selected['dashboard']['query']['owner_id']==first['id']
+    assert selected['dashboard']['count']==0
+
+
 def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
     with db.connection(True) as c:
         first=db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Midnight clinic time','occurred_at':'2026-09-23T16:30:00Z'})

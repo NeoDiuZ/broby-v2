@@ -17,6 +17,7 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 - Patients linked to an exact clinic owner ID, including primary and additional
   owners. An owner name alone is not an identity key; the assistant must select
   the recorded owner ID before retrieving the complete clinic-scoped set.
+  Duplicate owner names require explicit identity selection rather than a guess.
 - Observations with an exact concept code, optionally exact unit and typed
   equality. Boolean false remains distinct from zero and the text "false".
 - User-supplied numeric bounds for an exact observation code and unit. No unit
@@ -75,6 +76,7 @@ their persistence, not broad language accuracy or clinic-scale performance.
 
 The exact owner-linked patient filter passed a focused synthetic SQLite and
 PostgreSQL test on 25 September. It covered assistant/view parity, current
-primary and additional links, a removed additional link, wrong-kind rejection,
-foreign-clinic owner rejection and malformed historical link data. Hosted
+primary and additional links, a removed additional link, duplicate-name
+clarification, wrong-kind rejection, foreign-clinic owner rejection and
+malformed historical link data. Hosted
 real-model phrasing and browser acceptance are still pending for this filter.
