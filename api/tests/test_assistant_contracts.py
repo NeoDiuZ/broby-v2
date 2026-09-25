@@ -289,6 +289,14 @@ def test_conversation_resolution_new_owner_turn_requires_fresh_review(monkeypatc
     assert snapshot() == before
 
 
+def test_conversation_resolution_cannot_cross_selected_patient(monkeypatch):
+    payload = fixtures(monkeypatch)['conversation.close']
+    before = snapshot()
+    result = proposal(monkeypatch, 'conversation.close', payload, patient='milo',
+        message=f"Close conversation {payload['id']} reason: {payload['reason']}")
+    assert 'action' not in result and snapshot() == before
+
+
 def test_conversation_model_receives_metadata_but_review_displays_exact_text(monkeypatch):
     payload = fixtures(monkeypatch)['conversation.acknowledge']
     captured = {}
