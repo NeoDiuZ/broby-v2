@@ -99,3 +99,18 @@ test exact text, missing V1 thread IDs, duplicate-name isolation, existing V2
 patient assertions, replay, stale reviews, refusals and private file output
 in both SQLite and PostgreSQL modes. Real export acceptance must compare V1
 table counts and IDs to the complete approved export without writing to V1.
+
+## Hosted synthetic acceptance — 25 September 2026
+
+V2 backend and frontend revision `5adab61f9359dccf9ad5ad62c714d01ed3fed472`
+was deployed successfully. An isolated synthetic V1 row and reviewed crosswalk
+were prepared with the CLI, previewed in the V2 migration API and applied to a
+synthetic receiving clinic. Editing the target patient invalidated the old
+preview digest; Apply rejected it with HTTP 409. A fresh preview and Apply
+succeeded, and a repeat preview reported both records unchanged. A second
+authenticated staff session read back the exact original complaint, private
+historical AI suggestion and patient link. The staff browser showed the dated
+historical consultation in the patient's timeline and its full source detail.
+The owner API and browser showed the ordinary pet profile without the private
+suggestion, review reason or migration provenance. No real V1 data or service
+was accessed in this hosted rehearsal.
