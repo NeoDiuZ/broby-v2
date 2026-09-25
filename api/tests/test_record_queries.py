@@ -2,7 +2,7 @@
 import uuid
 import pytest
 from fastapi.testclient import TestClient
-import assistant, db, main
+import assistant, db, main, record_queries
 from record_queries import dashboard, select_records, validate_query
 from test_integrity import isolated, act, get, rows, err
 
@@ -115,6 +115,24 @@ def test_appointment_species_joins_only_clinic_patients_and_survives_saved_view(
     assert {'label':'Dog','count':1} in grouped['groups']
     assert {'label':'Not recorded','count':2} in grouped['groups']
     assert dog['id'] not in {r['id'] for r in answer['sources']}
+
+
+def test_appointment_species_lookup_batches_references_without_full_patient_scan(monkeypatch):
+    with db.connection(True) as c:
+        for index in range(501):
+            patient=db.record(c,'patient','clinic-east',{'name':f'SYNTHETIC scale cat {index}','species':'Cat'})
+            db.record(c,'appointment','clinic-east',{'patient_id':patient['id'],'date':'2098-10-01',
+                                                     'time':'09:00','status':'scheduled'})
+    original=record_queries.all_records
+    def guarded(c,clinic,kind=None):
+        assert kind!='patient', 'Appointment filtering must not scan the whole patient table'
+        return original(c,clinic,kind)
+    monkeypatch.setattr(record_queries,'all_records',guarded)
+    result=query({'kind':'appointment','species':'cat','group_by':'species',
+                  'start':'2098-10-01','end':'2098-10-01'})
+    assert result['count']==501
+    assert result['groups']==[{'label':'Cat','count':501}]
+    assert len(result['records'])==100 and result['truncated'] is True
 
 
 def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch):

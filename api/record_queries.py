@@ -5,7 +5,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, ValidationError, model_validator
-from db import all_records, get, now
+from db import all_records, get, now, unpack
 from billing import outstanding
 
 RecordKind = Literal['patient','event','observation','medication','medication_history','invoice','payment','inventory','appointment','reminder','intake','outbox','consultation']
@@ -123,6 +123,22 @@ def query_summary(query, patient=None, owner=None):
     return ' · '.join(parts)
 
 
+def _appointment_patients(c, clinic, appointments):
+    """Fetch only referenced same-clinic patients, bounded by SQLite's bind limit."""
+    ids=sorted({patient_id for row in appointments
+                if row['clinic_id']==clinic and row['kind']=='appointment'
+                for patient_id in [row['data'].get('patient_id')]
+                if isinstance(patient_id,str) and patient_id})
+    linked={}
+    for offset in range(0,len(ids),500):
+        batch=ids[offset:offset+500]
+        sql='SELECT * FROM records WHERE clinic_id=? AND kind=? AND id IN ('+','.join('?' for _ in batch)+')'
+        for row in c.execute(sql,(clinic,'patient',*batch)):
+            patient=unpack(row)
+            linked[patient['id']]=patient['data']
+    return linked
+
+
 def select_records(c, clinic, query, records=None):
     from spine.reader import native_records
     query=validate_query(c,query,clinic)
@@ -130,7 +146,7 @@ def select_records(c, clinic, query, records=None):
         records=all_records(c,clinic,query['kind'])
         if query['kind'] in {'event','observation'}:
             records+=native_records(clinic,query.get('patient_id'))
-    linked_patients={r['id']:r['data'] for r in all_records(c,clinic,'patient')} if query['kind']=='appointment' and (query.get('species') or query.get('owner_id') or query.get('group_by')=='species') else {}
+    linked_patients=_appointment_patients(c,clinic,records) if query['kind']=='appointment' and (query.get('species') or query.get('owner_id') or query.get('group_by')=='species') else {}
     def linked_patient(data):
         patient_id=data.get('patient_id')
         return linked_patients.get(patient_id) if isinstance(patient_id,str) else None
