@@ -92,3 +92,44 @@ the restricted nurse. Readback does not clear restrictions or widen access.
 Only a root-run hosted script and observed browser workflow constitute hosted
 acceptance. None of these synthetic checks establish clinic administrative policy,
 real-clinic readiness, external provider delivery or access to real customer data.
+
+## API-only fallback when verified service execution is unavailable
+
+There is no public independent-clinic enrollment route. Invitation acceptance
+attaches an account to an existing staff member; `organization.clinic_create`
+always creates a child of the current organization. Do not change shared Railway
+authentication or alter an existing clinic's adoption to bypass this boundary.
+
+The existing organization master can instead prepare a **fresh synthetic child**
+using ordinary authenticated APIs. Verify the hosted V2 identity and revision,
+then set the existing parent clinic/actor/organization IDs and a new private state
+path. Run each phase separately:
+
+```sh
+python scripts/smoke-assistant-access-only.py "$V2_ACCEPTANCE_ORIGIN" \
+  --credentials "$V2_ACCEPTANCE_CREDENTIALS" --state "$V2_ACCESS_ONLY_STATE" \
+  --parent-clinic "$V2_PARENT_CLINIC" --parent-actor "$V2_PARENT_ACTOR" \
+  --organization "$V2_PARENT_ORGANIZATION" \
+  --confirm-v2-project ca389ebd-0186-4b7e-baec-8ddacdfc406b --phase setup
+```
+
+Repeat with `--phase review`. Setup adds only one new child clinic and a new nurse
+without a login. Review prepares a stale proposal, adds `read.inventory` only to
+the fresh child's empty clinic locks, verifies stale confirmation rejection,
+then prepares a fresh `read.billing` restriction. The organization policy,
+parent clinic and existing staff/memberships remain unchanged. The script pins
+its parent identity and policy, validates the exact fresh child name/IDs and
+rejects existing-clinic retargeting. Interrupted child creation or lock changes
+replay the same mutation key; successful browser confirmation is never automated.
+
+In the browser select `SYNTHETIC Assistant Access [tag]`, open the saved fresh
+conversation under `turns.tighten-access` (title begins `Set member…`), review all
+effective access and confirm. Leave the `Please Set member…` stale proposal
+unconfirmed. Repeat the command with `--phase readback` to require that saved
+execution, compare its exact review and replay only the completed receipt.
+
+This fallback establishes **member-access and stale clinic-version** acceptance.
+It does **not** establish hosted organization-policy drift or independent adoption
+withdrawal. Those remain separate local browser/API evidence until verified
+service execution makes the full disposable fixture available. No restrictions
+are cleared after acceptance.
