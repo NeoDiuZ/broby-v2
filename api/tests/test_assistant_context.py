@@ -1,5 +1,7 @@
 import json
+import sqlite3
 import assistant_context as context
+import db
 
 
 def records(count=1000):
@@ -32,3 +34,24 @@ def test_small_context_retains_metadata_and_never_mutates_sources():
     selected,scope=context.select(source,'Show patient count')
     assert len(selected)==len(source) and scope['omitted_records']==0
     assert json.dumps(source,sort_keys=True)==before
+
+
+def test_database_candidates_keep_old_exact_target_without_loading_history():
+    c=sqlite3.connect(':memory:',factory=db.TransactionConnection)
+    c.row_factory=sqlite3.Row
+    c.execute('CREATE TABLE records(id TEXT PRIMARY KEY,kind TEXT,clinic_id TEXT,data TEXT,version INTEGER,created_at TEXT,updated_at TEXT)')
+    old=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Ancient Pet','species':'Cat','owner_id':'ancient-owner'},'ancient-pet')
+    db.record(c,'owner','clinic-east',{'name':'SYNTHETIC Ancient Owner'},'ancient-owner')
+    c.execute("UPDATE records SET created_at='2000-01-01' WHERE id IN ('ancient-pet','ancient-owner')")
+    for i in range(600):
+        db.record(c,'source','clinic-east',{'patient_id':f'other-{i}','title':f'Unrelated source {i}','text':'private clinical history'},f'source-{i}')
+    db.record(c,'patient','clinic-river',{'name':'SYNTHETIC Ancient Pet','species':'Dog'},'foreign-pet')
+    candidates,total=context.candidates(c,'clinic-east','Update SYNTHETIC Ancient Pet',old['id'],(old,))
+    ids={row['id'] for row in candidates}
+    assert total==602 and 'ancient-pet' in ids and 'ancient-owner' in ids and 'foreign-pet' not in ids
+    assert len(candidates)<total
+    selected,scope=context.select([{'id':r['id'],'kind':r['kind'],'version':r['version'],'data':r['data']} for r in candidates],
+                                  'Update SYNTHETIC Ancient Pet',old['id'],available_records=total)
+    assert {'ancient-pet','ancient-owner'}<={r['id'] for r in selected}
+    assert scope['available_records']==total and scope['omitted_records']>0
+    c.close()

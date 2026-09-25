@@ -158,6 +158,26 @@ print(json.dumps({'seeded':True}))''')
         saved=req('GET','dashboards/'+view['id'])['result']
         check(saved['count']==expected_appointments and saved['groups']==[{'label':'Cat','count':expected_appointments}],
               'saved appointment query counts every exact synthetic clinic patient link')
+        report['assistant_intent_profile']=python('''import assistant,db,json,time
+assistant.providers.available=lambda:{'ai':True}
+plans=[('Show appointments for SYNTHETIC Load pet 00000',{'read':{'kind':'appointment','scope':'patient'}}),
+       ('Count Cat patients in clinic',{'read':{'kind':'patient','scope':'clinic','species':'Cat'}}),
+       ('Show clinic-wide appointments for synthetic-scale-vet',{'read':{'kind':'appointment','scope':'clinic','clinician':'synthetic-scale-vet'}})]
+measurements=[]
+for question,plan in plans:
+ captured={}
+ def model(instructions,payload):
+  captured.update(payload['record_context']);return plan
+ assistant.providers.model_json=model
+ began=time.monotonic()
+ with db.connection(snapshot=True) as c:answer=assistant.answer(c,'clinic-east','clinic-east-admin',question)
+ measurements.append({'question':question,'ms':round((time.monotonic()-began)*1000,1),
+                      'count':answer['dashboard']['count'],'model_candidates':captured['included_records'],
+                      'available_records':captured['available_records']})
+print(json.dumps(measurements))''')
+        intent_counts=[item['count'] for item in report['assistant_intent_profile']]
+        check(intent_counts[0]==1 and intent_counts[1]>=a.patients and intent_counts[2]==expected_appointments,
+              'assistant intent and complete factual reads agree at synthetic clinic scale')
         operations=req('GET','reports/operations?days=30')
         check(operations['patients']['total']==a.patients+9 and operations['appointments']['total']>=expected_appointments and
               operations['stock']['items']>=((a.patients+19)//20),

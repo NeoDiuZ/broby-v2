@@ -7,6 +7,7 @@ import db, actions, jobs, main
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr('spine.reader.native_records',lambda *a,**k:[])
+    monkeypatch.setattr('spine.reader.observation_fields',lambda *a,**k:[])
     monkeypatch.setattr('spine.reader.clinical_archive',lambda *a,**k:{})
     monkeypatch.setattr(db,'DB',tmp_path/'test.sqlite3')
     monkeypatch.setattr(db,'DATA',tmp_path)
