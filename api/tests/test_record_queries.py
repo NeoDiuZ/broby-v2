@@ -162,6 +162,7 @@ def test_typed_equality_false_is_not_zero_and_exact_unit_comparisons():
     {'kind':'observation','code':'x','value_equals':float('inf')},
     {'kind':'invoice','low_stock':'false'}, {'kind':'patient','status':'due'},
     {'kind':'invoice','species':'Cat'}, {'kind':'patient','clinician':'clinic-east-vet'},
+    {'kind':'patient','owner_id':''}, {'kind':'patient','owner_id':False},
     {'kind':'patient','group_by':'clinician'},
     {'kind':'invoice','start':'20260924'}, {'kind':'invoice','start':'2099-02-30'},
     {'kind':'event','start':'2099-02-01','end':'2099-01-01'},

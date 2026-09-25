@@ -16,7 +16,7 @@ class RecordQuery(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     kind: RecordKind
     patient_id: StrictStr | None = Field(default=None, max_length=100)
-    owner_id: StrictStr | None = Field(default=None, max_length=100, description='Exact clinic owner ID; matches primary or additional owner links on patients.')
+    owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches primary or additional owner links on patients.')
     start: StrictStr | None = None
     end: StrictStr | None = None
     category: StrictStr | None = Field(default=None, max_length=120)
