@@ -115,6 +115,7 @@ def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch
     with db.connection(True) as c:
         foreign=db.record(c,'owner','clinic-river',{'name':'SYNTHETIC Other Clinic'})
         db.record(c,'patient','clinic-east',{'name':'SYNTHETIC malformed links','species':'Cat','owner_id':'owner-luna','additional_owner_ids':None})
+    assert [r['id'] for r in query({'kind':'patient','owner_id':owner['id']})['records']]==[primary['id']]
     err(404,lambda:query({'kind':'patient','owner_id':foreign['id']}))
     err(422,lambda:query({'kind':'appointment','owner_id':owner['id']}))
 
