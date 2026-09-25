@@ -141,7 +141,39 @@ def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch
         db.record(c,'patient','clinic-east',{'name':'SYNTHETIC malformed links','species':'Cat','owner_id':'owner-luna','additional_owner_ids':None})
     assert [r['id'] for r in query({'kind':'patient','owner_id':owner['id']})['records']]==[primary['id']]
     err(404,lambda:query({'kind':'patient','owner_id':foreign['id']}))
-    err(422,lambda:query({'kind':'appointment','owner_id':owner['id']}))
+    err(422,lambda:query({'kind':'invoice','owner_id':owner['id']}))
+
+
+def test_owner_appointments_follow_current_clinic_patient_links(monkeypatch):
+    owner=act('owner.create',{'name':'SYNTHETIC Appointment Household'})
+    primary=act('patient.create',{'name':'SYNTHETIC Appointment Cat','species':'Cat','owner_id':owner['id']})
+    additional=act('patient.create',{'name':'SYNTHETIC Appointment Dog','species':'Dog','owner_name':'Another Synthetic Household'})
+    additional=act('patient.owners',{'id':additional['id'],'version':additional['version'],
+                                     'owner_id':additional['data']['owner_id'],'additional_owner_ids':[owner['id']]})
+    with db.connection(True) as c:
+        cat=db.record(c,'appointment','clinic-east',{'patient_id':primary['id'],'date':'2098-08-04','time':'09:00','reason':'SYNTHETIC owner check','clinician':'clinic-east-vet','status':'scheduled'})
+        dog=db.record(c,'appointment','clinic-east',{'patient_id':additional['id'],'date':'2098-08-04','time':'10:00','reason':'SYNTHETIC owner check','clinician':'clinic-east-vet','status':'scheduled'})
+        db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-08-04','time':'11:00','reason':'SYNTHETIC unrelated','clinician':'clinic-east-vet','status':'scheduled'})
+        foreign=db.record(c,'patient','clinic-river',{'name':'SYNTHETIC foreign link','species':'Cat','owner_id':owner['id']})
+        db.record(c,'appointment','clinic-east',{'patient_id':foreign['id'],'date':'2098-08-04','time':'12:00','reason':'SYNTHETIC foreign link','clinician':'clinic-east-vet','status':'scheduled'})
+        db.record(c,'appointment','clinic-east',{'patient_id':['malformed'],'date':'2098-08-04','time':'13:00','reason':'SYNTHETIC bad link','clinician':'clinic-east-vet','status':'scheduled'})
+    plan={'read':{'kind':'appointment','scope':'clinic','owner_id':owner['id'],'clinician':'clinic-east-vet',
+                  'start':'2098-08-04','end':'2098-08-04','group_by':'species'}}
+    answer=ask(monkeypatch,'Show appointments linked to SYNTHETIC Appointment Household',plan)
+    assert {r['id'] for r in answer['sources']}=={cat['id'],dog['id']}
+    assert answer['dashboard']['groups']==[{'label':'Cat','count':1},{'label':'Dog','count':1}]
+    assert 'owner: SYNTHETIC Appointment Household' in answer['text']
+    view=act('dashboard.save',{'name':'SYNTHETIC household appointments','query':answer['dashboard']['query']})
+    client=TestClient(main.app)
+    saved=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert saved['query']==answer['dashboard']['query']
+    assert {r['id'] for r in saved['records']}=={cat['id'],dog['id']}
+    act('patient.owners',{'id':additional['id'],'version':additional['version'],
+                          'owner_id':additional['data']['owner_id'],'additional_owner_ids':[]})
+    refreshed=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert [r['id'] for r in refreshed['records']]==[cat['id']]
+    with db.connection(True) as c:foreign_owner=db.record(c,'owner','clinic-river',{'name':'SYNTHETIC foreign owner'})
+    err(404,lambda:query({'kind':'appointment','owner_id':foreign_owner['id']}))
 
 
 def test_duplicate_owner_names_require_exact_identity_before_model_query(monkeypatch):
@@ -237,8 +269,28 @@ def test_model_filters_and_query_catalog_are_explicit(monkeypatch):
 
 
 def test_invalid_model_filter_is_not_ignored(monkeypatch):
-    err(422,lambda:ask(monkeypatch,'Show facts',{'read':{'kind':'observation','secret_filter':'nonsense'}}))
-    err(422,lambda:ask(monkeypatch,'Show facts',{'read':{'kind':'event','scope':'all_accounts'}}))
+    for plan in ({'read':{'kind':'observation','secret_filter':'nonsense'}},
+                 {'read':{'kind':'event','scope':'all_accounts'}}):
+        answer=ask(monkeypatch,'Show facts',plan)
+        assert 'cannot safely answer' in answer['text']
+        assert answer['sources']==[] and 'dashboard' not in answer
+
+
+def test_unsupported_model_read_is_completed_and_replays_without_query_leak(monkeypatch):
+    monkeypatch.setattr(assistant.providers,'available',lambda:{'ai':True})
+    calls=[]
+    monkeypatch.setattr(assistant.providers,'model_json',lambda *args:calls.append(args) or {'read':{'kind':'invoice','owner_id':'owner-luna'}})
+    client=TestClient(main.app)
+    payload={'message':'Show invoices linked to this owner','key':'synthetic-unsupported-owner-invoice'}
+    first=client.post('/api/assistant',json=payload)
+    assert first.status_code==200
+    body=first.json()
+    assert 'cannot safely answer' in body['text'] and body['sources']==[] and 'dashboard' not in body
+    assert client.post('/api/assistant',json=payload).json()==body
+    assert len(calls)==1
+    saved=client.get('/api/assistant/conversations/'+body['conversation_id']).json()
+    assert saved['turns'][0]['status']=='completed' and saved['turns'][0]['text']==body['text']
+    assert client.post(f"/api/assistant/conversations/{body['conversation_id']}/turns/{body['turn_id']}/confirm").status_code==409
 
 
 def test_clinic_wide_override_includes_native_facts_outside_original_patient(monkeypatch):
