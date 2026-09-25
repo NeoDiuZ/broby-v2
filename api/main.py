@@ -192,7 +192,9 @@ def export(request:Request):
     for r in rs: r['data'].pop('path',None)
     return Response(json.dumps({'schema_version':1,'exported_at':now(),'records':rs},indent=2),media_type='application/json',headers={'Content-Disposition':'attachment; filename="broby-clinic-export.json"'})
 class Chat(BaseModel):
-    message:str=Field(min_length=1,max_length=2000)
+    # A reviewed portal reply may contain the full 4,000-character staff text
+    # plus its exact thread ID and command prefix.
+    message:str=Field(min_length=1,max_length=4200)
     patient_id:str|None=None
     history:list[str]=Field(default_factory=list,max_length=10)
     conversation_id:str|None=Field(default=None,max_length=100)

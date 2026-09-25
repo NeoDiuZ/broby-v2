@@ -67,7 +67,7 @@ export default function Assistant({patientId,onClose}:{patientId?:string;onClose
    </article></div>)}
    {error&&<p className="error" role="alert">{error}</p>}
   </div>
-  <form className="chat-input" onSubmit={e=>{e.preventDefault();if(input.trim())void ask(input.trim())}}><input value={input} maxLength={2000} disabled={loading} onChange={e=>setInput(e.target.value)} placeholder="Ask about your clinic…" aria-label="Ask Broby"/><button className="primary icon" disabled={busy||loading||!input.trim()} aria-label="Send question"><ArrowRight size={19}/></button></form>
+  <form className="chat-input" onSubmit={e=>{e.preventDefault();if(input.trim())void ask(input.trim())}}><input value={input} maxLength={4200} disabled={loading} onChange={e=>setInput(e.target.value)} placeholder="Ask about your clinic…" aria-label="Ask Broby"/><button className="primary icon" disabled={busy||loading||!input.trim()} aria-label="Send question"><ArrowRight size={19}/></button></form>
   <p className="chat-footnote">Saved answers show facts from that time. Ask again for current records. Does not diagnose or prescribe.</p>
  </aside>{source&&<SourceModal source={source} onClose={()=>setSource(null)}/>}</>;
 }

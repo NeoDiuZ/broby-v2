@@ -67,6 +67,7 @@ OwnerCreate = schema('OwnerCreate', name=(Text, ...), email=(Short, ''), phone=(
 OwnerUpdate = schema('OwnerUpdate', Versioned, name=(Text, ...), email=(Short, ...), phone=(Short, ...))
 Reasoned = schema('Reasoned', Versioned, reason=(Text, ...))
 ConversationResolution = schema('ConversationResolution', Reasoned)
+ConversationReply = schema('ConversationReply', Versioned, message=(Annotated[str, Field(min_length=1, max_length=4000)], ...))
 Approval = schema('Approval', Versioned, approved=(bool, ...))
 PatientTarget = schema('PatientTarget', patient_id=(Identifier, ...))
 ConsultationCreate = schema('ConsultationCreate', patient_id=(Identifier, ...), title=(Text, 'Consultation'), template_id=(Identifier, None))
@@ -185,6 +186,7 @@ SPECS = {
     'owner.recall_preference': (RecallPreference, 'owner', 'Record an explicit owner recall preference and reason. Opt-out cancels their pending recall drafts; it does not send a message.'),
     'conversation.acknowledge': (ConversationResolution, 'owner_thread', 'Mark this exact owner conversation and any linked internal escalation acknowledged. This does not reply to the owner or send a notification.'),
     'conversation.close': (ConversationResolution, 'owner_thread', 'Close this exact owner conversation and acknowledge any linked internal escalation. This does not reply to the owner or send a notification.'),
+    'conversation.reply': (ConversationReply, 'owner_thread', 'Save the exact operator-supplied reply in this owner portal conversation. Anyone holding its valid access link may see it immediately. This does not send WhatsApp or email, and does not acknowledge an internal alert.'),
     'recall.cancel': (Reasoned, 'recall_campaign', 'Cancel pending drafts in this campaign. Already delivered or uncertain messages are unchanged.'),
     'leave.request': (LeaveRequest, None, 'Submit full-day leave for the exact staff member and inclusive dates. Availability changes only after a separate administrator approves.'),
     'leave.review': (LeaveReview, 'staff_leave', 'Approve or reject pending leave with a reason. Approval rechecks rota and booking conflicts; you cannot approve your own request.'),
@@ -204,7 +206,7 @@ GUIDED = {
     'transfer.accept': ('Settings', 'Review clinic identity, patient matching, original sources and transfer consent.'),
     **{n: ('Settings', 'Use the two-party organization or explicit member-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review', 'organization.join_cancel', 'access.member')},
     **{n: ('Patient', 'Use the original clinical source and typed observation approval screen.') for n in ('clinical.ingest', 'clinical.approve', 'ontology.propose', 'ontology.review')},
-    **{n: ('Handover', 'Read the exact current owner conversation and use its reply/escalation review.') for n in ('conversation.reply', 'conversation.policy', 'escalation.acknowledge')},
+    **{n: ('Handover', 'Read the exact current owner conversation and use its reply/escalation review.') for n in ('conversation.policy', 'escalation.acknowledge')},
 }
 
 
@@ -223,6 +225,8 @@ def catalogue():
             if owner: fields['version']['description'] = f'Current version of the {owner} record from records.'
         if name in ('conversation.acknowledge', 'conversation.close'):
             fields['reason']['description'] = 'Copy the text after "reason:" in the current operator request exactly. Never infer, shorten or paraphrase it.'
+        if name == 'conversation.reply':
+            fields['message']['description'] = 'Copy the text after "message:" in the current operator request exactly. Never author, shorten or paraphrase owner-facing text.'
         result[name] = {'description': effect, 'target_kind': kind, 'payload_schema': shape}
     return result
 
@@ -275,13 +279,13 @@ def prepare(c, clinic, actor, name, payload, patient_id=None):
         linked = [x for x in all_records(c, clinic, 'patient') if p['id'] in [x['data']['owner_id'], *x['data'].get('additional_owner_ids', [])]]
         for patient in linked: ref(patient['id'], 'patient')
         field('Patient links moved', ', '.join(x['data']['name'] + ' (' + x['id'] + ')' for x in linked) or 'None')
-    if name in ('conversation.acknowledge', 'conversation.close'):
+    if name in ('conversation.acknowledge', 'conversation.close', 'conversation.reply'):
         from owner_conversations import turns
         if r['data']['status'] == 'closed': fail('This conversation is already closed.')
         messages = turns(c, r)
-        if not messages or not r['data'].get('last_owner_turn'): fail('Read an owner message before resolving this conversation.')
+        if not messages or not r['data'].get('last_owner_turn'): fail('Read an owner message before acting on this conversation.')
         if any(t['data'].get('state') == 'pending' for t in messages): fail('Wait for the pending owner question to finish.')
-        if len(messages) > 20: fail('Open Handover to review this longer conversation before resolving it.')
+        if len(messages) > 20: fail('Open Handover to review this longer conversation before acting on it.')
         latest_owner = next((t for t in reversed(messages) if t['data']['speaker'] == 'owner'), None)
         if not latest_owner or latest_owner['id'] != r['data']['last_owner_turn']:
             fail('The latest owner message changed. Reopen the conversation.')
