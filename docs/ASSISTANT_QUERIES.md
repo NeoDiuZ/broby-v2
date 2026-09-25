@@ -220,7 +220,7 @@ after 600 newer sources while excluding another clinic. A disposable
 PostgreSQL 5,000-patient, 16-client workflow passed 21 checks, including
 three assistant questions with complete deterministic counts: one old
 patient appointment, 5,004 Cat patients and 500 clinician appointments.
-The model context included 250 of 16,305 available clinic records; server
+The model context included 250 of 16,305 planning-eligible clinic records; server
 intent plus factual read took 592–1,687 ms across the three questions.
 Those timings exclude network and real-model latency.
 
