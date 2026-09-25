@@ -143,3 +143,14 @@ tenant isolation and disabled/stale states. A real sender is killed after receiv
 application; restart retries the same event and the receiver applies it only once.
 The suite runs with SQLite and disposable PostgreSQL schemas. Root browser and
 hosted-disabled acceptance results are recorded separately after execution.
+
+`scripts/check-clinical-escalation-disabled.py` performs only authenticated reads
+against an explicitly selected existing synthetic clinic. Supply its HTTPS origin,
+private `--credentials` JSON file (`username` and `password`), exact `--clinic`,
+`--actor`, `--clinic-name` beginning with `SYNTHETIC`, and private `--output` path.
+It checks the full bootstrap binding and disabled policy, then disabled transport,
+empty aliases/incidents and disabled monitor. Login/logout affect authentication
+sessions only; it never creates a fixture, submits an action or invokes a sender.
+The nine-check evidence excludes credentials, policy contents and clinical data.
+This verifies the selected clinic and deployment mode at read time, not other
+clinics, receiver acceptance, an active dispatcher or a clinical response.
