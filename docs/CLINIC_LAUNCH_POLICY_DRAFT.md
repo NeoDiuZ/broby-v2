@@ -1,31 +1,63 @@
-# Broby V2 clinic launch policy — proposed baseline
+# Broby V2 clinic launch rules — decision draft
 
-Prepared 25 September 2026 for the isolated Broby V2 product. This is a
-clinic-operating draft for owner review. It does not bind any existing Broby
-clinic, set a legal tax rate, or authorize customer messaging. The clinic's
-named decision maker must approve its values before a real-clinic launch.
+Prepared 25 September 2026 for the isolated Broby V2 service. **Status:
+proposed, not approved for a real clinic.** This is an operating decision sheet,
+not a privacy notice, tax opinion, contract, or authority to message customers.
+Do not copy the original Broby clinic's identity, legal text, contacts, sender,
+or retention promises into V2 without that clinic's express approval.
 
-| Area | Proposed operating rule | Broby V2 control and launch proof |
+The proposed defaults below let staff rehearse safely with synthetic records.
+The clinic decision maker must fill in the decisions and sign the approval
+record before real patient onboarding. The product owner must then verify that
+the approved wording, configuration, receipts, and public pages agree.
+
+These are operating restrictions, **not all automatic software gates**. V2
+currently permits staff to enter a zero-tax invoice in its synthetic workflow.
+The V2 public privacy page still contains an older 90-day audio-deletion claim
+that the current retention implementation does not support. Resolve that public
+discrepancy through an approved V2 legal notice before real-clinic onboarding;
+this draft does not silently replace the published page. See
+[`V2_PUBLIC_LEGAL_COPY_REVIEW.md`](V2_PUBLIC_LEGAL_COPY_REVIEW.md).
+
+## Proposed operating rules and decisions
+
+| Area | Proposed V2 rule until approval | Decision required for real clinic use |
 |---|---|---|
-| Booking cancellation and no-show | Staff may cancel or mark a booking. No automatic fee, forfeiture or refund is charged. Any fee or deposit needs a separately approved written schedule shown to the owner before booking. | Existing scheduler changes status without charging. Test a booked, cancelled and missed appointment against the financial register; verify zero unapproved charges. |
-| Deposits | Do not require or collect a deposit by default. When the clinic adopts a deposit schedule, display amount, application, cancellation/refund terms and owner consent before taking payment. | Keep deposit collection disabled until the product can issue, apply, reverse and reconcile it against invoices and payments. |
-| Tax and invoices | Default tax rate is zero; a staff member enters the clinic-approved rate explicitly. An invoice records currency, items, rate, discount and integer-cent total. No automatic tax treatment is inferred from a patient's location or service type. | Clinic accountant approves rates and rounding with example invoices; reconcile generated PDF, saved invoice and financial register. |
-| Credit notes and refunds | Credit notes require an invoice, reason and authorised staff review. A credit reduces the charge; it is not evidence of money returned. Record a refund only after the provider confirms it, and review refunds due separately. | Test issue, reversal, partial refund and replay; reconcile balances and provider receipts. |
-| Owner messages and recalls | Send only to a verified contact with recorded consent for that message class and channel. Respect opt-out and changed contact details at send time. Staff review message content and recipient list. A queued or provider-accepted status is not delivery. | Keep production dispatch disabled until sender, approved templates, consent provenance, signed callbacks, opt-out, retries and delivery readback pass with the clinic's own test numbers. |
-| Record and audio retention | Preserve clinical records and source receipts pending an approved retention schedule and legal hold procedure. Do not promise automatic raw-audio deletion at 90 days until timed deletion, backup expiry, legal holds and restore behaviour are implemented and tested. Export and erasure requests require identity and clinic review. | Approve country-specific schedule, remove unsupported public claims, test deletion/hold and consistent database/file backups with a restore drill. |
-| After-hours questions | The owner portal can accept a question and label it urgent; it is not a monitored emergency service. AI may quote only approved care and route uncertainty to staff; it must not diagnose, prescribe or promise a response time. | Keep the warning visible and verify saved staff queue, repeat handling and source revocation. |
-| Emergency escalation | The clinic must name a staffed on-call rota, backup contact, hours, acknowledgement target and fallback phone line. An internal alert is not delivery to a clinician. If coverage or delivery fails, present the emergency phone instructions and do not claim monitoring. | Enable external alerts only after a controlled on-call test confirms receipt, acknowledgement, overdue escalation and staffed fallback end to end. |
+| Cancellation and no-show | Staff may change booking status. Charge **no automatic cancellation or no-show fee**; do not imply that marking a booking cancelled moves money. | Clinic timezone, notice window, any fee, exceptions, who may waive a fee, exact owner-facing terms, and effective date. |
+| Deposits | **No deposit is required or collected through V2.** A booking is not evidence of a payment. | If deposits are wanted: amount, when consent is obtained, how it is applied to an invoice, cancellation/refund terms, receipt and reconciliation process. Enable only after the complete payment/refund path is accepted. |
+| Tax and invoices | The UI currently starts at zero tax. Treat this as a **synthetic-workflow placeholder**, not the clinic's tax rate. Do not issue real invoices until the clinic accountant approves the jurisdiction, tax treatment, rounding, examples and responsible staff review. | Legal entity and country, currency, approved rates/exemptions, item treatment, invoice numbering, rounding, sample invoice/PDF/register reconciliation, and effective date. |
+| Credit notes and refunds | Require an invoice, reason, authorised staff review and an immutable credit/reversal receipt. A credit reduces charges; it does not prove a refund. Record a refund as completed only after provider or external-payment evidence is reconciled. | Who may authorise each amount, when a credit versus refund is used, treatment of tax on partial credits, refund method, owner notice, and reconciliation sign-off. |
+| Owner messages and recalls | Keep customer dispatch disabled. A staff-reviewed draft is not delivered. For any future send, verify the exact destination and record channel-specific consent and purpose; recheck opt-out and changed contact details at send time. Distinguish provider acceptance from delivery. | Sender and provider account, consent wording/source/time, service versus recall versus marketing classes, approved templates, quiet hours, opt-out route, review authority, retry policy, delivery callback and incident contact. |
+| Clinical records and audio | Preserve clinical records, original receipts and audio while the clinic's retention, legal-hold and deletion process is undecided. **No automatic 90-day audio-deletion promise applies to V2.** An access, export or erasure request needs identity and clinic-authority review. | Country-specific schedule for each data class, legal-hold owner, request workflow, deletion timing, backup expiry, restore behaviour, and the exact public privacy notice. |
+| After-hours owner questions | The portal may save a question and flag urgency. Until a staffed rota and tested external alert are enabled, it is **not an emergency monitoring service** and must show the clinic's approved emergency phone instructions. AI may retrieve approved care information but must not diagnose or prescribe. | Coverage hours/timezone, emergency number and alternative facility, owner-visible wording, what counts as urgent, and who monitors the queue. |
+| Emergency escalation | An internal alert is not proof that an on-call clinician received it. Keep external escalation disabled until a named primary, backup and fallback have acknowledged a controlled test. Do not promise a response time before that test. | Primary/backup rota, alert channel, acknowledgement target, overdue interval, fallback phone, escalation owner, outage procedure, and test date. |
 
-## Approval record to complete before live clinic use
+## Acceptance before enabling a real-clinic flow
 
-- Clinic legal name and operating country: **pending**.
-- Decision maker and approval date: **pending**.
-- Accountant-approved tax rate, rounding, credit and refund examples: **pending**.
-- Booking/deposit/fee schedule and owner-facing text: **pending**.
-- Retention schedule, legal hold, backup expiry and privacy notice: **pending**.
-- Sender, consent wording, approved templates and opt-out path: **pending**.
-- On-call roster, backup, emergency line, hours and response target: **pending**.
+Record the test evidence and approver beside each gate. A passing synthetic test
+is useful engineering evidence, but it does not prove owner consent, tax
+treatment, an on-call response, or provider delivery.
 
-Until those fields are approved, the safe defaults above remain the launch
-boundary. This document is not evidence that a clinic has staffed or accepted
-any response obligation.
+| Gate | Required acceptance | Evidence / approver |
+|---|---|---|
+| Booking and billing | Book, cancel, mark no-show, issue an approved invoice, credit it, record a real-provider or verified external refund, and reconcile the PDF, register and balance. No unapproved fee or tax appears. | **Pending** |
+| Customer messaging | On clinic-owned test numbers, confirm consent provenance, template approval, exact recipient, provider send/receipt, delivery or failure callback, opt-out and duplicate/uncertain-send handling. | **Pending** |
+| Retention and privacy | Approve public wording; test timed deletion only if promised, legal hold, backup expiry and a restore. Verify access/export/erasure requests with clinic authority. | **Pending** |
+| After-hours escalation | With a staffed primary and backup, generate one urgent synthetic question; confirm external receipt, acknowledgement, timeout escalation and fallback phone instructions. | **Pending** |
+| Original-data migration | Obtain an approved read-only export and staff identity crosswalk; reconcile source counts, files, balances and patient/owner links, then rehearse cutover and rollback without changing original Broby. | **Pending** |
+
+## Approval record — clinic owner to complete
+
+- Clinic legal name, operating country and currency: **pending**.
+- Named clinic decision maker, role, signature/approval reference and date: **pending**.
+- Accountant and approved tax/credit/refund examples: **pending**.
+- Cancellation, no-show and deposit schedule plus owner-facing text: **pending**.
+- Messaging consent wording, sender, templates and opt-out contact: **pending**.
+- Record/audio retention schedule, legal hold, backups and approved privacy notice: **pending**.
+- On-call primary, backup, emergency line, coverage hours and response target: **pending**.
+- V2 product owner confirmation that configuration and hosted acceptance match
+  these decisions: **pending**.
+
+Until these fields and the acceptance evidence are complete, this document is a
+proposal for V2 synthetic testing only. It does not approve real billing,
+customer messaging, retention deletion, or emergency monitoring.
