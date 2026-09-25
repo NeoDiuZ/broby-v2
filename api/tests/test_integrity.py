@@ -123,6 +123,33 @@ def test_audio_gap_and_duplicate_chunks():
     act('recording.complete',dict(id=r['id'],expected_chunks=2,duration=10))
     assert client.get('/api/recordings/'+r['id']+'/audio').content==b'firstsecond'
 
+def test_second_device_saves_a_new_note_without_finishing_the_first():
+    vet=TestClient(main.app)
+    nurse=TestClient(main.app)
+    nurse_headers={'x-actor-id':'clinic-east-nurse'}
+    def command(client,action,payload,key,headers=None):
+        response=client.post('/api/actions',json={'action':action,'payload':payload,'key':key},headers=headers or {})
+        assert response.status_code==200, response.text
+        return response.json()
+
+    first=command(vet,'recording.create',{'patient_id':'luna','consultation_id':'consult-luna','device':'first-device','mime':'audio/wav'},'handoff-first-create')
+    assert vet.put(f"/api/recordings/{first['id']}/chunks/0",content=b'first-part').status_code==200
+    second=command(nurse,'recording.create',{'patient_id':'luna','consultation_id':'consult-luna','device':'second-device','mime':'audio/wav'},'handoff-second-create',nurse_headers)
+    assert first['id']!=second['id']
+    assert (first['data']['number'],second['data']['number'])==(1,2)
+    assert nurse.put(f"/api/recordings/{second['id']}/chunks/0",content=b'second-note',headers=nurse_headers).status_code==200
+    saved_second=command(nurse,'recording.complete',{'id':second['id'],'expected_chunks':1,'duration':5},'handoff-second-complete',nurse_headers)
+    assert saved_second['data']['status']=='saved'
+    assert get(first['id'])['data']['status']=='recording'
+    assert vet.get(f"/api/recordings/{first['id']}/manifest").json()=={'received':[0]}
+    assert vet.put(f"/api/recordings/{first['id']}/chunks/1",content=b'-and-rest').status_code==200
+    saved_first=command(vet,'recording.complete',{'id':first['id'],'expected_chunks':2,'duration':12},'handoff-first-complete')
+    assert saved_first['data']['status']=='saved'
+    assert vet.get(f"/api/recordings/{first['id']}/audio").content==b'first-part-and-rest'
+    assert nurse.get(f"/api/recordings/{second['id']}/audio",headers=nurse_headers).content==b'second-note'
+    assert command(nurse,'recording.complete',{'id':second['id'],'expected_chunks':1,'duration':5},'handoff-second-complete',nurse_headers)==saved_second
+    assert len([r for r in rows('recording') if r['data']['consultation_id']=='consult-luna'])==2
+
 def test_observation_numeric_validation_and_provenance():
     s=note(); p=dict(patient_id='luna',source_id=s['id'],name='Weight',unit='kg',value=4.1,low=2,high=6)
     act('observation.add',p)
