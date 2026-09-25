@@ -105,6 +105,18 @@ def test_current_owner_count_includes_additional_links_and_excludes_merged_or_fo
     assert after['patients']['linked_to_owner'] == before['patients']['linked_to_owner'] + 3
 
 
+def test_malformed_owner_is_not_counted_as_a_current_patient_link():
+    before = built()
+    with db.connection(True) as c:
+        malformed = db.record(c, 'owner', 'clinic-east', [])
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC malformed owner link',
+                                               'species': 'Cat', 'owner_id': malformed['id']})
+    after = built()
+    assert after['patients']['total'] == before['patients']['total'] + 1
+    assert after['owners_total'] == before['owners_total'] + 1
+    assert after['patients']['linked_to_owner'] == before['patients']['linked_to_owner']
+
+
 def test_malformed_legacy_values_are_counted_without_breaking_the_report():
     with db.connection(True) as c:
         db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC malformed legacy',
