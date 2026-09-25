@@ -11,10 +11,10 @@ import main
 from test_integrity import isolated, act, get, rows, err
 
 
-def proposal(monkeypatch, name, payload, patient=None, actor='clinic-east-admin'):
+def proposal(monkeypatch, name, payload, patient=None, actor='clinic-east-admin', message='Synthetic explicit operator request'):
     monkeypatch.setattr(assistant.providers, 'available', lambda: {'ai': True})
     monkeypatch.setattr(assistant.providers, 'model_json', lambda *a: {'action': {'action': name, 'payload': payload}})
-    return assistant_history.ask('clinic-east', actor, 'Synthetic explicit operator request', patient, None, str(uuid.uuid4()))
+    return assistant_history.ask('clinic-east', actor, message, patient, None, str(uuid.uuid4()))
 
 
 def confirm(turn, expected=200, actor='clinic-east-admin'):
