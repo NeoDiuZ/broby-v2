@@ -176,6 +176,26 @@ def test_owner_appointments_follow_current_clinic_patient_links(monkeypatch):
     err(404,lambda:query({'kind':'appointment','owner_id':foreign_owner['id']}))
 
 
+def test_saved_owner_views_follow_reviewed_merge_for_patients_and_appointments():
+    retired=act('owner.create',{'name':'SYNTHETIC Retired Household'})
+    current=act('owner.create',{'name':'SYNTHETIC Current Household'})
+    patient=act('patient.create',{'name':'SYNTHETIC Merged Pet','species':'Cat','owner_id':retired['id']})
+    with db.connection(True) as c:
+        appointment=db.record(c,'appointment','clinic-east',{'patient_id':patient['id'],'date':'2098-08-04',
+            'time':'09:00','reason':'SYNTHETIC merged owner check','clinician':'clinic-east-vet','status':'scheduled'})
+    views={kind:act('dashboard.save',{'name':'SYNTHETIC '+kind+' owner view',
+        'query':{'kind':kind,'owner_id':retired['id']}}) for kind in ('patient','appointment')}
+    act('owner.merge',{'id':retired['id'],'version':retired['version'],'target_id':current['id']},actor='clinic-east-admin')
+    client=TestClient(main.app)
+    for kind,expected_id in [('patient',patient['id']),('appointment',appointment['id'])]:
+        direct=query({'kind':kind,'owner_id':retired['id']})
+        saved=client.get('/api/dashboards/'+views[kind]['id']).json()['result']
+        for result in (direct,saved):
+            assert result['query']['owner_id']==current['id']
+            assert result['count']==1 and [r['id'] for r in result['records']]==[expected_id]
+            assert 'owner: SYNTHETIC Current Household' in result['filter_summary']
+
+
 def test_duplicate_owner_names_require_exact_identity_before_model_query(monkeypatch):
     first=act('owner.create',{'name':'SYNTHETIC Same Client'})
     act('owner.create',{'name':'SYNTHETIC Same Client'})

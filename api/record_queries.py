@@ -81,7 +81,14 @@ def validate_query(c, query, clinic):
         details='; '.join(str(e['msg']) for e in exc.errors(include_input=False))
         fail('Invalid record query: '+details)
     if parsed.patient_id:owned(c,parsed.patient_id,clinic,'patient')
-    if parsed.owner_id:owned(c,parsed.owner_id,clinic,'owner')
+    if parsed.owner_id:
+        owner=owned(c,parsed.owner_id,clinic,'owner')
+        merged_into=owner['data'].get('merged_into')
+        if merged_into:
+            current=owned(c,merged_into,clinic,'owner')
+            if current['id']==owner['id'] or current['data'].get('merged_into'):
+                fail('Owner merge chain needs review before querying linked records',409)
+            parsed.owner_id=current['id']
     return parsed.model_dump(exclude_none=True,exclude_defaults=True)
 
 
