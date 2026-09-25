@@ -18,6 +18,12 @@ Values remain separately bound SQL parameters. SQLite-specific upserts, JSON
 lookups, schema inspection and triggers have explicit PostgreSQL equivalents.
 Record-history triggers and durable projection sequence triggers are installed in
 the selected store. Floating-point lease timestamps use double precision.
+The projection queue also records the changed record ID and kind for new
+patient/owner writes. Existing sequence rows remain intact with empty metadata;
+they force a conservative full projection. At most 100 exclusively patient/owner
+changes use the bounded incremental path. Other clinical and membership changes
+still trigger a full projection. The serialized PMS writer keeps committed queue
+sequences ordered for each store.
 
 PostgreSQL write transactions take a database advisory lock, preserving the
 application's existing single-writer invariant while stock, invoice, idempotency,

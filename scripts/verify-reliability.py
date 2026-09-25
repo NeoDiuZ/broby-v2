@@ -146,6 +146,13 @@ print(json.dumps({'seeded':True}))''')
         projection_start=time.monotonic();page=req('GET','v2/patients',params={'limit':50})
         report['initial_projection_seconds']=round(time.monotonic()-projection_start,3)
         check(len(page['items'])==50 and bool(page['next_cursor']),'patient directory returns bounded cursor pages')
+        edited=next(r for r in initial['records'] if r['kind']=='patient' and r['data']['name'].startswith('SYNTHETIC Load pet'))
+        revised_name=edited['data']['name']+' revised'
+        action('patient.update',{'id':edited['id'],'version':edited['version'],'name':revised_name})
+        projection_start=time.monotonic();projected=req('GET','v2/patients/'+edited['id'])
+        report['identity_edit_projection_ms']=round((time.monotonic()-projection_start)*1000,1)
+        check(projected['name']==revised_name and projected['owner']['id']==edited['data']['owner_id'],
+              'single patient identity edit projects without losing its owner link')
         view=action('dashboard.save',{'name':'SYNTHETIC scale appointment view','query':{'kind':'appointment','species':'Cat','clinician':'synthetic-scale-vet','group_by':'species'}})
         expected_appointments=(a.patients+9)//10
         saved=req('GET','dashboards/'+view['id'])['result']

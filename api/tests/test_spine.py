@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 import db,auth,main,actions
 from spine import database,projection
-from spine.models import Event,Observation,Member,Patient,Owner,OwnerPatient
+from spine.models import Event,Observation,Member,Patient,Owner,OwnerPatient,Projection
 
 @pytest.fixture
 def client(tmp_path,monkeypatch):
@@ -44,6 +44,38 @@ def test_sqlite_projection_queue_tracks_only_clinical_writes(client):
         owner=db.get(c,'owner-milo')
         db.update(c,owner,{**owner['data'],'name':'SYNTHETIC changed owner'})
         assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]>before
+        changed=c.execute("SELECT record_id,kind FROM spine_changes WHERE clinic_id='clinic-east' ORDER BY sequence DESC LIMIT 1").fetchone()
+        assert changed['record_id']=='owner-milo' and changed['kind']=='owner'
+
+def test_owner_and_patient_changes_project_without_full_clinic_rebuild(client,monkeypatch):
+    projection.sync('clinic-east')
+    with db.connection(True) as c:
+        old_owner=db.get(c,'owner-milo')
+        db.update(c,old_owner,{**old_owner['data'],'name':'SYNTHETIC primary owner revised'})
+        new_owner=db.record(c,'owner','clinic-east',{'name':'SYNTHETIC additional owner','email':'','phone':''})
+        old_patient=db.get(c,'milo')
+        db.update(c,old_patient,{**old_patient['data'],'name':'SYNTHETIC Milo revised','additional_owner_ids':[new_owner['id']]})
+        seq=c.execute("SELECT MAX(sequence) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]
+    monkeypatch.setattr(db,'all_records',lambda *_args,**_kwargs:pytest.fail('A small identity edit must not rebuild every clinic record'))
+    projection.sync('clinic-east')
+    with database.session() as s:
+        assert s.get(Patient,'milo').name=='SYNTHETIC Milo revised'
+        assert s.get(Owner,'owner-milo').name=='SYNTHETIC primary owner revised'
+        assert s.get(Owner,new_owner['id']).name=='SYNTHETIC additional owner'
+        assert s.get(OwnerPatient,(new_owner['id'],'milo')).is_primary is False
+        assert s.get(Projection,'clinic-east').sequence==seq
+
+def test_unidentified_projection_change_falls_back_to_full_rebuild(client,monkeypatch):
+    projection.sync('clinic-east')
+    with db.connection(True) as c:
+        c.execute('INSERT INTO spine_changes(clinic_id) VALUES(?)',('clinic-east',))
+    original=db.all_records;calls=[]
+    def counted(*args,**kwargs):
+        calls.append(True)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(db,'all_records',counted)
+    projection.sync('clinic-east')
+    assert calls
 
 def ingest(client,p=None,**kwargs):return client.post('/api/v2/ingest/lab',json=p or result(),**kwargs)
 
