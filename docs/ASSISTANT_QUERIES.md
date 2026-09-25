@@ -150,4 +150,11 @@ to its active owner when refreshed. This preserves saved views created before a
 reviewed merge, with the active owner's current links and name displayed. A
 malformed merge chain fails for review rather than silently returning a stale
 or broader result. The saved-view regression passed all 46 query tests in both
-SQLite and local PostgreSQL; hosted merge behavior has not been exercised.
+SQLite and local PostgreSQL. After PR #62 reached both V2 Railway services at
+revision `0aab16f`, an authenticated synthetic-clinic acceptance created two
+owners, one pet and a saved patient view, then merged the owners. The view
+returned the same pet under the current owner in two independent sessions;
+the signed-in Reports browser displayed one match and the current owner's name.
+The stored patient link and merged-owner marker were read back. Hosted appointment
+views after a merge remain untested; their behavior is covered by the local
+SQLite/PostgreSQL regression.
