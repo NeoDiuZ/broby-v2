@@ -70,6 +70,21 @@ def explicit_conversation_reply(message):
                          r'(?P<id>[^\s,;]+)\s+message\s*:\s*(?P<reply>\S[\s\S]*?)\s*',message,re.I)
     return {'id':command.group('id'),'message':command.group('reply').strip()} if command else None
 
+def explicit_recall_prepare(message):
+    """Recipients and campaign fields come from this operator turn, not the model."""
+    command=re.fullmatch(r'\s*(?:please\s+)?prepare\s+recall\s+campaign\s+(?P<title>[^\r\n]+?)\s+'
+                         r'from\s+(?P<start>\d{4}-\d{2}-\d{2})\s+to\s+(?P<end>\d{4}-\d{2}-\d{2})\s+'
+                         r'reminders\s*:\s*(?P<ids>[^\r\n]+?)\s*',message,re.I)
+    if not command:return None
+    ids=[value.strip() for value in command.group('ids').split(',')]
+    if any(not value or re.search(r'\s',value) for value in ids):return None
+    return {'title':command.group('title').strip(),'start':command.group('start'),
+            'end':command.group('end'),'reminder_ids':ids}
+
+def explicit_escalation_acknowledge(message):
+    command=re.fullmatch(r'\s*(?:please\s+)?acknowledge\s+escalation\s+(?P<id>[^\s,;]+)\s*',message,re.I)
+    return {'id':command.group('id')} if command else None
+
 def answer(c,clinic,actor,message,patient_id=None,history=None):
     from read_access import require, ALL
     require(c,clinic,actor,ALL)
@@ -120,7 +135,14 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
         compact.extend({'id':r['id'],'kind':'owner_thread','version':r['version'],
                         'data':{k:r['data'].get(k) for k in ('patient_id','status','urgent')}}
                        for r in planning if r['kind']=='owner_thread')
-        compact,context_scope=assistant_context.select(compact,message,patient['id'] if patient else None,available_records=total+len(failed_jobs))
+        # Alert targeting adds only selection metadata. The deterministic review
+        # reads original human source text directly for the operator.
+        exact_alert=explicit_escalation_acknowledge(message)
+        alert=get(c,exact_alert['id'],clinic) if exact_alert else None
+        if alert and alert['kind']=='escalation':
+            compact.append({'id':alert['id'],'kind':alert['kind'],'version':alert['version'],
+                            'data':{key:alert['data'].get(key) for key in ('patient_id','status','delivery')}})
+        compact,context_scope=assistant_context.select(compact,message,patient['id'] if patient else None,available_records=total+len(failed_jobs)+(1 if alert and alert['kind']=='escalation' else 0))
         observation_rows=c.execute('SELECT DISTINCT '+','.join(json_text(c,'data',field) for field in ('code','name','unit'))+
                                    " FROM records WHERE clinic_id=? AND kind='observation' LIMIT 200",(clinic,)).fetchall()
         observation_catalog=sorted({tuple(value or '' for value in row) for row in observation_rows} |
@@ -139,6 +161,16 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
             if action['action'] in assistant_operations.CONTRACTS or action['action'] in assistant_contracts.SPECS:
                 try:
                     name=action['action']
+                    if name in ('recall.prepare','escalation.acknowledge'):
+                        exact=explicit_recall_prepare(message) if name=='recall.prepare' else explicit_escalation_acknowledge(message)
+                        if not exact:
+                            instruction=('Prepare recall campaign [title] from [YYYY-MM-DD] to [YYYY-MM-DD] reminders: [comma-separated IDs]'
+                                         if name=='recall.prepare' else 'Acknowledge escalation [ID]')
+                            return {'text':'Use the exact operator command “'+instruction+'”. Nothing has been changed.','sources':[]}
+                        if set(action['payload'])-set(assistant_contracts.SPECS[name][0].model_fields):
+                            return {'text':'The proposed action contained unsupported fields. Nothing has been changed.','sources':[]}
+                        if name=='escalation.acknowledge':exact['version']=owned(c,exact['id'],clinic,'escalation')['version']
+                        action={'action':name,'payload':exact}
                     if name in ('conversation.acknowledge','conversation.close','conversation.reply'):
                         exact=(explicit_conversation_reply(message) if name=='conversation.reply'
                                else explicit_conversation_resolution(message,name))

@@ -130,6 +130,9 @@ DashboardSave = schema('DashboardSave', name=(Text, ...), query=(RecordQuery, ..
 RecallPreference = schema('RecallPreference', Reasoned, opt_out=(bool, ...))
 LeaveRequest = schema('LeaveRequest', member_id=(Identifier, ...), start=(Day, ...), end=(Day, ...), reason=(Annotated[str, Field(min_length=3, max_length=500)], ...))
 LeaveReview = schema('LeaveReview', Reasoned, decision=(Literal['approved', 'rejected'], ...))
+RecallPrepare = schema('RecallPrepare', title=(Annotated[str, Field(min_length=3, max_length=160)], ...),
+                       start=(Day, ...), end=(Day, ...),
+                       reminder_ids=(Annotated[list[Identifier], Field(min_length=1, max_length=20)], ...))
 
 
 # schema, primary record kind (if id is present), description/effect
@@ -188,6 +191,8 @@ SPECS = {
     'conversation.close': (ConversationResolution, 'owner_thread', 'Close this exact owner conversation and acknowledge any linked internal escalation. This does not reply to the owner or send a notification.'),
     'conversation.reply': (ConversationReply, 'owner_thread', 'Save the exact operator-supplied reply in this owner portal conversation. Anyone holding its valid access link may see it immediately. This does not send WhatsApp or email, and does not acknowledge an internal alert.'),
     'recall.cancel': (Reasoned, 'recall_campaign', 'Cancel pending drafts in this campaign. Already delivered or uncertain messages are unchanged.'),
+    'recall.prepare': (RecallPrepare, None, 'Prepare manual recall drafts for 1–20 exact operator-selected reminder IDs. Use the exact command: Prepare recall campaign [title] from [YYYY-MM-DD] to [YYYY-MM-DD] reminders: [comma-separated IDs]. The server derives recipients, message text and the current preview digest. Does not send messages or establish real-clinic consent approval.'),
+    'escalation.acknowledge': (Versioned, 'escalation', 'Acknowledge the exact internal alert after reviewing its source. Use the exact command: Acknowledge escalation [ID]. Does not contact anyone, reply to an owner or close their conversation; external delivery remains disabled.'),
     'leave.request': (LeaveRequest, None, 'Submit full-day leave for the exact staff member and inclusive dates. Availability changes only after a separate administrator approves.'),
     'leave.review': (LeaveReview, 'staff_leave', 'Approve or reject pending leave with a reason. Approval rechecks rota and booking conflicts; you cannot approve your own request.'),
     'leave.cancel': (Reasoned, 'staff_leave', 'Withdraw pending or current/future approved leave, retaining the review history.'),
@@ -201,12 +206,11 @@ GUIDED = {
     **{n: ('Patient', 'Use the recorder and verified audio chunk manifest.') for n in ('recording.create', 'recording.complete', 'recording.refine')},
     **{n: ('Billing', 'Use the provider-priced checkout/refund screen and canonical provider receipt.') for n in ('stripe.checkout', 'stripe.cancel', 'stripe.refresh', 'stripe.refund')},
     **{n: ('Messages', 'Use the restricted sender setup and delivery/recipient review.') for n in ('twilio.trial_send', 'twilio.reconcile')},
-    'recall.prepare': ('Messages', 'Review the recipient preview, consent and selected batch before preparing.'),
     'schedule.configure': ('Settings', 'Review the complete staff rota and booking conflicts in the rota editor.'),
     'transfer.accept': ('Settings', 'Review clinic identity, patient matching, original sources and transfer consent.'),
     **{n: ('Settings', 'Use the two-party organization or explicit member-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review', 'organization.join_cancel', 'access.member')},
     **{n: ('Patient', 'Use the original clinical source and typed observation approval screen.') for n in ('clinical.ingest', 'clinical.approve', 'ontology.propose', 'ontology.review')},
-    **{n: ('Handover', 'Read the exact current owner conversation and use its reply/escalation review.') for n in ('conversation.policy', 'escalation.acknowledge')},
+    'conversation.policy': ('Handover', 'Review the clinic-approved owner-conversation policy and staffed escalation arrangements.'),
 }
 
 
@@ -420,6 +424,50 @@ def prepare(c, clinic, actor, name, payload, patient_id=None):
         if patient_id and p['query'].get('patient_id') != patient_id: fail('Use this patient in the saved filter or open clinic-wide chat.')
         field('Filter', selected['filter_summary']); field('Current matches', len(selected['records']))
     if name == 'recall.cancel' and r['data']['status'] != 'prepared': fail('This campaign was already cancelled.')
+    if name == 'recall.prepare':
+        from recalls import preview
+        if len(set(p['reminder_ids'])) != len(p['reminder_ids']): fail('Select each reminder once.')
+        review = preview(c, clinic, p)
+        eligible = {item['reminder_id']: item for item in review['items'] if not item['blocked_reason']}
+        if not set(p['reminder_ids']).issubset(eligible): fail('Select eligible reminders within the reviewed dates. Closed reminders, existing drafts and owner opt-outs cannot be included.')
+        p['digest'] = review['digest']
+        field('Drafts to prepare', len(p['reminder_ids']))
+        for index, id in enumerate(p['reminder_ids'], 1):
+            reminder = ref(id, 'reminder')
+            patient = ref(reminder['data']['patient_id'], 'patient')
+            owner = ref(patient['data']['owner_id'], 'owner')
+            item = eligible[id]
+            field(f'Recipient {index}', label(patient) + '\nPrimary owner: ' + label(owner) +
+                  '\nPhone: ' + (item['contact']['phone'] or 'Not recorded') +
+                  '\nEmail: ' + (item['contact']['email'] or 'Not recorded') +
+                  '\nRecorded recall opt-out: No\nReminder: ' + label(reminder))
+            field(f'Exact draft {index}', f"Reminder for {patient['data']['name']}: {reminder['data']['title']}, due {reminder['data']['due']}. Please contact your clinic to arrange this.")
+        field('Other reminders in date preview', len(review['items']) - len(p['reminder_ids']))
+        effect = 'Creates only the displayed manual drafts. No WhatsApp or email is sent. Recorded opt-out and contact checks do not establish clinic-approved consent or delivery. Any preview, recipient or reminder change requires a fresh review.'
+    if name == 'escalation.acknowledge':
+        if r['data']['status'] != 'needs_attention': fail('This internal alert has already been acknowledged.')
+        field('External notification delivery', r['data'].get('delivery', 'Not recorded'))
+        if r['data'].get('reason'): field('Recorded alert reason', r['data']['reason'])
+        if r['data'].get('owner_thread_id'):
+            from owner_conversations import turns
+            thread = ref(r['data']['owner_thread_id'], 'owner_thread')
+            if thread['data']['patient_id'] != r['data']['patient_id']: fail('Alert and conversation must belong to the same patient.')
+            messages = turns(c, thread)
+            if not messages or len(messages) > 20 or any(t['data'].get('state') == 'pending' for t in messages):
+                fail('Open Handover to review this conversation before acknowledging its alert.')
+            latest = next((t for t in reversed(messages) if t['data']['speaker'] == 'owner'), None)
+            if not latest or latest['id'] != thread['data'].get('last_owner_turn'): fail('The latest owner message changed. Reopen the conversation.')
+            field('Conversation status', thread['data']['status'])
+            field('Marked urgent by owner', bool(thread['data'].get('urgent')))
+            field('Exact human conversation', '\n\n'.join(
+                f"{index}. {'Owner' if turn['data']['speaker'] == 'owner' else 'Clinic staff'} · {turn['created_at']}\n{turn['data']['message']}"
+                for index, turn in enumerate(messages, 1)))
+        elif r['data'].get('intake_id'):
+            intake = ref(r['data']['intake_id'], 'intake')
+            if intake['data']['patient_id'] != r['data']['patient_id']: fail('Alert and intake must belong to the same patient.')
+            field('Exact owner intake', intake['data']['text'])
+            field('Intake status', intake['data']['status'])
+        else: fail('Open Handover to review this alert: its original source is unavailable.')
     if name == 'leave.request':
         member = ref(p['member_id'], 'member')
         if not member['data'].get('active'): fail('Choose an active staff member.')
@@ -441,7 +489,7 @@ def prepare(c, clinic, actor, name, payload, patient_id=None):
         for key in ('stock', 'status'):
             if key in r['data']: field('Current ' + key, r['data'][key])
     for key, value in p.items():
-        if key in ('version', 'schedule_version', 'token'): continue
+        if key in ('version', 'schedule_version', 'token', 'digest'): continue
         if key == 'id' and r: continue
         field(key.replace('_', ' ').capitalize(), display(value, key, sources))
     if not fields: field('Clinic', owned(c, clinic, clinic, 'clinic')['data']['name'])

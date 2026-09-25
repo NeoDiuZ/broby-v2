@@ -2,14 +2,54 @@
 
 ## Current coverage — 25 September 2026
 
-All 70 directly proposed assistant operations now have strict typed contracts,
+All 72 directly proposed assistant operations now have strict typed contracts,
 read-only preparation and labelled deterministic reviews. This replaces the old
 49 untyped field descriptions and adds ten routine operations: speaker labels,
 automation settings, save/archive dashboards, recall preference/cancellation,
 leave request/review/withdrawal and discharge draft preparation. Every one of the
-105 shared operations is explicitly classified: 70 reviewed proposals, 29 routed
+105 shared operations is explicitly classified: 72 reviewed proposals, 27 routed
 to their dedicated review screen, and six internal test-adapter operations that
 are never advertised to the model. Guided operations are not direct AI execution.
+
+Two additional formerly guided operations now have direct saved reviews:
+
+- `recall.prepare`: use “Prepare recall campaign [title] from [YYYY-MM-DD] to
+  [YYYY-MM-DD] reminders: [comma-separated IDs]”. The current operator request
+  supplies the complete selection of 1–20 reminder IDs, dates and campaign title;
+  model substitutions are ignored. The review displays each exact manual draft,
+  patient, primary owner, recorded contact details and recall opt-out state.
+  The server derives the existing recall-preview digest; it cannot be supplied
+  by the model. Confirmation rechecks the entire bounded preview and selected
+  record versions, then creates only these drafts. A new matching reminder,
+  contact/name change, owner opt-out or concurrent draft preparation requires a
+  fresh review. No message is dispatched. Recorded preference checks do not
+  establish clinic-approved consent or real delivery acceptance.
+- `escalation.acknowledge`: use “Acknowledge escalation [ID]”. The exact target
+  and its current version come from the operator command and server records.
+  The review displays the original owner intake or complete human conversation
+  of at most 20 turns, urgency and current external-delivery state. Confirmation
+  pins the source intake/thread and patient as well as the alert; newer source
+  information requires review again. This acknowledges only the internal alert:
+  it does not send a notification, reply to the owner or close the conversation.
+  Pending, longer or source-less conversations remain in Handover.
+
+Both retain shared permission/dependency locks and the saved turn's idempotency
+key. Their strict schemas reject unsupported fields, duplicate/oversized recall
+selections, invalid dates and cross-clinic or selected-patient references. The
+exact alert target adds selection metadata to the model context; its original
+owner source text is read directly for the deterministic human review. Provider dispatch, policy decisions, clinic
+transfer, organization access and binary capture retain dedicated screens.
+
+`scripts/smoke-assistant-guided-completion.py` provides V2-only synthetic `setup`,
+`review` and `readback` phases. Run setup/review, inspect and confirm both saved
+proposals in the browser, then run readback. It verifies unchanged records before
+confirmation, exact saved drafts, actor-private review/result persistence and
+confirmation replay. Afterwards it cancels unsent synthetic drafts, closes the
+synthetic thread and revokes its owner link. Keep credentials and capability-bearing
+state files outside Git. The script itself is covered through authenticated local
+APIs with a stubbed intent model; hosted real-model/browser acceptance is still
+required after deployment. These workflows do not establish emergency-service,
+real-provider or real-clinic acceptance.
 
 Four formerly advertised low-level operations (raw imports and binary recording
 creation/finalization) now route to the existing import/recorder screens, where
@@ -78,7 +118,7 @@ complete source facts. This is not a limit on factual queries: deterministic
 reads still count/filter the complete authorized clinic dataset. Missing context
 requires exact identification or clarification, not guessed IDs or facts.
 
-New acceptance covers all 58 expanded contracts through saved proposal, actual
+New acceptance covers all 60 expanded contracts through saved proposal, actual
 confirmation, persisted result and replay, plus invalid values, unknown fields,
 patient isolation, reference changes and permission revocation. The hosted
 real-model scenario is repeatable with scripts/smoke-assistant-completion.py.
