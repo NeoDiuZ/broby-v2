@@ -246,6 +246,7 @@ def test_conversation_resolution_requires_exact_current_operator_command(monkeyp
         (command.replace(payload['id'], 'wrong-conversation'), payload),
         (command.replace(payload['reason'], 'Different reason'), payload),
         (command, {**payload, 'reason': 'Model-invented reason'}),
+        (command.replace(' reason:', ' but do not resolve it; reason:'), payload),
     ]:
         before = snapshot()
         result = proposal(monkeypatch, name, candidate, message=message)

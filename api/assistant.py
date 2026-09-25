@@ -63,9 +63,9 @@ def explicit_conversation_resolution(message, name, payload):
     reason=payload.get('reason')
     if not isinstance(target,str) or not isinstance(reason,str):return False
     verb='acknowledge' if name=='conversation.acknowledge' else 'close'
-    command=re.match(r'^\s*(?:please\s+)?'+verb+r'\s+(?:owner\s+)?conversation\s+([^\s,;]+)',message,re.I)
-    supplied=re.search(r'\breason\s*:\s*(\S[^\r\n]*)\s*$',message,re.I)
-    return bool(command and command.group(1)==target and supplied and supplied.group(1).strip()==reason)
+    command=re.fullmatch(r'\s*(?:please\s+)?'+verb+r'\s+(?:owner\s+)?conversation\s+'
+                         r'(?P<id>[^\s,;]+)\s+reason\s*:\s*(?P<reason>\S[^\r\n]*)\s*',message,re.I)
+    return bool(command and command.group('id')==target and command.group('reason').strip()==reason)
 
 def answer(c,clinic,actor,message,patient_id=None,history=None):
     from read_access import require, ALL
