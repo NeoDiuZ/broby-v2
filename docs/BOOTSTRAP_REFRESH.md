@@ -76,3 +76,18 @@ The PostgreSQL connection boundary lets psycopg start transactions once, setting
 repeatable-read isolation before the first snapshot query. Actual server tests
 check isolation, timeouts, rollback, blocked serial writers and the absence of
 duplicate-BEGIN notices. No writer-lock or read-isolation guarantee was removed.
+
+
+### Root browser acceptance — 25 September 2026
+
+A disposable local PostgreSQL clinic at integrated revision `2f9b242` contained
+1,084 records, including 1,000 additional synthetic patients. The veterinary
+account's cold response was 888,371 bytes; an unchanged response was 105 bytes.
+The root operator edited a synthetic patient in Chrome; the revised name appeared
+immediately and independent API readback showed revision 2 and a changed token.
+A separate synthetic administrator session then restricted only that vet's
+billing access. Returning the existing Billing tab to the foreground triggered
+a fresh authorized read and replaced it with “Access restricted”; independent
+readback contained zero billing records, compared with two before restriction.
+The fixture contained no reconciliation review. This local acceptance does not
+claim the shortcut runs in a hosted deployment after reconciliation is exercised.
