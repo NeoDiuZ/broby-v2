@@ -49,7 +49,12 @@ The answer shows its actual filters. Reports shows the same filters, counts and
 matching-record receipts. Counts cover all matches; answers list 12 records with
 30 receipt buttons and saved views return at most 100 records. Limits are visible
 and ordering is stable. This is response bounding, not database pagination: the
-current read layer still loads records in memory and is not clinic-scale certified.
+current read layer still loads the requested record kind in memory and is not
+clinic-scale certified. The saved-view/direct-query appointment species and
+owner filters now fetch only their referenced same-clinic patients in bounded
+ID batches instead of loading the clinic's entire patient table a second time.
+The assistant's intent step still loads the clinic record set; neither path
+paginates matching appointments or establishes concurrent-load capacity.
 
 ## Acceptance
 
@@ -158,3 +163,8 @@ the signed-in Reports browser displayed one match and the current owner's name.
 The stored patient link and merged-owner marker were read back. Hosted appointment
 views after a merge remain untested; their behavior is covered by the local
 SQLite/PostgreSQL regression.
+
+The saved-view appointment patient lookup also passed a 501-reference SQLite regression
+that checks batch boundaries, exact species grouping, the 100-record saved-view
+limit and absence of a full patient-table read. PostgreSQL parity remains a CI
+gate for this change; hosted load/soak acceptance is still outstanding.
