@@ -12,7 +12,8 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 - Low stock versus a complete inventory list; positive outstanding invoice
   balances, excluding void invoices.
 - A patient or the clinic, inclusive start/end dates, exact recorded category,
-  status or name; counts grouped by category, status, species, name or day.
+  status or name; exact patient species and appointment clinician ID; counts
+  grouped by category, status, species, name, clinician or day.
 - Observations with an exact concept code, optionally exact unit and typed
   equality. Boolean false remains distinct from zero and the text "false".
 - User-supplied numeric bounds for an exact observation code and unit. No unit
@@ -36,10 +37,11 @@ current read layer still loads records in memory and is not clinic-scale certifi
 
 ## Acceptance
 
-`api/tests/test_record_queries.py` checks assistant/view parity, live refresh,
-outstanding balances, timezone boundaries, reminder due dates, exact units and
-typed equality, malformed/unsupported filters, scope, native facts, bounded output
-and old saved-query compatibility. PostgreSQL acceptance also verifies native
+`api/tests/test_record_queries.py` checks assistant/view parity, exact species
+and clinician filters, live refresh, outstanding balances, timezone boundaries,
+reminder due dates, exact units and typed equality, malformed/unsupported filters,
+scope, native facts, bounded output and old saved-query compatibility.
+PostgreSQL acceptance also verifies native
 numeric filters, original receipts, boolean/text equality and saved-view parity.
 
 Run the complete backend suite against isolated local PostgreSQL, then the web

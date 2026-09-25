@@ -64,6 +64,35 @@ def test_status_and_due_dates_are_persisted_in_model_query(monkeypatch):
     assert 'status: due' in answer['text'] and other['id'] not in answer['dashboard']['source_ids']
 
 
+def test_species_filter_is_exact_and_saved_view_matches_assistant(monkeypatch):
+    with db.connection(True) as c:
+        cat=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Cat','species':'Cat'})
+        dog=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Dog','species':'Dog'})
+    answer=ask(monkeypatch,'Show clinic cats',{'read':{'kind':'patient','scope':'clinic','species':'cat','group_by':'species'}})
+    assert cat['id'] in {r['id'] for r in answer['sources']}
+    assert dog['id'] not in {r['id'] for r in answer['sources']}
+    assert answer['dashboard']['query']['species']=='cat'
+    view=act('dashboard.save',{'name':'SYNTHETIC cats','query':answer['dashboard']['query']})
+    saved=TestClient(main.app).get('/api/dashboards/'+view['id']).json()['result']
+    assert saved['count']==answer['dashboard']['count']
+    assert saved['groups']==answer['dashboard']['groups']
+
+
+def test_exact_clinician_filter_and_grouping_survive_saved_view(monkeypatch):
+    with db.connection(True) as c:
+        first=db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-07-10','time':'09:00','reason':'SYNTHETIC check','clinician':'clinic-east-vet','status':'scheduled'})
+        other=db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-07-10','time':'10:00','reason':'SYNTHETIC check','clinician':'clinic-east-nurse','status':'scheduled'})
+    plan={'read':{'kind':'appointment','scope':'clinic','clinician':'clinic-east-vet',
+                  'start':'2098-07-10','end':'2098-07-10','group_by':'clinician'}}
+    answer=ask(monkeypatch,'Show this clinician appointments',plan)
+    assert [r['id'] for r in answer['sources']]==[first['id']]
+    assert other['id'] not in answer['dashboard']['source_ids']
+    assert answer['dashboard']['groups']==[{'label':'clinic-east-vet','count':1}]
+    view=act('dashboard.save',{'name':'SYNTHETIC clinician','query':answer['dashboard']['query']})
+    saved=TestClient(main.app).get('/api/dashboards/'+view['id']).json()['result']
+    assert [r['id'] for r in saved['records']]==[first['id']]
+
+
 def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
     with db.connection(True) as c:
         first=db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Midnight clinic time','occurred_at':'2026-09-23T16:30:00Z'})
@@ -72,6 +101,19 @@ def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
     assert first['id'] in {x['id'] for x in r['records']}
     assert all(x['data'].get('title')!='Before midnight' for x in r['records'])
     assert r['timezone']=='Asia/Singapore'
+
+
+def test_malformed_legacy_date_falls_back_to_record_date_and_invalid_timezone_fails():
+    with db.connection(True) as c:
+        row=db.record(c,'event','clinic-east',{'patient_id':'luna','date':7,'title':'SYNTHETIC malformed date'})
+        invalid=db.record(c,'event','clinic-east',{'patient_id':'luna','date':'2098-99-99','title':'SYNTHETIC invalid calendar date'})
+    result=query({'kind':'event','patient_id':'luna','group_by':'day'})
+    assert {row['id'],invalid['id']} <= {item['id'] for item in result['records']}
+    assert '2098-99-99' not in {item['label'] for item in result['groups']}
+    with db.connection(True) as c:
+        clinic=db.get(c,'clinic-east')
+        db.update(c,clinic,{**clinic['data'],'timezone':None})
+    err(409,lambda:query({'kind':'event'}))
 
 
 def test_typed_equality_false_is_not_zero_and_exact_unit_comparisons():
@@ -92,6 +134,8 @@ def test_typed_equality_false_is_not_zero_and_exact_unit_comparisons():
     {'kind':'observation','code':'x','unit':'x','value_min':True},
     {'kind':'observation','code':'x','value_equals':float('inf')},
     {'kind':'invoice','low_stock':'false'}, {'kind':'patient','status':'due'},
+    {'kind':'invoice','species':'Cat'}, {'kind':'patient','clinician':'clinic-east-vet'},
+    {'kind':'patient','group_by':'clinician'},
     {'kind':'invoice','start':'20260924'}, {'kind':'invoice','start':'2099-02-30'},
     {'kind':'event','start':'2099-02-01','end':'2099-01-01'},
     {'kind':'event','arbitrary_sql':'SELECT secret'}, {'kind':'event','group_by':'secret'},

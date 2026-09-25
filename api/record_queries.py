@@ -2,7 +2,7 @@
 import math
 from datetime import date, datetime, timezone
 from typing import Literal
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, ValidationError, model_validator
 from db import all_records, get, now
@@ -20,6 +20,8 @@ class RecordQuery(BaseModel):
     end: StrictStr | None = None
     category: StrictStr | None = Field(default=None, max_length=120)
     name: StrictStr | None = Field(default=None, max_length=200, description='Exact recorded name, ignoring case. No substring match.')
+    species: StrictStr | None = Field(default=None, min_length=1, max_length=120, description='Exact recorded patient species, ignoring case.')
+    clinician: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact recorded appointment clinician ID.')
     code: StrictStr | None = Field(default=None, max_length=120, description='Exact recorded observation concept code.')
     unit: StrictStr | None = Field(default=None, max_length=80, description='Exact recorded unit; no conversion.')
     status: StrictStr | None = Field(default=None, max_length=80, description='Exact recorded workflow status.')
@@ -28,7 +30,7 @@ class RecordQuery(BaseModel):
     value_min: StrictFloat | StrictInt | None = Field(default=None, allow_inf_nan=False)
     value_max: StrictFloat | StrictInt | None = Field(default=None, allow_inf_nan=False)
     value_equals: StrictBool | StrictFloat | StrictInt | StrictStr | None = None
-    group_by: Literal['auto','category','status','species','name','day'] = 'auto'
+    group_by: Literal['auto','category','status','species','name','clinician','day'] = 'auto'
 
     @model_validator(mode='after')
     def meaningful_filters(self):
@@ -59,7 +61,10 @@ class RecordQuery(BaseModel):
             raise ValueError('Status does not apply to this record kind')
         if self.name and self.kind not in {'patient','observation','inventory'}:
             raise ValueError('Name does not apply to this record kind')
+        if self.species and self.kind!='patient':raise ValueError('Species requires patients')
+        if self.clinician and self.kind!='appointment':raise ValueError('Clinician requires appointments')
         if self.group_by=='species' and self.kind!='patient':raise ValueError('Species grouping requires patients')
+        if self.group_by=='clinician' and self.kind!='appointment':raise ValueError('Clinician grouping requires appointments')
         if self.group_by=='name' and self.kind not in {'patient','observation','inventory'}:
             raise ValueError('Name grouping does not apply to this record kind')
         return self
@@ -81,19 +86,23 @@ def record_day(row, tz):
     data=row['data']
     # Scheduling/due dates are clinic calendar dates, not ingestion timestamps.
     value=(data.get('due') if row['kind']=='reminder' else None) or data.get('date') or data.get('occurred_at') or row['created_at']
-    if len(value)==10:return value
+    if isinstance(value,str) and len(value)==10:
+        try:
+            return date.fromisoformat(value).isoformat()
+        except ValueError:
+            return row['created_at'][:10]
     try:
         instant=datetime.fromisoformat(value.replace('Z','+00:00'))
         if instant.tzinfo is None:instant=instant.replace(tzinfo=timezone.utc)
         return instant.astimezone(ZoneInfo(tz)).date().isoformat()
-    except (ValueError,TypeError):
+    except (ValueError,TypeError,AttributeError):
         return row['created_at'][:10]
 
 
 def query_summary(query, patient=None):
     parts=[patient['data']['name'] if patient else 'Whole clinic']
     if query.get('start') or query.get('end'):parts.append(f"{query.get('start') or 'earliest'} to {query.get('end') or 'latest'}")
-    for key in ('category','name','code','unit','status'):
+    for key in ('category','name','species','clinician','code','unit','status'):
         if query.get(key):parts.append(f"{key.replace('_',' ')}: {query[key]}")
     if query.get('low_stock'):parts.append('stock at or below reorder level')
     if query.get('outstanding'):parts.append('positive outstanding balance, excluding void invoices')
@@ -111,12 +120,18 @@ def select_records(c, clinic, query, records=None):
         if query['kind'] in {'event','observation'}:
             records+=native_records(clinic,query.get('patient_id'))
     tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore')
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        from actions import fail
+        fail('The clinic timezone must be configured before querying records',409)
     selected=[]
     for r in records:
         if r['clinic_id']!=clinic or r['kind']!=query['kind']:continue
         d=r['data'];day=record_day(r,tz)
         if query.get('patient_id') and r['id']!=query['patient_id'] and d.get('patient_id')!=query['patient_id']:continue
-        if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','code','status')):continue
+        if any(query.get(k) and str(d.get(k,'')).casefold()!=query[k].casefold() for k in ('category','name','species','code','status')):continue
+        if query.get('clinician') and d.get('clinician')!=query['clinician']:continue
         if query.get('unit') and d.get('unit')!=query['unit']:continue
         if query.get('start') and day<query['start'] or query.get('end') and day>query['end']:continue
         if query.get('low_stock') and (d.get('unit')=='service' or d.get('stock',0)>d.get('reorder',0)):continue
