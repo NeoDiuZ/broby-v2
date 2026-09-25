@@ -114,5 +114,16 @@ to the expected exact structured filters: Cat and feline patients, two owner
 phrases, clinician/date, Cat plus clinician/date, Dog/date, outstanding invoices
 and low stock. These are nine specific examples, not a representative language
 or clinical evaluation. An owner-linked appointment question exposed a 422
-invalid-query failure. The new clinic-scoped owner-to-appointment join and
-completed clarification fallback address that gap; hosted acceptance is pending.
+invalid-query failure.
+
+After revision `495702b` deployed to both V2 Railway services on 25 September,
+the same real-model owner-linked appointment question returned the exact owner
+ID, appointment kind and date bounds. Its result contained the linked synthetic
+Cat appointment and excluded an unlinked synthetic Dog appointment. A second
+authenticated session read back the matching saved-view query, count and source
+IDs. In the hosted browser, Reports showed one match and the source receipt;
+the view rendered again after reload and device unlock. An unsupported
+owner-linked invoice question returned HTTP 200 with a limitation, no dashboard,
+records or action, and persisted as a completed private conversation. This
+verifies these synthetic examples only; representative model evaluation and
+clinic-scale query performance remain unfinished.
