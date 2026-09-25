@@ -170,6 +170,21 @@ with db.connection(snapshot=True) as c:
  c.execute=timed
  began=time.monotonic();operational_reports.build(c,'clinic-east',30)
  print(json.dumps({'total_ms':round((time.monotonic()-began)*1000,2),'queries':sorted(timings,key=lambda x:x['ms'],reverse=True)[:12]}))''')
+        report['spine_sync_profile']=python('''import json,time
+from concurrent.futures import ThreadPoolExecutor
+from spine.projection import sync
+def measured(_):
+ began=time.monotonic();sync('clinic-east');return round((time.monotonic()-began)*1000,1)
+sequential=[measured(i) for i in range(5)]
+with ThreadPoolExecutor(max_workers=8) as pool: concurrent=list(pool.map(measured,range(16)))
+print(json.dumps({'sequential_ms':sequential,'concurrent_ms':concurrent}))''')
+        report['read_sequential_ms']={}
+        for route in ('v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25'):
+            times=[]
+            for _ in range(3):
+                began=time.monotonic();req('GET',route)
+                times.append(round((time.monotonic()-began)*1000,1))
+            report['read_sequential_ms'][route]=times
         endpoints=['bootstrap','v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25',
                    'operations/health','reports/operations?days=30','dashboards/'+view['id']]
         def read(i):
