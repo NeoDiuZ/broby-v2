@@ -24,6 +24,11 @@ For an owner-specific question, the server also checks that the model kept the
 same exact owner ID in a patient or appointment query. If the model omits the
 owner, selects a different one, or proposes another record kind, the answer is
 a clarification without records. An unknown explicit owner ID is clarified.
+- When a question explicitly says **status equals/is** or **species equals/is**
+  a value recorded in this clinic, the server checks that the model kept the
+  same exact filter. A missing, substituted, unknown or conflicting value
+  returns a clarification without records or a saved view. This guard covers
+  these explicit forms; it is not a general language-completeness guarantee.
 - Appointments filtered or grouped by the exact recorded species of their
   linked clinic patient. Missing, malformed or foreign-clinic patient links do
   not match a requested species; grouping labels them "Not recorded".
@@ -65,6 +70,8 @@ appointments, including clinic isolation and malformed links,
 outstanding balances, timezone boundaries,
 reminder due dates, exact units and typed equality, malformed/unsupported filters,
 scope, native facts, bounded output and old saved-query compatibility.
+It also checks that a model cannot silently widen an explicit recorded status
+or species request, including a wrong value and an unknown value.
 PostgreSQL acceptance also verifies native
 numeric filters, original receipts, boolean/text equality and saved-view parity.
 

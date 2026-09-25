@@ -64,6 +64,39 @@ def test_status_and_due_dates_are_persisted_in_model_query(monkeypatch):
     assert 'status: due' in answer['text'] and other['id'] not in answer['dashboard']['source_ids']
 
 
+def test_explicit_status_cannot_be_dropped_or_substituted_by_model(monkeypatch):
+    with db.connection(True) as c:
+        scheduled=db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-07-10','time':'09:00','status':'scheduled','reason':'SYNTHETIC exact-filter test'})
+        db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-07-10','time':'10:00','status':'cancelled','reason':'SYNTHETIC exact-filter test'})
+    message='Show appointments whose recorded status equals scheduled on 2098-07-10.'
+    for filters in ({}, {'status':'cancelled'}):
+        answer=ask(monkeypatch,message,{'read':{'kind':'appointment','scope':'clinic',**filters}})
+        assert answer['sources']==[] and 'dashboard' not in answer
+    correct=ask(monkeypatch,message,{'read':{'kind':'appointment','scope':'clinic','status':'scheduled'}})
+    assert correct['dashboard']['query']['status']=='scheduled'
+    assert scheduled['id'] in {r['id'] for r in correct['sources']}
+    unknown=ask(monkeypatch,'Show appointments whose status equals imaginary',{'read':{'kind':'appointment','scope':'clinic'}})
+    assert unknown['sources']==[] and 'dashboard' not in unknown
+    multiple=ask(monkeypatch,'Show appointments whose status equals scheduled or cancelled',
+                 {'read':{'kind':'appointment','scope':'clinic','status':'scheduled'}})
+    assert multiple['sources']==[] and 'dashboard' not in multiple
+    wrong_intent=ask(monkeypatch,message,{'action':{'action':'patient.update','payload':{}}})
+    assert wrong_intent['sources']==[] and 'action' not in wrong_intent
+
+
+def test_explicit_species_cannot_be_dropped_or_substituted_by_model(monkeypatch):
+    with db.connection(True) as c:
+        cat=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Explicit Cat','species':'Cat'})
+        dog=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Explicit Dog','species':'Dog'})
+    message='Show patients whose species is Cat.'
+    for filters in ({}, {'species':'Dog'}):
+        answer=ask(monkeypatch,message,{'read':{'kind':'patient','scope':'clinic',**filters}})
+        assert answer['sources']==[] and 'dashboard' not in answer
+    correct=ask(monkeypatch,message,{'read':{'kind':'patient','scope':'clinic','species':'cat'}})
+    assert cat['id'] in {r['id'] for r in correct['sources']}
+    assert dog['id'] not in {r['id'] for r in correct['sources']}
+
+
 def test_species_filter_is_exact_and_saved_view_matches_assistant(monkeypatch):
     with db.connection(True) as c:
         cat=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Cat','species':'Cat'})
