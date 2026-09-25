@@ -293,3 +293,5 @@ phases use deterministic mutation keys. No customer message, online payment or
 assistant mutation confirmation is part of this script. Local script regressions
 use fixed intent and API continuation stand-ins; only an observed hosted browser
 run establishes hosted model and navigation acceptance.
+
+Literal-search phrases and exact record/owner ID tokens are data, not scope or filter instructions. Before identity, dates, species, status, medication kind, advice and action detection, the assistant masks those spans and supported quoted exact-name/code/unit values. It retains the exact values separately for the read contract and preserves the original saved question. Conflicting, unterminated or escaped literal phrases clarify before selection metadata or model execution; backslash escapes are not a supported search syntax. A quoted `whole clinic`, `today`, patient name or `start` cannot widen a selected patient, add dates, select an animal or propose a consultation. Genuine outside scope wording still applies.
