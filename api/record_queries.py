@@ -17,6 +17,8 @@ NAMED_KINDS = {'patient', 'observation', 'inventory', 'medication', 'medication_
 class RecordQuery(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     kind: RecordKind
+    record_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='One exact record ID supplied by the operator. Intersects clinic, kind, patient and all other filters; never broadens a missing or foreign ID into a list.')
+    text_contains: StrictStr | None = Field(default=None, min_length=1, max_length=500, description='Literal case-insensitive substring in an event title or recorded body. Events only; no synonyms, semantic search, regular expressions or clinical inference.')
     patient_id: StrictStr | None = Field(default=None, max_length=100)
     owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches current same-clinic primary or additional patient links for patients, appointments, invoices and reminders. This is a current relationship filter, not historical invoice ownership or payment liability.')
     start: StrictStr | None = None
@@ -37,6 +39,8 @@ class RecordQuery(BaseModel):
 
     @model_validator(mode='after')
     def meaningful_filters(self):
+        if self.text_contains is not None and (self.kind!='event' or not self.text_contains.strip()):
+            raise ValueError('Literal text search requires events and a nonblank phrase')
         if isinstance(self.value_equals,float) and not math.isfinite(self.value_equals):
             raise ValueError('Equality values must be finite')
         if isinstance(self.value_equals,str) and len(self.value_equals)>300:
@@ -116,6 +120,8 @@ def query_summary(query, patient=None, owner=None):
     if query.get('start') or query.get('end'):parts.append(f"{query.get('start') or 'earliest'} to {query.get('end') or 'latest'}")
     for key in ('category','name','species','clinician','code','unit','status'):
         if query.get(key):parts.append(f"{key.replace('_',' ')}: {query[key]}")
+    if query.get('record_id'):parts.append('record ID: '+query['record_id'])
+    if query.get('text_contains'):parts.append('event title/body contains literal text: '+repr(query['text_contains']))
     if query.get('owner_id'):
         parts.append('owner: '+(owner['data']['name'] if owner else query['owner_id']))
         if query['kind'] in {'invoice', 'reminder'}:parts.append('current patient-owner links')
@@ -174,7 +180,9 @@ def select_records(c, clinic, query, records=None):
     selected=[]
     for r in records:
         if r['clinic_id']!=clinic or r['kind']!=query['kind']:continue
+        if query.get('record_id') and r['id']!=query['record_id']:continue
         d=r['data'];day=record_day(r,tz)
+        if query.get('text_contains') and not any(isinstance(d.get(field),str) and query['text_contains'].casefold() in d[field].casefold() for field in ('title','body')):continue
         if query.get('patient_id') and r['id']!=query['patient_id'] and d.get('patient_id')!=query['patient_id']:continue
         if query.get('owner_id'):
             owner_patient=d if query['kind']=='patient' else linked_patient(d)

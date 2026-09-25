@@ -9,6 +9,19 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 
 ## Supported questions
 
+- A single exact record ID within a supported record kind. “Show event record ID
+  [ID]” or “Show invoice record ID [ID]” retains the ID in the saved query. It
+  intersects the selected patient, clinic and every other filter; a missing,
+  foreign, held or wrong-kind record does not widen the answer into a list.
+- Literal event-title/body search, matching the timeline's case-insensitive
+  substring meaning: “Find events whose text contains \"exact phrase\"”. Quotes
+  make the requested phrase authoritative; a dropped or substituted phrase or
+  record ID yields clarification. `%`, `_`, brackets and other punctuation are
+  literal characters, never patterns. This searches recorded wording only; it
+  does not infer synonyms, diagnoses or equivalent clinical meanings. Saved
+  views re-evaluate current record versions while saved answers retain the
+  versions originally returned. Shared permissions and reconciliation holds
+  apply to both local and native PostgreSQL events.
 - Low stock versus a complete inventory list; positive outstanding invoice
   balances, excluding void invoices.
 - A patient or the clinic, inclusive start/end dates, exact recorded category,
