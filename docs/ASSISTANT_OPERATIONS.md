@@ -7,7 +7,7 @@ read-only preparation and labelled deterministic reviews. This replaces the old
 49 untyped field descriptions and adds ten routine operations: speaker labels,
 automation settings, save/archive dashboards, recall preference/cancellation,
 leave request/review/withdrawal and discharge draft preparation. Every one of the
-105 shared operations is explicitly classified: 74 reviewed proposals, 25 routed
+107 shared operations is explicitly classified: 74 reviewed proposals, 27 routed
 to their dedicated review screen, and six internal test-adapter operations that
 are never advertised to the model. Guided operations are not direct AI execution.
 
