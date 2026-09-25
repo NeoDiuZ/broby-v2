@@ -68,8 +68,12 @@ current read layer still loads the requested record kind in memory and is not
 clinic-scale certified. The saved-view/direct-query appointment species and
 owner filters now fetch only their referenced same-clinic patients in bounded
 ID batches instead of loading the clinic's entire patient table a second time.
-The assistant's intent step still loads the clinic record set; neither path
-paginates matching appointments or establishes concurrent-load capacity.
+The assistant's intent step now fetches recent, exact and linked planning
+candidates, plus recorded filter metadata, without materializing the entire
+clinical spine. It still reads the clinic's patient identities for name
+resolution. The final factual read fetches only the requested record kind.
+Neither read path paginates all matching appointments or certifies hosted
+concurrent-load capacity.
 
 ## Acceptance
 
@@ -206,3 +210,25 @@ returned clinic scope. Private V2 test receipts retain the queries and saved
 conversation IDs. No customer message, payment or original Broby action was
 performed. These successful examples do not measure representative language
 accuracy or capacity at real-clinic scale.
+
+## V2 assistant scoped-read acceptance — 25 September 2026
+
+PR #80 merged as `48bbb0c60907dd094fd9f7247bde2129d870c652`. Its full
+frontend, SQLite, PostgreSQL and packaged API CI passed. A pure context
+regression keeps an old named patient and linked owner in planning context
+after 600 newer sources while excluding another clinic. A disposable
+PostgreSQL 5,000-patient, 16-client workflow passed 21 checks, including
+three assistant questions with complete deterministic counts: one old
+patient appointment, 5,004 Cat patients and 500 clinician appointments.
+The model context included 250 of 16,305 available clinic records; server
+intent plus factual read took 592–1,687 ms across the three questions.
+Those timings exclude network and real-model latency.
+
+Both isolated Railway services reported SUCCESS at the merged SHA. A fresh
+synthetic hosted fixture passed 15 real-model query and saved-view checks,
+then four persisted refresh checks; customer sending stayed disabled. The
+deployed Reports browser displayed a one-result numeric observation view,
+opened its exact 6.2 mmol/L source receipt and showed the saved view again
+after reload and device unlock without a framework error overlay. This is
+a synthetic release check; clinic-wide pagination, broader natural-language
+evaluation and real-clinic capacity remain open.
