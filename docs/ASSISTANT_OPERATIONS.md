@@ -21,9 +21,10 @@ mutation fallback remains.
 Owner-conversation acknowledgement, closure and staff reply now have direct
 assistant proposals. The operator must use the exact command “Acknowledge
 conversation [ID] reason: [reason]”, “Close conversation [ID] reason: [reason]”,
-or “Reply to conversation [ID] message: [exact staff text]”. The server requires
-the exact thread ID and the reason or owner-visible reply in that same request;
-none can be supplied only by the model. The model receives status, urgency,
+or “Reply to conversation [ID] message: [exact staff text]”. The model selects
+only the operation. The server extracts the exact thread ID and reason or
+owner-visible reply from that same operator request and reads the current
+thread version; model substitutions are ignored. The model receives status, urgency,
 patient ID and version metadata, never the owner's message text or access-link digest.
 The assistant request accepts the full 4,000-character staff reply plus its
 command prefix; the normal Handover editor remains available for multiline work.

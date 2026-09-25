@@ -253,15 +253,22 @@ def test_conversation_resolution_requires_exact_current_operator_command(monkeyp
     for message, candidate in [
         ('Synthetic explicit operator request', payload),
         (command.replace(payload['id'], 'wrong-conversation'), payload),
-        (command.replace(payload['reason'], 'Different reason'), payload),
-        (command, {**payload, 'reason': 'Model-invented reason'}),
         (command.replace(' reason:', ' but do not resolve it; reason:'), payload),
+        (command, {**payload, 'unreviewed_field': True}),
     ]:
         before = snapshot()
         result = proposal(monkeypatch, name, candidate, message=message)
         assert 'action' not in result and snapshot() == before
-    reviewed = proposal(monkeypatch, name, payload, message=command)
-    assert reviewed['action']['payload']['last_owner_turn']
+    for message, candidate, expected_reason in [
+        (command, {**payload, 'id': 'wrong-model-id', 'version': 999, 'reason': 'Model-invented reason'}, payload['reason']),
+        (command.replace(payload['reason'], 'Different operator reason'), payload, 'Different operator reason'),
+    ]:
+        before = snapshot()
+        reviewed = proposal(monkeypatch, name, candidate, message=message)
+        assert reviewed['action']['payload']['id'] == payload['id']
+        assert reviewed['action']['payload']['reason'] == expected_reason
+        assert reviewed['action']['payload']['version'] == payload['version']
+        assert reviewed['action']['payload']['last_owner_turn'] and snapshot() == before
 
 
 def test_conversation_reply_requires_exact_operator_words(monkeypatch):
@@ -270,16 +277,22 @@ def test_conversation_reply_requires_exact_operator_words(monkeypatch):
     for message, candidate in [
         ('Reply to the owner with an appropriate answer', payload),
         (command.replace(payload['id'], 'wrong-conversation'), payload),
-        (command.replace(payload['message'], 'Different staff words'), payload),
-        (command, {**payload, 'message': 'Model-authored clinical advice'}),
         (command.replace(' message:', ' but do not send it; message:'), payload),
+        (command, {**payload, 'unreviewed_field': True}),
     ]:
         before = snapshot()
         result = proposal(monkeypatch, 'conversation.reply', candidate, message=message)
         assert 'action' not in result and snapshot() == before
-    reviewed = proposal(monkeypatch, 'conversation.reply', payload, message=command)
-    assert reviewed['action']['payload']['message'] == payload['message']
-    assert reviewed['action']['payload']['last_owner_turn']
+    for message, candidate, expected_reply in [
+        (command, {**payload, 'id': 'wrong-model-id', 'version': 999, 'message': 'Model-authored clinical advice'}, payload['message']),
+        (command.replace(payload['message'], 'Different staff words'), payload, 'Different staff words'),
+    ]:
+        before = snapshot()
+        reviewed = proposal(monkeypatch, 'conversation.reply', candidate, message=message)
+        assert reviewed['action']['payload']['id'] == payload['id']
+        assert reviewed['action']['payload']['message'] == expected_reply
+        assert reviewed['action']['payload']['version'] == payload['version']
+        assert reviewed['action']['payload']['last_owner_turn'] and snapshot() == before
 
 
 def test_full_length_staff_reply_reaches_owner_portal_only_after_confirmation(monkeypatch):
