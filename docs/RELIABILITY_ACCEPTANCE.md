@@ -16,6 +16,17 @@ Choose a new output path for every run. The output contains private test data,
 server logs, backup, restored files and a JSON result. The script deletes only
 its own disposable databases and terminates only its own child process.
 
+The manually dispatched `V2 synthetic scale reads` GitHub workflow runs the
+same isolated script on a disposable PostgreSQL database. Its larger fixture
+adds synthetic appointments, unsent message drafts and stock items, then checks
+the exact saved appointment view and full operational report. The concurrent
+HTTP mix covers bootstrap, paged patient search, patient timeline, worker
+health, the report and the saved view; the result artifact records per-route
+latency and response size. The manual workflow uses `--skip-restore` because
+the separate 24 September run below already covered backup integrity. A scale
+run does **not** certify hosted Railway capacity, a prolonged soak, external
+provider delivery or a real clinic's records.
+
 ## Verified on 24 September 2026
 
 - 1,000 added patients; 4,086 PMS records in the final fixture.

@@ -20,6 +20,7 @@ p.add_argument('--output',type=Path,required=True)
 p.add_argument('--patients',type=int,default=1000)
 p.add_argument('--requests',type=int,default=160)
 p.add_argument('--concurrency',type=int,default=8)
+p.add_argument('--skip-restore',action='store_true',help='Run load and crash recovery without the separate backup/restore drill')
 a=p.parse_args()
 if not 20<=a.patients<=20000 or not 8<=a.requests<=5000 or not 2<=a.concurrency<=32:
     raise SystemExit('Use 20–20000 patients, 8–5000 requests, 2–32 concurrent clients')
@@ -93,14 +94,22 @@ try:
     migrated=subprocess.run([str(PYTHON),'-m','spine.migrate'],cwd=ROOT/'api',env=env,capture_output=True)
     if migrated.returncode:raise RuntimeError('Isolated clinical migration failed')
     python('''import db,auth,json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from spine.projection import setup_queue
 db.init();auth.setup_tables();setup_queue()
 with db.connection(True) as c:
+ today=datetime.now(ZoneInfo('Asia/Singapore')).date().isoformat()
  for i in range('''+str(a.patients)+'''):
   owner=db.record(c,'owner','clinic-east',{'name':f'SYNTHETIC Load owner {i}','email':'','phone':''})
   patient=db.record(c,'patient','clinic-east',{'name':f'SYNTHETIC Load pet {i:05}','species':'Cat','owner_id':owner['id'],'weight':4.2,'breed':'','sex':'Unknown','age':''})
   source=db.record(c,'source','clinic-east',{'patient_id':patient['id'],'text':'Exact synthetic load finding.','title':'Synthetic source','category':'clinical','section':'Subjective','author':'Synthetic operator'})
   db.event(c,'clinic-east',patient['id'],'clinical','Synthetic event','Exact synthetic load finding.',[source['id']])
+  if i%10==0:
+   db.record(c,'appointment','clinic-east',{'patient_id':patient['id'],'date':today,'time':'09:00','duration':30,'status':'scheduled','clinician':'synthetic-scale-vet','reason':'SYNTHETIC load appointment'})
+   db.record(c,'outbox','clinic-east',{'patient_id':patient['id'],'status':'pending','body':'SYNTHETIC unsent load draft'})
+  if i%20==0:
+   db.record(c,'inventory','clinic-east',{'name':f'SYNTHETIC load stock {i}','unit':'pack','stock':1,'reorder':2})
 print(json.dumps({'seeded':True}))''')
     start(hold=True)
     with httpx.Client(base_url=base,timeout=60) as client:
@@ -135,7 +144,17 @@ print(json.dumps({'seeded':True}))''')
         projection_start=time.monotonic();page=req('GET','v2/patients',params={'limit':50})
         report['initial_projection_seconds']=round(time.monotonic()-projection_start,3)
         check(len(page['items'])==50 and bool(page['next_cursor']),'patient directory returns bounded cursor pages')
-        endpoints=['bootstrap','v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25','operations/health']
+        view=action('dashboard.save',{'name':'SYNTHETIC scale appointment view','query':{'kind':'appointment','species':'Cat','clinician':'synthetic-scale-vet','group_by':'species'}})
+        expected_appointments=(a.patients+9)//10
+        saved=req('GET','dashboards/'+view['id'])['result']
+        check(saved['count']==expected_appointments and saved['groups']==[{'label':'Cat','count':expected_appointments}],
+              'saved appointment query counts every exact synthetic clinic patient link')
+        operations=req('GET','reports/operations?days=30')
+        check(operations['patients']['total']==a.patients+9 and operations['appointments']['total']>=expected_appointments and
+              operations['stock']['items']>=((a.patients+19)//20),
+              'operational report counts complete synthetic clinic records')
+        endpoints=['bootstrap','v2/patients?limit=50&q=SYNTHETIC','v2/patients/luna/timeline?limit=25',
+                   'operations/health','reports/operations?days=30','dashboards/'+view['id']]
         def read(i):
             route=endpoints[i%len(endpoints)];began=time.monotonic();r=client.get(route)
             return route,r.status_code,time.monotonic()-began,len(r.content)
@@ -173,19 +192,22 @@ print(json.dumps({'seeded':True}))''')
         check(client.get('recordings/'+recording['id']+'/audio').content==b'SYNTHETIC durable audio bytes','original audio bytes survive restart')
         report['records_verified']=len(final)
     stop()
-    for script,args in [('backup-local.py',[out/'backup']),('verify-backup.py',[out/'backup',out/'restored'])]:
-        result=subprocess.run([str(PYTHON),str(ROOT/'scripts'/script),*map(str,args)],cwd=ROOT,env=env,capture_output=True,text=True)
-        (out/(script+'.log')).write_text(result.stdout+result.stderr)
-        if result.returncode:raise RuntimeError(script+' failed; inspect private acceptance log')
-    restored=json.loads((out/'restored/verification.json').read_text());report['restore']=restored
-    check(restored['exact_snapshot_values_verified'] and restored['verified_binary_receipts']==2,'complete database snapshot and indexed audio/file receipts restore exactly')
-    # Detect damage before a restore database is allocated.
-    manifest=json.loads((out/'backup/manifest.json').read_text())
-    first=next(iter(manifest['files']))
-    damaged=out/'backup/data'/first;original=damaged.read_bytes();damaged.write_bytes(original+b'damaged')
-    result=subprocess.run([str(PYTHON),str(ROOT/'scripts/verify-backup.py'),str(out/'backup'),str(out/'corrupt-restored')],cwd=ROOT,env=env,capture_output=True)
-    damaged.write_bytes(original)
-    check(result.returncode!=0 and not (out/'corrupt-restored').exists(),'corrupted backup is rejected before restoration')
+    if a.skip_restore:
+        report['restore_skipped']=True
+    else:
+        for script,args in [('backup-local.py',[out/'backup']),('verify-backup.py',[out/'backup',out/'restored'])]:
+            result=subprocess.run([str(PYTHON),str(ROOT/'scripts'/script),*map(str,args)],cwd=ROOT,env=env,capture_output=True,text=True)
+            (out/(script+'.log')).write_text(result.stdout+result.stderr)
+            if result.returncode:raise RuntimeError(script+' failed; inspect private acceptance log')
+        restored=json.loads((out/'restored/verification.json').read_text());report['restore']=restored
+        check(restored['exact_snapshot_values_verified'] and restored['verified_binary_receipts']==2,'complete database snapshot and indexed audio/file receipts restore exactly')
+        # Detect damage before a restore database is allocated.
+        manifest=json.loads((out/'backup/manifest.json').read_text())
+        first=next(iter(manifest['files']))
+        damaged=out/'backup/data'/first;original=damaged.read_bytes();damaged.write_bytes(original+b'damaged')
+        result=subprocess.run([str(PYTHON),str(ROOT/'scripts/verify-backup.py'),str(out/'backup'),str(out/'corrupt-restored')],cwd=ROOT,env=env,capture_output=True)
+        damaged.write_bytes(original)
+        check(result.returncode!=0 and not (out/'corrupt-restored').exists(),'corrupted backup is rejected before restoration')
     report['completed']=True
 finally:
     stop()
