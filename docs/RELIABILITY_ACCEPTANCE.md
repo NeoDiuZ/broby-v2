@@ -71,6 +71,19 @@ guarantee. The 7.84 MB uncompressed bootstrap and full projection after genuine
 clinical changes remain. The frontend also stops six-second full refreshes in
 hidden tabs and refreshes when they become visible again.
 
+A later guarded projection path records the changed PMS record IDs and kinds.
+When at most 100 queued changes are exclusively patient/owner edits, it updates
+only those typed identities and owner links in dependency order. Unknown older
+queue rows, membership changes, other clinical kinds and larger batches still
+take the full rebuild. The change queue upgrades existing SQLite/PostgreSQL
+tables without removing old rows. A disposable 1,000-patient run projected and
+read back a real synthetic patient edit with its owner link in 25.5 ms; its
+first full projection took 5.288 seconds. At 5,000 patients, the edited identity
+read back in 246.8 ms while that run's first full projection took 20.044 seconds.
+Both runs passed all 20 correctness/recovery checks, had zero HTTP errors and
+removed their databases. This does not make first imports, nonidentity clinical
+edits, bulk identity changes or hosted multi-clinic load incremental.
+
 ## Verified on 24 September 2026
 
 - 1,000 added patients; 4,086 PMS records in the final fixture.
