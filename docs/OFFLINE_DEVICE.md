@@ -73,6 +73,15 @@ independent authenticated sessions and newly created synthetic records on the
 isolated V2 host; it must be run again after deployment before hosted acceptance
 is claimed.
 
+After PR #51 deployed as `84b76fc`, that hosted test passed: the second signed-in
+session finished its synthetic WAV while the first remained open; both byte
+streams matched their originals, the first then finished, and replay did not
+duplicate the second note. In the deployed V2 browser, a generated silent WAV
+with transcription disabled stayed active during navigation to another
+synthetic consultation. The new return link reopened the original capture,
+which then saved and cleared its local upload queue. The same browser path also
+passed in an isolated local production build. Neither used a physical microphone.
+
 Settings → Sync & jobs shows offline readiness, expiry, queue count, legacy
 migration warnings and device lock/copy controls. Lock/sign-out cannot discard
 an active recording or audio still held only in memory. Failed actions display
