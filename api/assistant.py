@@ -173,7 +173,10 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
         guided=plan.get('guide')
         if isinstance(guided,str) and guided in assistant_contracts.GUIDED and guided in allowed_actions(c,clinic,actor):
             destination,reason=assistant_contracts.GUIDED[guided]
-            return {'text':reason+' Nothing has been changed.','navigate':'Patients' if destination=='Patient' else destination,'sources':[]}
+            result={'text':reason+' Nothing has been changed.','navigate':'Patients' if destination=='Patient' else destination,'sources':[]}
+            if guided in assistant_contracts.GUIDED_SECTIONS:
+                result['navigate_section']=assistant_contracts.GUIDED_SECTIONS[guided]
+            return result
         if plan.get('action'):
             action=plan['action']
             if not isinstance(action,dict) or action.get('action') not in allowed or not isinstance(action.get('payload'),dict):fail('Assistant proposed an unavailable operation',422)

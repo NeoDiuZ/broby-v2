@@ -7,7 +7,7 @@ import {Row} from '@/lib/types';
 import {Badge,BusyButton,SourceModal} from './ui';
 import {navigate} from './App';
 
-type Turn={turn_id:string;conversation_id?:string;request_key:string;message:string;patient_id?:string;status:string;text:string;created_at?:string;sources?:Row[];choices?:Row[];navigate?:string;action?:{action:string;payload:Record<string,unknown>};review?:{title:string;fields:{label:string;value:string}[];effects:string[]};execution?:any;dashboard?:any};
+type Turn={turn_id:string;conversation_id?:string;request_key:string;message:string;patient_id?:string;status:string;text:string;created_at?:string;sources?:Row[];choices?:Row[];navigate?:string;navigate_section?:string;action?:{action:string;payload:Record<string,unknown>};review?:{title:string;fields:{label:string;value:string}[];effects:string[]};execution?:any;dashboard?:any};
 type Conversation={id:string;title:string;patient_id?:string};
 export default function Assistant({patientId,onClose}:{patientId?:string;onClose:()=>void}) {
  const w=useWorkspace();const [input,setInput]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState('');
@@ -57,9 +57,9 @@ export default function Assistant({patientId,onClose}:{patientId?:string;onClose
     {m.status==='pending'?<p>Checking your records…</p>:<p className="preserve">{m.execution&&m.action?'This action was completed after confirmation. The saved review below shows what was approved.':m.text}</p>}
     {m.status!=='completed'&&<button className="secondary" disabled={busy} onClick={()=>void ask(m.message,m.patient_id,m)}>Retry question</button>}
     {m.status==='completed'&&<>
-     {m.choices?.map(p=><button className="secondary" disabled={busy} key={p.id} onClick={()=>{setSelectedPatient(p.id);void ask('Show patient history',p.id)}}>{p.data.name} · {p.data.species}</button>)}
+     {m.choices?.map(p=><button className="secondary" disabled={busy} key={p.id} onClick={()=>{setSelectedPatient(p.id);void ask(m.message,p.id)}}>{p.data.name} · {p.data.species}</button>)}
      {!!m.sources?.length&&<div className="receipts">{m.sources.map(s=><button key={s.id} onClick={()=>setSource(s)}><FileText size={13}/>{s.data.title||s.data.name||s.kind}</button>)}</div>}
-     {m.navigate&&<button className="text-button" onClick={()=>{navigate(m.navigate!);onClose()}}>Open {m.navigate}<ArrowUpRight size={14}/></button>}
+     {m.navigate&&<button className="text-button" onClick={()=>{navigate(m.navigate!,m.navigate_section);onClose()}}>Open {m.navigate_section||m.navigate}<ArrowUpRight size={14}/></button>}
      {m.dashboard&&<div className="assistant-chart"><strong>{m.dashboard.title}</strong>{m.dashboard.groups.map((g:any)=><div key={g.label}><span>{g.label}</span><meter min={0} max={Math.max(1,m.dashboard.count)} value={g.count}/><b>{g.count}</b></div>)}<BusyButton disabled={busy} onClick={async()=>{await w.act('dashboard.save',{name:m.dashboard.title,query:m.dashboard.query});navigate('Reports');onClose()}}>Save this view</BusyButton></div>}
      {m.action&&(m.review?<section aria-label="Proposed change" className="action-preview"><strong>{m.review.title}</strong><dl>{m.review.fields.map(f=><div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>{m.review.effects.map(effect=><p key={effect}>{effect}</p>)}</section>:<pre className="action-preview">{JSON.stringify(m.action,null,2)}</pre>)}
      {m.action&&(m.execution?<><p role="status">Action completed. Reopening this answer does not repeat it.</p>{m.action.action==='consultation.create'&&<button className="text-button" onClick={()=>{navigate('Consultation',m.execution.id);onClose()}}>Open consultation</button>}</>:<BusyButton className="primary" disabled={busy} onClick={()=>confirm(m)}>Confirm saved action</BusyButton>)}

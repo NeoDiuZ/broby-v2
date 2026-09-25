@@ -46,3 +46,14 @@ API read/confirmation and mutation replay are checked separately. Release
 verification evidence is kept in the operator's ignored local evidence folder.
 
 Hosted verification on 24 September: PR #10 merged and both Railway services deployed `1a6790891aaba48592368b779c9a2578bf77f5ab`. Eight real hosted checks passed, including actual AI invoice retrieval/proposal, stable question replay, persisted confirmation and privacy against another authenticated synthetic user. Browser acceptance also created and confirmed a synthetic consultation, reloaded the page and restored its completed action. The synthetic privacy-test membership was deactivated afterward.
+
+When a name matches multiple patients, selecting one now repeats the exact saved
+question in the same private conversation with that patient's ID. It preserves
+requested filters instead of substituting a generic history question; the normal
+scope and permission checks still apply and no action is auto-confirmed.
+
+Dictionary proposal/review guidance opens Settings directly at Observation
+catalog. That destination is fixed by the server, persists with the answer, and
+retains the existing dedicated human review through the shared action executor.
+SQLite/PostgreSQL continuation tests and frontend interaction tests cover these
+paths; representative clinical-language acceptance remains separate.
