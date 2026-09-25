@@ -144,3 +144,10 @@ equals scheduled” produced both the exact date and status filters. The 13/13
 result therefore applies to the explicit wording, not the ambiguous variant.
 These cases do not certify clinical terminology, every phrasing or every
 combination of read filters.
+
+Owner-linked patient and appointment views now resolve a staff-merged owner ID
+to its active owner when refreshed. This preserves saved views created before a
+reviewed merge, with the active owner's current links and name displayed. A
+malformed merge chain fails for review rather than silently returning a stale
+or broader result. The saved-view regression passed all 46 query tests in both
+SQLite and local PostgreSQL; hosted merge behavior has not been exercised.
