@@ -11,17 +11,21 @@ def stamp(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 def setup_queue():
+    from projection_kinds import PROJECTED_KIND_SQL
     with db.connection(True) as c:
         if c.dialect=='postgres':
             from pms_postgres import projection_queue
             projection_queue(c)
             return
         c.executescript('''CREATE TABLE IF NOT EXISTS spine_changes(sequence INTEGER PRIMARY KEY AUTOINCREMENT,clinic_id TEXT);
-        CREATE TRIGGER IF NOT EXISTS spine_insert AFTER INSERT ON records BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
+        CREATE INDEX IF NOT EXISTS spine_changes_clinic_sequence ON spine_changes(clinic_id,sequence DESC);
+        DROP TRIGGER IF EXISTS spine_insert;
+        DROP TRIGGER IF EXISTS spine_update;
+        CREATE TRIGGER spine_insert AFTER INSERT ON records WHEN NEW.kind IN '''+PROJECTED_KIND_SQL+''' BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_insert AFTER INSERT ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_update AFTER UPDATE ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_delete AFTER DELETE ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(OLD.clinic_id); END;
-        CREATE TRIGGER IF NOT EXISTS spine_update AFTER UPDATE ON records BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
+        CREATE TRIGGER spine_update AFTER UPDATE ON records WHEN NEW.kind IN '''+PROJECTED_KIND_SQL+''' OR OLD.kind IN '''+PROJECTED_KIND_SQL+''' BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         ''')
 
 def sync(clinic):

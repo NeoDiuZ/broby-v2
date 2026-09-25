@@ -125,8 +125,10 @@ def history(c):
 
 
 def projection_queue(c):
+    from projection_kinds import PROJECTED_KIND_SQL
     c.executescript('''
     CREATE TABLE IF NOT EXISTS spine_changes(sequence BIGSERIAL PRIMARY KEY,clinic_id TEXT);
+    CREATE INDEX IF NOT EXISTS spine_changes_clinic_sequence ON spine_changes(clinic_id,sequence DESC);
     CREATE OR REPLACE FUNCTION enqueue_spine_change() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
       IF TG_OP='DELETE' THEN
@@ -137,8 +139,12 @@ def projection_queue(c):
       RETURN NEW;
     END;
     $$;
-    CREATE OR REPLACE TRIGGER spine_records AFTER INSERT OR UPDATE ON records
-      FOR EACH ROW EXECUTE FUNCTION enqueue_spine_change();
+    DROP TRIGGER IF EXISTS spine_records ON records;
+    CREATE OR REPLACE TRIGGER spine_records_insert AFTER INSERT ON records
+      FOR EACH ROW WHEN (NEW.kind IN '''+PROJECTED_KIND_SQL+''') EXECUTE FUNCTION enqueue_spine_change();
+    CREATE OR REPLACE TRIGGER spine_records_update AFTER UPDATE ON records
+      FOR EACH ROW WHEN (NEW.kind IN '''+PROJECTED_KIND_SQL+''' OR OLD.kind IN '''+PROJECTED_KIND_SQL+''')
+      EXECUTE FUNCTION enqueue_spine_change();
     CREATE OR REPLACE TRIGGER spine_memberships AFTER INSERT OR UPDATE OR DELETE ON auth_memberships
       FOR EACH ROW EXECUTE FUNCTION enqueue_spine_change();
     ''')
