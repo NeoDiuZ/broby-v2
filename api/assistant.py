@@ -1,5 +1,6 @@
 """AI interprets intent; deterministic code retrieves facts or proposes shared actions."""
 import json,re
+from datetime import date
 from fastapi import HTTPException
 from db import all_records,get
 from actions import owned,fail
@@ -44,6 +45,15 @@ def explicit_recorded_filter(message, field, values):
         requested.append(value)
     return requested[0] if len(set(requested))==1 else False
 
+def explicit_on_day(message):
+    """Recognise one unambiguous ISO day after 'on' in a factual request."""
+    if not re.search(r'\bon\s+\d{4}-\d{2}-\d{2}(?!\d)',message,re.I):return None
+    dates=set(re.findall(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)',message))
+    if len(dates)!=1:return False
+    value=dates.pop()
+    try:return value if date.fromisoformat(value).isoformat()==value else False
+    except ValueError:return False
+
 def answer(c,clinic,actor,message,patient_id=None,history=None):
     from read_access import require, ALL
     require(c,clinic,actor,ALL)
@@ -52,7 +62,8 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     q=message.lower();rs=all_records(c,clinic)+native_records(clinic);patients=[r for r in rs if r['kind']=='patient']
     required_status=explicit_recorded_filter(message,'status',(r['data'].get('status') for r in rs))
     required_species=explicit_recorded_filter(message,'species',(r['data'].get('species') for r in patients))
-    exact_filter_read=bool(re.match(r'\s*(?:show|list|count|which|find|how many|give me)\b',q)) and (required_status is not None or required_species is not None)
+    required_day=explicit_on_day(message)
+    exact_filter_read=bool(re.match(r'\s*(?:show|list|count|which|find|how many|give me)\b',q)) and any(x is not None for x in (required_status,required_species,required_day))
     patient=owned(c,patient_id,clinic,'patient') if patient_id else None
     # Match token boundaries; names are never identity keys.
     matches=[p for p in patients if re.search(r'(?<!\w)'+re.escape(p['data']['name'].lower())+r'(?!\w)',q)]
@@ -127,12 +138,19 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
         return UNSUPPORTED_READ
     if required_species is not None and str(query.get('species','')).casefold()!=required_species:
         return UNSUPPORTED_READ
+    if required_day is False:return UNSUPPORTED_READ
+    if required_day and (query.get('start') not in (None,'',required_day) or query.get('end') not in (None,'',required_day)):
+        return UNSUPPORTED_READ
     # A model may omit a requested condition while still producing a valid read.
     # Never widen an owner-specific question to another owner or the whole clinic.
     if requested_owner and (kind not in {'patient','appointment'} or query.get('owner_id')!=requested_owner['id']):
         return UNSUPPORTED_READ
-    if not query.get('start') and start:query['start']=str(start)
-    if not query.get('end') and end:query['end']=str(end)
+    for bound,expected in (('start',str(start) if start else None),('end',str(end) if end else None)):
+        if expected and query.get(bound) not in (None,'',expected):return UNSUPPORTED_READ
+        if expected and not query.get(bound):query[bound]=expected
+    if required_day:
+        query['start']=required_day
+        query['end']=required_day
     # Compatibility for direct questions/offline fallback, now captured in the
     # saved contract as well as the displayed result.
     if not read:

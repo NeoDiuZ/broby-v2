@@ -97,6 +97,34 @@ def test_explicit_species_cannot_be_dropped_or_substituted_by_model(monkeypatch)
     assert dog['id'] not in {r['id'] for r in correct['sources']}
 
 
+def test_explicit_calendar_day_cannot_be_widened_or_changed_by_model(monkeypatch):
+    with db.connection(True) as c:
+        requested=db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-07-10','time':'09:00','status':'scheduled','reason':'SYNTHETIC date test'})
+        other=db.record(c,'appointment','clinic-east',{'patient_id':'luna','date':'2098-07-11','time':'09:00','status':'scheduled','reason':'SYNTHETIC date test'})
+    message='Show appointments on 2098-07-10.'
+    narrowed=ask(monkeypatch,message,{'read':{'kind':'appointment','scope':'clinic'}})
+    assert narrowed['dashboard']['query']['start']=='2098-07-10'
+    assert narrowed['dashboard']['query']['end']=='2098-07-10'
+    assert requested['id'] in {r['id'] for r in narrowed['sources']}
+    assert other['id'] not in {r['id'] for r in narrowed['sources']}
+    wrong=ask(monkeypatch,message,{'read':{'kind':'appointment','scope':'clinic','start':'2098-07-11'}})
+    assert wrong['sources']==[] and 'dashboard' not in wrong
+    invalid=ask(monkeypatch,'Show appointments on 2098-02-31',{'read':{'kind':'appointment','scope':'clinic'}})
+    assert invalid['sources']==[] and 'dashboard' not in invalid
+    multiple=ask(monkeypatch,'Show appointments on 2098-07-10 or 2098-07-11',{'read':{'kind':'appointment','scope':'clinic'}})
+    assert multiple['sources']==[] and 'dashboard' not in multiple
+
+
+def test_relative_day_cannot_be_replaced_by_model_date(monkeypatch):
+    from datetime import date
+    monkeypatch.setattr(assistant,'period',lambda query,timezone:(date(2098,7,10),date(2098,7,10)))
+    wrong=ask(monkeypatch,'Show today\'s appointments',{'read':{'kind':'appointment','scope':'clinic','start':'2098-07-11','end':'2098-07-11'}})
+    assert wrong['sources']==[] and 'dashboard' not in wrong
+    correct=ask(monkeypatch,'Show today\'s appointments',{'read':{'kind':'appointment','scope':'clinic'}})
+    assert correct['dashboard']['query']['start']=='2098-07-10'
+    assert correct['dashboard']['query']['end']=='2098-07-10'
+
+
 def test_species_filter_is_exact_and_saved_view_matches_assistant(monkeypatch):
     with db.connection(True) as c:
         cat=db.record(c,'patient','clinic-east',{'name':'SYNTHETIC Cat','species':'Cat'})
