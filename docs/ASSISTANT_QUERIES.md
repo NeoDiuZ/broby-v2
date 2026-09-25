@@ -56,3 +56,15 @@ Remaining scope includes complete advanced action field contracts, arbitrary
 joins/custom charts, representative linguistic/clinical evaluation, granular read
 restrictions and large-data performance. A tested set of model requests is not a
 guarantee that every natural-language question is interpreted correctly.
+
+## Hosted V2 acceptance — 25 September 2026
+
+At deployed V2 revision `3cb6573`, the configured real model mapped “all Cat
+patients in this clinic, grouped by species” to an exact patient-species query
+with 14 synthetic-clinic matches. It mapped appointments for Dr. Amelia Tan to
+the exact `clinic-east-vet` clinician ID with 9 matches. Both queries returned
+200; their saved views reproduced the same filters, counts, groups and source
+IDs through authenticated API readback. In the hosted browser, Reports rendered
+the 14 Cat matches; after reload and device unlock, the clinician view was still
+listed and rendered 9 matches. This verifies these two example intents and
+their persistence, not broad language accuracy or clinic-scale performance.
