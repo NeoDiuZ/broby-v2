@@ -352,3 +352,30 @@ def test_new_urgent_owner_question_stays_in_qualified_staff_queue_during_hold(mo
     with db.connection() as c:
         assert tid not in {r['id'] for r in candidates(c,'clinic-river',tid)[0]}
         assert old['id'] in reconciliation.eligibility(c,'clinic-river')['patients']
+
+
+def test_integrated_refresh_never_reuses_held_clinical_rows_or_leaks_patient_ids():
+    client,old,new,id=fixture()
+    before=client.get('/api/bootstrap',headers=HEADERS).json()
+    unchanged=client.get('/api/bootstrap',headers=HEADERS,params={'since':before['snapshot_revision']}).json()
+    assert unchanged['unchanged'] is True
+    old_invoice=act('invoice.create',{'patient_id':old['id'],'items':[{'name':'SYNTHETIC historical clinical wording','quantity':1,'price_cents':100}]},**TARGET)
+    current_invoice=act('invoice.create',{'patient_id':new['id'],'items':[{'name':'SYNTHETIC unrelated invoice','quantity':1,'price_cents':200}]},**TARGET)
+    act('clinical.reconcile',decision(preview(client,id),old['id']),**TARGET)
+    after=client.get('/api/bootstrap',headers=HEADERS,params={'since':before['snapshot_revision']}).json()
+    assert 'records' in after and old['id'] in after['clinical_verification']['restricted_patients']
+    patient=next(r for r in after['records'] if r['id']==old['id'])
+    assert 'references' not in patient['data']['clinical_reconciliation']
+    preserved=next(r for r in after['records'] if r['id']==old_invoice['id'])
+    assert preserved['clinical_reconciliation']['current_clinical_use'] is False
+    repeated=client.get('/api/bootstrap',headers=HEADERS,params={'since':after['snapshot_revision']}).json()
+    assert 'records' in repeated and not repeated.get('unchanged')
+    from record_queries import select_records
+    with db.connection() as c:
+        assert select_records(c,'clinic-river',{'kind':'invoice','owner_id':old['data']['owner_id']})['count']==0
+        assert current_invoice['id'] in {r['id'] for r in select_records(c,'clinic-river',{'kind':'invoice','owner_id':new['data']['owner_id']})['records']}
+    member=get('clinic-river-vet')
+    act('access.member',{'id':member['id'],'version':member['version'],'restrictions':['read.patients'],'reason':'SYNTHETIC restrict patient identity access'},clinic='clinic-river',actor='clinic-river-admin')
+    restricted=client.get('/api/bootstrap',headers=HEADERS,params={'since':after['snapshot_revision']}).json()
+    assert not restricted['clinical_verification']['restricted_patients']
+    assert not any(r['kind'] in ('patient','owner') for r in restricted['records'])

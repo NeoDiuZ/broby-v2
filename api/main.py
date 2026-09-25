@@ -93,7 +93,7 @@ def bootstrap(request:Request):
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
         from stripe_payments import configured
         integrations={**providers.available(),'payments':configured(clinic)}
-        metadata={'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'clinical_verification':{'epoch':state['epoch'],'verified_at':now(),'restricted_patients':sorted(state['patients'])},'jobs':[job_view(c,clinic,unpack(r),state) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
+        metadata={'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'clinical_verification':{'epoch':state['epoch'],'verified_at':now(),'restricted_patients':sorted(state['patients']) if 'read.patients' in reads else []},'jobs':[job_view(c,clinic,unpack(r),state) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
         from bootstrap_refresh import conditional
         revision,unchanged=conditional(c,request,clinic,actor,metadata,native)
         if unchanged:return JSONResponse({'unchanged':True,'snapshot_revision':revision})

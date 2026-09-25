@@ -143,7 +143,7 @@ def current_records(c,clinic,records,state=None,clinical_use=False):
             if clinical_use:continue
             row={**row,'clinical_reconciliation':{'status':'historical_clinical_identity_unverified','current_clinical_use':False,'notice':'Administrative receipt preserved. Clinical wording must not be used as a current patient fact while identity is under review.'}}
         if row['kind']=='patient' and row['id'] in state['patients']:
-            row={**row,'data':{**row['data'],'weight':None,'clinical_reconciliation':{'status':'current_use_restricted','record_count':len(state['patients'][row['id']]),'epoch':state['epoch'],'references':state['patients'][row['id']]}}}
+            row={**row,'data':{**row['data'],'weight':None,'clinical_reconciliation':{'status':'current_use_restricted','record_count':len(state['patients'][row['id']]),'epoch':state['epoch']}}}
         result.append(row)
     return result
 
