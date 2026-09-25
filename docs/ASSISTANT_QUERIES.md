@@ -49,6 +49,11 @@ Dates follow the clinic timezone. Reminders use due dates, appointments use thei
 scheduled date, and timestamped clinical facts use their occurrence date in that
 timezone. Saved relative-date questions become explicit calendar bounds; a view
 saved from “today” does not advance tomorrow. Ask again to choose a new period.
+For a request saying **on YYYY-MM-DD**, the server applies both bounds to that
+exact valid day and rejects a conflicting model date. It also rejects a model
+date that conflicts with a deterministically resolved relative period such as
+“today” or “last week.” Multiple explicit ISO dates in an “on” request require
+clarification; this is not a general free-form date parser.
 
 The answer shows its actual filters. Reports shows the same filters, counts and
 matching-record receipts. Counts cover all matches; answers list 12 records with
@@ -72,6 +77,8 @@ reminder due dates, exact units and typed equality, malformed/unsupported filter
 scope, native facts, bounded output and old saved-query compatibility.
 It also checks that a model cannot silently widen an explicit recorded status
 or species request, including a wrong value and an unknown value.
+Explicit ISO-day and relative-period cases check omission, conflicting model
+bounds, invalid dates and multi-date clarification.
 PostgreSQL acceptance also verifies native
 numeric filters, original receipts, boolean/text equality and saved-view parity.
 
