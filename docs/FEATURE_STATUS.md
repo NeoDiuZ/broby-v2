@@ -280,3 +280,35 @@ subset does not establish full AI operation coverage, real WhatsApp delivery,
 real analyser compatibility or a clinic migration. The remaining engineering
 listed above is buildable work; it is not an external dependency or lack of user
 permission. No requirement is certified by a green deployment alone.
+
+
+## PR #83 exact deployed acceptance — 25 September 2026
+
+PR [#83](https://github.com/NeoDiuZ/broby-v2/pull/83) merged after all
+SQLite, PostgreSQL, frontend and packaged-API CI checks passed. Both Broby New
+Railway services reported SUCCESS at exact revision
+`45ac4ed27a8d021de166ef4c064b5d0af78d5fcd`. Local full backend checks were
+**1,026 passed and one expected skip on each PMS backend**, with real PostgreSQL
+clinical tables; **41 frontend tests**, TypeScript, production build and offline
+packaging passed.
+
+Root acceptance used a fresh explicitly synthetic child clinic under the existing
+V2 synthetic organization. The real model prepared an exact member restriction;
+tightening only the new child's inventory lock made that saved proposal stale,
+and confirmation was rejected without changing the member. Chrome displayed the
+fresh complete before/after permissions, retained inherited inventory restriction
+and blocked billing. The operator confirmed it. A separate login passed **15
+readback checks**, including exact saved review, original idempotent receipt,
+unchanged role/activity, unchanged parent policy and original memberships. The
+full independent-clinic withdrawal path additionally passed the local browser and
+**18 API checks**; no hosted withdrawal or organization policy change is claimed.
+
+The hosted persistence check passed **17/17**. Seven operational readbacks and
+Chrome Settings verified fresh embedded document/schedule/payment loops, disabled
+messaging, external operational notifications disabled, no monitor, no incident
+and no webhook delivery. The separate local PostgreSQL incident exercise passed
+**11 root readbacks** after browser retry, acknowledgement and worker recovery:
+the seventh opening attempt was accepted by a disposable local HTTP receiver,
+acknowledgement left the failure open, and actual recovery created a distinct
+accepted recovery event. Receiver acceptance is not human alert delivery. No
+hosted on-call destination or clinical emergency channel was configured.

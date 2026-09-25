@@ -32,6 +32,7 @@ def render(title,clinic,patient,content):
     doc.build(story,onFirstPage=footer,onLaterPages=footer);return result.getvalue()
 
 def discharge_document(practice,data):
+    if data.get('clinical_review_notice'):fail(data['clinical_review_notice'],409)
     content=[p('Approved care information. Contact your clinic with questions; do not change prescribed treatment without its advice.')]
     for e in data['events']:
         content.extend([p(e['data']['title']+' · '+e['data']['occurred_at'][:10],True),p(e['data']['body'])])
@@ -52,6 +53,9 @@ def consultation_pdf(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
         r=owned(c,id,clinic,'consultation');patient=owned(c,r['data']['patient_id'],clinic,'patient');practice=get(c,clinic,clinic)
+        from clinical_reconciliation import require_records,require_patient
+        require_records(c,clinic,[id])
+        require_patient(c,clinic,patient['id'])
         if not r['data'].get('summary'):fail('Create a document before exporting')
         content=[p('Status: '+r['data']['status']+' · Revision '+str(r['version'])+' · '+r['updated_at'][:10])]
         for s in r['data']['summary']:
@@ -64,9 +68,11 @@ def invoice_pdf(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
         r=owned(c,id,clinic,'invoice');patient=owned(c,r['data']['patient_id'],clinic,'patient');practice=get(c,clinic,clinic);d=r['data']
+        held=patient['id'] in __import__('clinical_reconciliation').eligibility(c,clinic)['patients']
         rows=[[p('Item'),p('Qty'),p('Unit SGD'),p('Total SGD')]]+[[p(i['name']),p(i['quantity']),p(f"{i['price_cents']/100:.2f}"),p(f"{i['quantity']*i['price_cents']/100:.2f}")] for i in d['items']]
         table=Table(rows,colWidths=[270,45,75,120],repeatRows=1,hAlign='LEFT');table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eef3ed')),('VALIGN',(0,0),(-1,-1),'TOP'),('LINEBELOW',(0,0),(-1,-1),.4,colors.HexColor('#deded6')),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
         content=[p('Status: '+d['status']+' · '+r['created_at'][:10]),table,Spacer(1,20),p(f"Subtotal: SGD {d.get('subtotal_cents',d['total_cents'])/100:.2f}"),p(f"Discount: SGD {d.get('discount_cents',0)/100:.2f}"),p(f"Tax ({d.get('tax_bps',0)/100:g}%): SGD {d.get('tax_cents',0)/100:.2f}"),p(f"Original total: SGD {d['total_cents']/100:.2f}",True),p(f"Credit notes less reversals: SGD {d.get('credited_cents',0)/100:.2f}"),p(f"Net invoice charge: SGD {net_total(d)/100:.2f}"),p(f"Payments less refunds recorded: SGD {d['paid_cents']/100:.2f}"),p(f"Outstanding: SGD {outstanding(d)/100:.2f}"),p(f"Refund due: SGD {refund_due(d)/100:.2f}"),p('This document does not process a payment or refund.')]
+        if held:content.insert(0,p('Historical billing receipt. Clinical identity is unresolved; item wording is not a verified current patient fact.',True))
     return Response(render(d['number'],practice,patient,content),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="invoice.pdf"'})
 
 
@@ -78,15 +84,16 @@ def credit_register(request:Request):
     clinic,_=identity(request)
     with connection() as c:
         credits=all_records(c,clinic,'credit_note')
+        held=__import__('clinical_reconciliation').eligibility(c,clinic)['patients']
         reversals={r['data']['credit_note_id']:r for r in all_records(c,clinic,'credit_note_reversal')}
     output=StringIO();writer=csv.writer(output)
-    writer.writerow(['Credit note','Invoice','Issued UTC','Currency','Net credit cents','Tax credit cents','Total credit cents','Reason','Status','Reversed UTC','Reversal reason','Record ID'])
+    writer.writerow(['Credit note','Invoice','Issued UTC','Currency','Net credit cents','Tax credit cents','Total credit cents','Reason','Status','Reversed UTC','Reversal reason','Record ID','Clinical wording qualification'])
     def cell(value):
         value=str(value)
         return "'"+value if value.lstrip().startswith(('=','+','-','@','\t','\r','\n')) else value
     for r in sorted(credits,key=lambda r:(r['created_at'],r['id'])):
         d=r['data'];rev=reversals.get(r['id'])
-        writer.writerow([cell(v) for v in [d['number'],d['invoice_number'],r['created_at'],'SGD',d['net_cents'],d['tax_cents'],d['amount_cents'],d['reason'],'reversed' if rev else 'issued',rev['created_at'] if rev else '',rev['data']['reason'] if rev else '',r['id']]])
+        writer.writerow([cell(v) for v in [d['number'],d['invoice_number'],r['created_at'],'SGD',d['net_cents'],d['tax_cents'],d['amount_cents'],d['reason'],'reversed' if rev else 'issued',rev['created_at'] if rev else '',rev['data']['reason'] if rev else '',r['id'],'Historical billing only; clinical identity unresolved' if d['patient_id'] in held else 'Administrative receipt; not clinical advice']])
     return Response(output.getvalue(),media_type='text/csv',headers={'Content-Disposition':'attachment; filename="broby-credit-notes.csv"'})
 
 
@@ -96,11 +103,26 @@ def credit_note_pdf(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
         r=owned(c,id,clinic,'credit_note');d=r['data']
+        held=d['patient_id'] in __import__('clinical_reconciliation').eligibility(c,clinic)['patients']
         reversal=next((v for v in all_records(c,clinic,'credit_note_reversal') if v['data']['credit_note_id']==id),None)
         # Issued identity and amounts are immutable, even after later patient edits.
         practice={'data':{'name':d['clinic_name']}}
         patient={'id':d['patient_id'],'data':{'name':d['patient_name'],'species':d['patient_species']}}
         content=[p('Credit note '+d['number'],True),p('Invoice: '+d['invoice_number']),p('Issued UTC: '+r['created_at']),p('Owner at issue: '+d['owner_name']),p('Reason: '+d['reason']),p(f"Credit before tax: SGD {d['net_cents']/100:.2f}"),p(f"Tax credit supplied by clinic: SGD {d['tax_cents']/100:.2f}"),p(f"Total credit: SGD {d['amount_cents']/100:.2f}",True),p('Status: '+('Reversed' if reversal else 'Issued'))]
+        if held:content.insert(0,p('Historical billing receipt. Clinical identity is unresolved; wording is not a verified current patient fact.',True))
         if reversal:content.extend([p('Reversed UTC: '+reversal['created_at']),p('Reversal reason: '+reversal['data']['reason'])])
         content.extend([p('This credit changes the invoice charge. It does not send a refund or return stock.'),p('Amounts and tax allocation were entered by clinic staff. Clinic accounting and tax policy approval is required before real-clinic use.'),p('Record ID: '+r['id'])])
     return Response(render(d['number'],practice,patient,content),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="credit-note.pdf"'})
+
+@router.get('/api/consultations/{id}/text')
+def consultation_text(id:str,version:int,request:Request):
+    """Staff text/clipboard exports revalidate current clinical use server-side."""
+    from main import identity
+    from clinical_reconciliation import require_records,require_patient
+    clinic,_=identity(request)
+    with connection(snapshot=True) as c:
+        row=owned(c,id,clinic,'consultation')
+        require_records(c,clinic,[id]);require_patient(c,clinic,row['data']['patient_id'])
+        if version!=row['version']:fail('The saved document changed. Refresh and review the current revision before copying or exporting.',409)
+        if not row['data'].get('summary'):fail('Create and save a document before exporting')
+        return {'id':id,'version':version,'text':'\n\n'.join(section['name']+'\n'+section['text'] for section in row['data']['summary'])}

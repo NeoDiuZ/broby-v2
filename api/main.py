@@ -76,13 +76,15 @@ def ready():
 @app.get('/api/bootstrap')
 def bootstrap(request:Request):
     clinic,actor=identity(request)
-    with connection() as c:
+    with connection(snapshot=True) as c:
         member=owned(c,actor,clinic,'member')
+        if not member['data'].get('active'): fail('Member is inactive',403)
         from spine.reader import native_records
-        rs=all_records(c,clinic)+native_records(clinic)
+        native=native_records(clinic)
+        from clinical_reconciliation import current_records, eligibility, job_view
+        state=eligibility(c,clinic)
         from read_access import allowed_reads, filter_records, ALL
         reads=allowed_reads(c,clinic,actor)
-        rs=filter_records(rs,reads,actor)
         if auth.enabled():
             sess=auth.session(request); clinics=[]
             for membership in c.execute('SELECT clinic_id,member_id FROM auth_memberships WHERE username=?',(sess['username'],)):
@@ -91,9 +93,14 @@ def bootstrap(request:Request):
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
         from stripe_payments import configured
         integrations={**providers.available(),'payments':configured(clinic)}
+        metadata={'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'clinical_verification':{'epoch':state['epoch'],'verified_at':now(),'restricted_patients':sorted(state['patients']) if 'read.patients' in reads else []},'jobs':[job_view(c,clinic,unpack(r),state) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
+        from bootstrap_refresh import conditional
+        revision,unchanged=conditional(c,request,clinic,actor,metadata,native)
+        if unchanged:return JSONResponse({'unchanged':True,'snapshot_revision':revision})
+        rs=filter_records(current_records(c,clinic,all_records(c,clinic)+native,state),reads,actor)
         # These persisted records are already JSON values. Returning a response
         # directly avoids a second recursive conversion of the full clinic set.
-        return JSONResponse({'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'})
+        return JSONResponse({**metadata,'records':rs,'snapshot_revision':revision})
 class Command(BaseModel):
     action:str
     payload:dict[str,Any]=Field(default_factory=dict)
@@ -108,7 +115,8 @@ def job(job_id:str,request:Request):
     with connection() as c:
         r=unpack(c.execute('SELECT * FROM jobs WHERE id=? AND clinic_id=?',(job_id,clinic)).fetchone())
         if not r: fail('Job not found',404)
-        return r
+        from clinical_reconciliation import job_view
+        return job_view(c,clinic,r)
 @app.post('/api/uploads')
 async def upload(request:Request,file:UploadFile=File(...),patient_id:str=Form(...),consultation_id:str=Form('')):
     clinic,actor=identity(request)
@@ -129,7 +137,10 @@ async def upload(request:Request,file:UploadFile=File(...),patient_id:str=Form(.
 @app.get('/api/files/{id}')
 def file(id:str,request:Request):
     clinic,_=identity(request)
-    with connection() as c: r=owned(c,id,clinic,'attachment')
+    with connection() as c:
+        r=owned(c,id,clinic,'attachment')
+        from clinical_reconciliation import require_records
+        require_records(c,clinic,[id])
     return FileResponse(r['data']['path'],media_type=r['data']['mime'],filename=r['data']['name'])
 @app.put('/api/recordings/{id}/chunks/{index}')
 async def chunk(id:str,index:int,request:Request):
@@ -141,6 +152,8 @@ async def chunk(id:str,index:int,request:Request):
     with connection(True) as c:
         authorize(c,clinic,actor,'recording.create')
         r=owned(c,id,clinic,'recording')
+        from clinical_reconciliation import require_records
+        require_records(c,clinic,[id])
         previous=c.execute('SELECT sha256 FROM chunks WHERE recording_id=? AND chunk_index=?',(id,index)).fetchone()
         if previous:
             if previous[0]!=sha: fail('Chunk content does not match the saved chunk',409)
@@ -153,11 +166,15 @@ async def chunk(id:str,index:int,request:Request):
 def manifest(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
+        from clinical_reconciliation import require_records
+        require_records(c,clinic,[id])
         owned(c,id,clinic,'recording'); return {'received':[r[0] for r in c.execute('SELECT chunk_index FROM chunks WHERE recording_id=? ORDER BY chunk_index',(id,))]}
 @app.get('/api/recordings/{id}/audio')
 def audio(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
+        from clinical_reconciliation import require_records
+        require_records(c,clinic,[id])
         r=owned(c,id,clinic,'recording'); paths=[r[0] for r in c.execute('SELECT path FROM chunks WHERE recording_id=? ORDER BY chunk_index',(id,))]
     from audio_response import audio_response
     return audio_response(b''.join(Path(p).read_bytes() for p in paths),r['data'].get('mime','audio/webm'),request.headers.get('range'))
@@ -189,8 +206,10 @@ def export(request:Request):
         if owned(c,actor,clinic,'member')['data']['role']!='admin': fail('Administrator access required',403)
         from spine.reader import native_records
         rs=all_records(c,clinic)+native_records(clinic)
+        from clinical_reconciliation import eligibility
+        state=eligibility(c,clinic)
     for r in rs: r['data'].pop('path',None)
-    return Response(json.dumps({'schema_version':1,'exported_at':now(),'records':rs},indent=2),media_type='application/json',headers={'Content-Disposition':'attachment; filename="broby-clinic-export.json"'})
+    return Response(json.dumps({'schema_version':1,'exported_at':now(),'purpose':'forensic_archive','current_clinical_use':False,'clinical_reconciliation':state,'records':rs},indent=2),media_type='application/json',headers={'Content-Disposition':'attachment; filename="broby-clinic-export.json"'})
 class Chat(BaseModel):
     # A reviewed portal reply may contain the full 4,000-character staff text
     # plus its exact thread ID and command prefix.
@@ -236,6 +255,8 @@ app.include_router(hook_router)
 
 from transfers import router as transfers_router
 app.include_router(transfers_router)
+from clinical_reconciliation import router as reconciliation_router
+app.include_router(reconciliation_router)
 
 from stripe_payments import router as stripe_router
 app.include_router(stripe_router)

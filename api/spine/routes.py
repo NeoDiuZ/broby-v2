@@ -4,6 +4,7 @@ from sqlalchemy import select
 from . import database,service,projection
 from .models import Event,Source
 from .contracts import LabInput,EventInput
+from .reconciliation import active,require
 router=APIRouter(prefix='/api/v2',tags=['Patient spine'])
 
 @router.get('/overview')
@@ -15,11 +16,11 @@ def overview(request:Request,days:int=Query(30,ge=1,le=366)):
     clinic,_=identity(request)
     since=datetime.now(timezone.utc)-timedelta(days=days)
     with database.session() as s:
-        groups=s.execute(select(Event.event_type,func.count()).where(Event.clinic_id==clinic,Event.occurred_at>=since).group_by(Event.event_type)).all()
+        groups=s.execute(select(Event.event_type,func.count()).where(Event.clinic_id==clinic,Event.occurred_at>=since,active(s,clinic,Event.id)).group_by(Event.event_type)).all()
         counts={}
         for category,count in groups:
             name=canonical(category);counts[name]=counts.get(name,0)+count
-        flagged=s.execute(select(Observation,Concept,Event,Patient).join(Concept,Observation.concept_id==Concept.id).join(Event,Observation.event_id==Event.id).join(Patient,Event.patient_id==Patient.id).where(Event.clinic_id==clinic,Observation.observed_at>=since,or_(Observation.value<Observation.ref_low,Observation.value>Observation.ref_high)).order_by(Observation.observed_at.desc()).limit(50)).all()
+        flagged=s.execute(select(Observation,Concept,Event,Patient).join(Concept,Observation.concept_id==Concept.id).join(Event,Observation.event_id==Event.id).join(Patient,Event.patient_id==Patient.id).where(Event.clinic_id==clinic,Observation.observed_at>=since,active(s,clinic,Event.id),active(s,clinic,Observation.id),or_(Observation.value<Observation.ref_low,Observation.value>Observation.ref_high)).order_by(Observation.observed_at.desc()).limit(50)).all()
         return {'days':days,'since':service.utc(since),'categories':[{'name':k,'count':v} for k,v in sorted(counts.items())],
                 'patient_count':s.scalar(select(func.count()).select_from(Patient).where(Patient.clinic_id==clinic)),
                 'event_count':sum(counts.values()),'flagged_limit':50,
@@ -61,6 +62,7 @@ def event(id:str,event_id:str,request:Request):
     with database.session() as s:
         service.patient(s,id,clinic);e=s.get(Event,event_id)
         if not e or e.clinic_id!=clinic or e.patient_id!=id:raise HTTPException(404,'Event not found')
+        require(s,clinic,[e.id])
         return service.event_view(s,e)
 @router.get('/sources/{id}')
 def source(id:str,request:Request):
@@ -68,6 +70,7 @@ def source(id:str,request:Request):
     with database.session() as s:
         r=s.get(Source,id)
         if not r or r.clinic_id!=clinic:raise HTTPException(404,'Source not found')
+        require(s,clinic,[r.id,r.reference_id])
         content_url=None
         import db
         with db.connection() as c:

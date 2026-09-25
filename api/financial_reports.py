@@ -183,7 +183,10 @@ def read(request, start, end):
     with connection(snapshot=True) as c:
         if owned(c, actor, clinic, 'member')['data']['role'] != 'admin':
             fail('Administrator access required', 403)
-        return build(c, clinic, start, end)
+        result=build(c, clinic, start, end)
+        if __import__('clinical_reconciliation').eligibility(c,clinic)['patients']:
+            result['clinical_qualification']='Historical financial records only. Patient identity review is open; reference and reason wording must not be used as verified current clinical facts.'
+        return result
 
 
 @router.get('')
@@ -205,10 +208,10 @@ def export(request: Request, start: str, end: str):
     out = io.StringIO(); writer = csv.writer(out)
     writer.writerow(['Record ID', 'Kind', 'Invoice ID', 'Invoice', 'Recorded UTC', 'Clinic date', 'Timezone', 'Currency',
                      'Charge cents', 'Cash cents', 'Balance change cents', 'Tax cents (blank = unknown or cash)',
-                     'Method', 'Reference', 'Reason', 'Test mode', 'Source', 'Period start', 'Period end', 'Generated UTC'])
+                     'Method', 'Reference', 'Reason', 'Test mode', 'Source', 'Period start', 'Period end', 'Generated UTC', 'Clinical wording qualification'])
     for e in r['entries']:
         writer.writerow([safe_text(e[k]) for k in ('id', 'kind', 'invoice_id', 'invoice_number', 'recorded_at', 'local_date')]
                         +[safe_text(r['timezone']), r['currency'], e['charge_cents'], e['cash_cents'], e['balance_change_cents'], e['tax_cents']]
                         +[safe_text(e[k]) for k in ('method', 'reference', 'reason')]
-                        +[e['test_mode'], e['source'], start, end, r['generated_at']])
+                        +[e['test_mode'], e['source'], start, end, r['generated_at'], r.get('clinical_qualification','Administrative receipt; not clinical advice')])
     return Response(out.getvalue(), media_type='text/csv', headers={'Content-Disposition': 'attachment; filename="broby-financial-register.csv"'})

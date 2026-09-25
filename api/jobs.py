@@ -58,6 +58,8 @@ def run_claimed(job_id,token):
         c.execute('UPDATE jobs SET status=?,updated_at=? WHERE id=?',('running',now(),job_id))
         snapshot=job['payload']
         authorize(c,job['clinic_id'],snapshot.get('actor_id'),'recording.transcribe' if snapshot.get('kind')=='transcription' else 'summary.generate')
+        from clinical_reconciliation import guard_job
+        snapshot['clinical_epoch']=guard_job(c,job,snapshot)
         sources=[get(c,id,job['clinic_id']) for id in snapshot.get('source_ids',[])]
     if snapshot.get('kind')=='transcription':
         return run_transcription(job,snapshot,token)
@@ -76,6 +78,7 @@ def run_claimed(job_id,token):
     with connection(True) as c:
         if not owns_claim(c,job_id,token):return
         authorize(c,job['clinic_id'],snapshot.get('actor_id'),'summary.generate')
+        guard_job(c,job,snapshot)
         consult=get(c,job['consultation_id'],job['clinic_id'])
         result={'summary':sections,'mode':mode,'omitted_sources':omitted,'source_ids':snapshot['source_ids'],'context_preference':snapshot.get('retention','medical')}
         if not consult or consult['version']!=snapshot['version']:
@@ -125,6 +128,7 @@ def transcribe_windows(job,payload,token,chunks):
             with connection() as c:
                 if not owns_claim(c,job['id'],token):return None
                 authorize(c,job['clinic_id'],payload['actor_id'],'recording.transcribe')
+                __import__('clinical_reconciliation').guard_job(c,job,payload)
             start,end=audio.bounds(index)
             output=providers.transcribe(audio.read(index),'audio/wav',payload['language'],
                                         diarize=payload.get('diarize',True),allow_empty=True)
@@ -140,6 +144,7 @@ def transcribe_windows(job,payload,token,chunks):
             with connection(True) as c:
                 if not owns_claim(c,job['id'],token):return None
                 authorize(c,job['clinic_id'],payload['actor_id'],'recording.transcribe')
+                __import__('clinical_reconciliation').guard_job(c,job,payload)
                 save_progress(c)
         text='\n\n'.join(w['text'] for w in windows if w['text'].strip())
         if not text:
@@ -153,6 +158,7 @@ def transcribe_windows(job,payload,token,chunks):
 def run_transcription(job,payload,token):
     from actions import dispatch,owned,PERMISSIONS,fail
     with connection() as c:
+        __import__('clinical_reconciliation').guard_job(c,job,payload)
         r=owned(c,payload['recording_id'],job['clinic_id'],'recording')
         if r['data'].get('transcript_source_id'):
             with connection(True) as writer:writer.execute("UPDATE jobs SET status='completed',updated_at=? WHERE id=?",(now(),job['id']))
@@ -174,6 +180,7 @@ def run_transcription(job,payload,token):
     with connection(True) as c:
         if not owns_claim(c,job['id'],token):return
         authorize(c,job['clinic_id'],payload['actor_id'],'recording.transcribe')
+        __import__('clinical_reconciliation').guard_job(c,job,payload)
         member=owned(c,payload['actor_id'],job['clinic_id'],'member')
         if not member['data']['active'] or member['data']['role'] not in PERMISSIONS['source.add']:fail('Requesting member no longer has capture permission',403)
         current=owned(c,r['id'],job['clinic_id'],'recording')

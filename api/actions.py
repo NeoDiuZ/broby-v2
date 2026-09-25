@@ -64,6 +64,8 @@ PERMISSIONS.update(ONTOLOGY_PERMISSIONS)
 
 from transfers import PERMISSIONS as TRANSFER_PERMISSIONS
 PERMISSIONS.update(TRANSFER_PERMISSIONS)
+from clinical_reconciliation import PERMISSIONS as RECONCILIATION_PERMISSIONS
+PERMISSIONS.update(RECONCILIATION_PERMISSIONS)
 
 from migration_plan import PERMISSIONS as MIGRATION_PERMISSIONS
 PERMISSIONS.update(MIGRATION_PERMISSIONS)
@@ -115,11 +117,14 @@ def authorize(c,clinic,actor,action):
     if action not in allowed_actions(c,clinic,actor):fail('Your role or clinic permissions do not allow this action',403)
     return owned(c,actor,clinic,'member')
 
-def execute(action,p,clinic,actor,key,*,expected_versions=None):
+def execute(action,p,clinic,actor,key,*,expected_versions=None,expected_clinical_epoch=None):
     if action not in PERMISSIONS: fail('Unknown action',404)
     fingerprint=hashlib.sha256(json.dumps({'action':action,'payload':p},sort_keys=True).encode()).hexdigest()
     with connection(True) as c:
         authorize(c,clinic,actor,action)
+        from clinical_reconciliation import guard_action,eligibility,scope_epoch
+        guard_action(c,action,p,clinic)
+        if expected_clinical_epoch is not None and scope_epoch(eligibility(c,clinic),expected_clinical_epoch.get('patient_id'))!=expected_clinical_epoch['epoch']:fail('Clinical identity changed after this review. Refresh before confirming.',409)
         previous=c.execute('SELECT * FROM mutations WHERE clinic_id=? AND actor_id=? AND key=?',(clinic,actor,key)).fetchone()
         if previous:
             if previous['payload_hash']!=fingerprint: fail('Idempotency key was reused with different input',409)
@@ -142,6 +147,8 @@ def execute(action,p,clinic,actor,key,*,expected_versions=None):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    from clinical_reconciliation import guard_action
+    guard_action(c,a,p,clinic)
     if a in OPS_ALERT_PERMISSIONS:
         from operational_alerts import dispatch as operational_alert_action
         return operational_alert_action(c,a,p,clinic,actor)
@@ -172,6 +179,9 @@ def dispatch(c,a,p,clinic,actor):
     if a in MIGRATION_PERMISSIONS:
         from migration_plan import dispatch as migration
         return migration(c,a,p,clinic,actor)
+    if a in RECONCILIATION_PERMISSIONS:
+        from clinical_reconciliation import dispatch as reconcile
+        return reconcile(c,a,p,clinic,actor)
     if a in TRANSFER_PERMISSIONS:
         from transfers import dispatch as transfer
         return transfer(c,a,p,clinic,actor)
@@ -241,7 +251,7 @@ def dispatch(c,a,p,clinic,actor):
         if p.get('mode')=='ai':
             from providers import available
             if not available()['ai']: fail('Configure the AI provider before generating',503)
-        job=uid(); snapshot={'version':r['version'],'source_ids':sources,'sections':template['data']['sections'],'template_id':template['id'],'patient_id':r['data']['patient_id'],'input_revision':r['data']['input_revision'],'mode':p.get('mode','verbatim'),'actor_id':actor,'retention':get(c,'settings-'+clinic,clinic)['data'].get('retention','medical')}
+        job=uid(); snapshot={'version':r['version'],'source_ids':sources,'sections':template['data']['sections'],'template_id':template['id'],'patient_id':r['data']['patient_id'],'input_revision':r['data']['input_revision'],'mode':p.get('mode','verbatim'),'actor_id':actor,'retention':get(c,'settings-'+clinic,clinic)['data'].get('retention','medical'),'clinical_epoch':__import__('clinical_reconciliation').scope_epoch(__import__('clinical_reconciliation').eligibility(c,clinic),r['data']['patient_id'])}
         c.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)',(job,clinic,r['id'],'queued',json.dumps(snapshot),None,None,now(),now()))
         return {'id':job,'status':'queued'}
     if a=='summary.save':

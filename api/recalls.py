@@ -31,7 +31,9 @@ def eligibility(c, reminder):
     patient = get(c, d.get('patient_id'), clinic)
     owner = get(c, patient['data'].get('owner_id'), clinic) if patient else None
     reason = ''
-    if d.get('status') != 'due': reason = 'Reminder closed'
+    clinical=__import__('clinical_reconciliation').eligibility(c,clinic)
+    if d.get('patient_id') in clinical['patients']:reason='Historical patient identity is unresolved; current use and delivery are on hold'
+    elif d.get('status') != 'due': reason = 'Reminder closed'
     elif not patient or not owner or owner['data'].get('merged_into'): reason = 'Patient or active primary owner unavailable'
     elif owner['data'].get('recall_opt_out'): reason = 'Owner opted out of recalls'
     elif d.get('outbox_id'): reason = 'A draft already exists; review its history before preparing another reminder'
@@ -54,6 +56,7 @@ def queue_one(c, reminder, clinic, actor, campaign_id=None):
 def validate_draft(c, out):
     """Used before editing, opening a contact link or recording manual delivery."""
     from actions import fail
+    __import__('clinical_reconciliation').require_patient(c,out['clinic_id'],out['data'].get('patient_id'))
     if not out['data'].get('reminder_id'): return
     r = get(c, out['data']['reminder_id'], out['clinic_id'])
     if not r or r['data'].get('status') != 'due' or r['data'].get('outbox_id') != out['id']:
@@ -77,7 +80,8 @@ def preview(c, clinic, p):
     query = p.get('query', '')
     if not isinstance(query, str) or len(query) > 120: fail('Use a reminder search of at most 120 characters')
     query = query.strip()
-    matches = sorted((r for r in all_records(c, clinic, 'reminder')
+    current=__import__('clinical_reconciliation').current_records(c,clinic,all_records(c,clinic,'reminder'))
+    matches = sorted((r for r in current
                       if start <= r['data']['due'] <= end and query.casefold() in r['data']['title'].casefold()),
                      key=lambda r: (r['data']['due'], r['id']))
     if len(matches) > 100: fail('More than 100 reminders match. Narrow the dates or reminder search before reviewing.')
@@ -96,6 +100,7 @@ def preview(c, clinic, p):
 
 
 def progress(c, campaign):
+    __import__('clinical_reconciliation').require_records(c,campaign['clinic_id'],[campaign['id']])
     items = []
     for original in campaign['data']['items']:
         item = dict(original)

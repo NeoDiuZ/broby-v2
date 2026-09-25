@@ -49,7 +49,7 @@ def enqueue(c, recording, count):
         return {'id': job['id'], 'status': status}
     job_id = uid()
     payload = {'kind': 'transcription', 'continuous': True, 'recording_id': recording['id'],
-               'patient_id': data['patient_id'], **config, 'prefix_chunks': count, 'final': final}
+               'patient_id': data['patient_id'], **config, 'prefix_chunks': count, 'final': final, 'clinical_epoch':__import__('clinical_reconciliation').scope_epoch(__import__('clinical_reconciliation').eligibility(c,recording['clinic_id']),data['patient_id'])}
     c.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)',
               (job_id, recording['clinic_id'], data['consultation_id'], 'queued', json.dumps(payload),
                None, None, now(), now()))
@@ -101,6 +101,7 @@ def transcribe_prefix(job, payload, token, chunks):
                     raise audio_windows.AudioValidationError('A completed speech window changed on final decoding. The preview cannot be published; retain and review the original.')
 
             def checkpoint(c):
+                __import__('clinical_reconciliation').guard_job(c,job,payload)
                 c.execute('UPDATE jobs SET result=?,error=NULL,updated_at=? WHERE id=?',
                           (json.dumps({'mode': 'transcription', 'continuous': True, 'provisional': True,
                                        'completed_windows': len(windows), 'total_windows': count,
@@ -116,6 +117,7 @@ def transcribe_prefix(job, payload, token, chunks):
                     if not owns_claim(c, job['id'], token):
                         return None
                     authorize(c, job['clinic_id'], payload['actor_id'], 'recording.transcribe')
+                    __import__('clinical_reconciliation').guard_job(c,job,payload)
                 start, end = audio.bounds(index)
                 content = audio.read(index)
                 output = providers.transcribe(content, 'audio/wav', payload['language'],
@@ -133,6 +135,7 @@ def transcribe_prefix(job, payload, token, chunks):
                     if not owns_claim(c, job['id'], token):
                         return None
                     authorize(c, job['clinic_id'], payload['actor_id'], 'recording.transcribe')
+                    __import__('clinical_reconciliation').guard_job(c,job,payload)
                     checkpoint(c)
             if not final:
                 wait_for_audio(job, payload, token)

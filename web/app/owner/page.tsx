@@ -21,10 +21,11 @@ export default function Owner(){
  const dueLabel=(date:string)=>date<data.today?'Overdue':date===data.today?'Due today':'Upcoming';
  return <main className="owner-page"><span className="wordmark">Broby<span>•</span></span>{!data?<p role={error?'alert':'status'}>{error||'Opening your pet’s approved record…'}</p>:<>
   {data.pets?.length>0&&<label className="demo-identity">Saved pets<select aria-label="Saved pets" value={data.patient.id} onChange={e=>{setPetId(e.target.value);setNotice('')}}>{data.pets.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+  {data.clinical_review_notice&&<p role="alert" className="inline-notice">{data.clinical_review_notice}</p>}
   <OwnerTransfer key={base} base={base}/>
   <div className="owner-header"><PatientMark patient={data.patient} large/><div><Badge tone="teal"><ShieldCheck size={13}/> Shared by your clinic</Badge><h1>{data.patient.data.name}’s record</h1><p className="muted">{data.patient.data.breed} · {patientAge(data.patient.data)}</p>{data.patient.data.date_of_birth&&<p className="muted">Born {data.patient.data.date_of_birth}</p>}</div></div>
   <p className="muted section-gap">Your veterinarian’s approved notes, prescribed medications, and upcoming care.</p>
-  <div className="actions section-gap"><a className="secondary" href={base+'/discharge.pdf'}>Download care instructions</a>{token&&<>
+  <div className="actions section-gap">{!data.clinical_review_notice&&<a className="secondary" href={base+'/discharge.pdf'}>Download care instructions</a>}{token&&<>
    <button className="secondary" disabled={busy} onClick={async()=>{setBusy(true);try{const saved=await fetch('/api/owner-account/claim/'+encodeURIComponent(token),{method:'POST'});if(!saved.ok)throw new Error('Could not save access. Reopen the clinic link and retry.');setPetId(data.patient.id);setToken('');history.replaceState(null,'','/owner');setNotice('This pet is saved on this browser. Open and save each clinic link to add another pet.')}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}}}>Save access on this device</button>
    <button className="secondary" disabled={busy} onClick={async()=>{setBusy(true);try{const r=await send('/share');setShare(location.origin+r.url)}catch(e){setNotice((e as Error).message)}finally{setBusy(false)}}}><LinkSimple size={15}/> Create referral link</button>
   </>}</div>

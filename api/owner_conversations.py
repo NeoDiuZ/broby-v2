@@ -93,6 +93,11 @@ def present(c, g, thread):
         result.append({'id':r['id'],'created_at':r['created_at'],'speaker':d['speaker'],'message':d['message'],
                        'state':d.get('state','completed'),'cards':visible,'notice':NOTICE,
                        'answer':d.get('answer',''),'changed_sources':withheld,'truncated':d.get('truncated',False)})
+    if data.get('clinical_review_notice'):
+        for turn in result:
+            turn['notice']=data['clinical_review_notice'];turn['historical_unverified']=True
+            if turn['speaker']=='clinic':turn['message']='Previous clinic reply is withheld during patient identity review. Contact the clinic for verified current instructions.'
+            turn['answer']='Current clinical retrieval is on hold; contact the clinic.';turn['cards']=[]
     return {'id':thread['id'],'version':thread['version'],'status':thread['data']['status'],
             'urgent':thread['data'].get('urgent',False),'turns':result,
             'emergency_phone':data['emergency_phone'],'notice':NOTICE}
@@ -149,7 +154,10 @@ def send(token, p):
                                 'urgent':p.urgent or thread['data'].get('urgent',False)})
         if p.urgent:attention(c,thread,'Owner marked the conversation urgent')
     try:
-        selected,method=topic(p.message)
+        with connection() as c:
+            clinical=__import__('clinical_reconciliation').eligibility(c,clinic)
+            held=g['patient_id'] in clinical['patients']
+        selected,method=('staff','identity_review') if held else topic(p.message)
         with connection(True) as c:
             g=grant(c,token);thread=owned_thread(c,g,thread_id);turn=get(c,turn_id,clinic)
             if turn['data'].get('claim')!=claim:fail('A newer retry replaced this response; reopen the conversation',409)
@@ -220,7 +228,8 @@ def staff_read(id:str,request:Request):
     clinic,_=identity(request)
     with connection() as c:
         thread=owned(c,id,clinic,'owner_thread')
-        return {**thread,'turns':turns(c,thread)}
+        clinical=__import__('clinical_reconciliation').eligibility(c,clinic)
+        return {**thread,'turns':turns(c,thread),'clinical_reconciliation':{'status':'historical_unverified'} if thread['data']['patient_id'] in clinical['patients'] else None}
 
 def dispatch(c,a,p,clinic,actor):
     from actions import owned,version,require,fail,integer
@@ -274,8 +283,10 @@ def tick(c,clinic,instant=None):
 
 def handover_rows(c,clinic):
     result=[]
-    for r in all_records(c,clinic,'owner_thread'):
+    for r in __import__('clinical_reconciliation').current_records(c,clinic,all_records(c,clinic,'owner_thread')):
         if r['data']['status'] not in ('needs_attention','acknowledged') and not r['data'].get('pending_owner_turn'):continue
+        if r.get('clinical_reconciliation'):
+            result.append(r);continue
         messages=turns(c,r)
         # Deterministic verbatim receipts; no AI clinical summary or invented facts.
         text='\n\n'.join(('Owner: ' if t['data']['speaker']=='owner' else 'Clinic: ')+t['data']['message'] for t in messages)

@@ -33,8 +33,11 @@ def conversation(c, id, clinic, actor):
     return dict(row)
 
 
-def present(turn):
+def present(turn,state=None):
     response = json.loads(turn['response']) if turn['response'] else {'text': 'This request was interrupted. Retry it to get a verified answer.', 'sources': []}
+    epoch=__import__('clinical_reconciliation').scope_epoch(state,turn['patient_id']) if state else None
+    if state and epoch!=__import__('clinical_reconciliation').fingerprint([]) and response.get('clinical_epoch')!=epoch:
+        return {'text':'This previous answer is restricted because clinical identity or provenance changed. Ask again after the clinic review; the original response remains preserved in history.', 'sources':[], 'conversation_id':turn['conversation_id'],'turn_id':turn['id'],'created_at':turn['created_at'],'execution':None,'clinical_reconciliation':{'status':'historical_unverified'},'clinical_epoch':state['epoch']}
     return {**response, 'conversation_id':turn['conversation_id'], 'turn_id':turn['id'],
             'created_at':turn['created_at'], 'execution':json.loads(turn['execution']) if turn['execution'] else None}
 
@@ -53,7 +56,7 @@ def ask(clinic, actor, message, patient_id, conversation_id, key):
             if previous['fingerprint']!=fingerprint or conversation_id and conversation_id!=previous['conversation_id']:
                 fail('Question retry key does not match its original request',409)
             conversation(c,previous['conversation_id'],clinic,actor)
-            if previous['status']=='completed': return present(previous)
+            if previous['status']=='completed': return present(previous,__import__('clinical_reconciliation').eligibility(c,clinic))
             if previous['lease_until']>time.time():fail('This question is still being processed',409)
             turn_id=previous['id'];conversation_id=previous['conversation_id']
         else:
@@ -77,14 +80,19 @@ def ask(clinic, actor, message, patient_id, conversation_id, key):
         # requests provide conversational context, never authority or medical facts.
         history=[r[0] for r in c.execute("SELECT message FROM assistant_turns WHERE conversation_id=? AND id<>? AND status='completed' ORDER BY created_at DESC LIMIT 5",(conversation_id,turn_id))][::-1]
     try:
-        with connection() as c: result=answer(c,clinic,actor,message,patient_id,history)
+        with connection() as c:
+            answer_epoch=__import__('clinical_reconciliation').scope_epoch(__import__('clinical_reconciliation').eligibility(c,clinic),patient_id)
+            result=answer(c,clinic,actor,message,patient_id,history)
+            result={**result,'clinical_epoch':answer_epoch}
         with connection(True) as c:
             require(c,clinic,actor,ALL)
             if not owned(c,actor,clinic,'member')['data'].get('active'):fail('Membership is inactive',403)
+            state=__import__('clinical_reconciliation').eligibility(c,clinic)
+            if result.get('clinical_epoch')!=__import__('clinical_reconciliation').scope_epoch(state,patient_id):fail('Clinical identity review changed before this answer was saved. Ask again.',409)
             changed=c.execute("UPDATE assistant_turns SET response=?,status='completed',lease_until=0 WHERE id=? AND token=?",(json.dumps(result),turn_id,token))
             if changed.rowcount!=1:fail('Another request replaced this response; reload the conversation',409)
             c.execute('UPDATE assistant_conversations SET patient_id=?,updated_at=? WHERE id=?',(patient_id,now(),conversation_id))
-            return present(c.execute('SELECT * FROM assistant_turns WHERE id=?',(turn_id,)).fetchone())
+            return present(c.execute('SELECT * FROM assistant_turns WHERE id=?',(turn_id,)).fetchone(),__import__('clinical_reconciliation').eligibility(c,clinic))
     except Exception:
         with connection(True) as c:c.execute("UPDATE assistant_turns SET status='failed',lease_until=0 WHERE id=? AND token=?",(turn_id,token))
         raise
@@ -104,7 +112,8 @@ def read(id:str,request:Request):
     clinic,actor=identity(request)
     with connection() as c:
         result=conversation(c,id,clinic,actor)
-        turns=[{**present(r),'message':r['message'],'patient_id':r['patient_id'],'status':r['status'],'request_key':r['request_key']} for r in c.execute('SELECT * FROM assistant_turns WHERE conversation_id=? ORDER BY created_at',(id,))]
+        state=__import__('clinical_reconciliation').eligibility(c,clinic)
+        turns=[{**present(r,state),'message':r['message'],'patient_id':r['patient_id'],'status':r['status'],'request_key':r['request_key']} for r in c.execute('SELECT * FROM assistant_turns WHERE conversation_id=? ORDER BY created_at',(id,))]
     return {**result,'turns':turns}
 
 
@@ -118,11 +127,14 @@ def confirm(id:str,turn_id:str,request:Request):
         turn=c.execute("SELECT * FROM assistant_turns WHERE id=? AND conversation_id=? AND status='completed'",(turn_id,id)).fetchone()
         if not turn:fail('Completed question not found',404)
         result=json.loads(turn['response'])
+        state=__import__('clinical_reconciliation').eligibility(c,clinic)
+        epoch=__import__('clinical_reconciliation').scope_epoch(state,turn['patient_id'])
+        if epoch!=__import__('clinical_reconciliation').fingerprint([]) and result.get('clinical_epoch')!=epoch:fail('Clinical identity changed after this saved review. Refresh and ask again before confirming.',409)
         proposal=result.get('action')
         if not proposal:fail('This answer has no action to confirm',409)
     # The shared action executor rechecks today's permissions and record versions.
     # A retry after a lost response uses the same mutation key, even after reload.
     execution=execute(proposal['action'],proposal['payload'],clinic,actor,'assistant-confirm:'+turn_id,
-                      expected_versions=result.get('review_versions'))
+                      expected_versions=result.get('review_versions'),expected_clinical_epoch={'epoch':epoch,'patient_id':turn['patient_id']})
     with connection(True) as c:c.execute('UPDATE assistant_turns SET execution=? WHERE id=?',(json.dumps(execution),turn_id))
     return execution

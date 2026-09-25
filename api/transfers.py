@@ -64,6 +64,7 @@ def request_transfer(token: str, p: Consent):
         scope['mapping_correction'] = True
     with connection(True) as c:
         g = grant(c, token)
+        __import__('clinical_reconciliation').require_patient(c,g['clinic_id'],g['patient_id'])
         owned(c, p.target_clinic, p.target_clinic, 'clinic')
         if p.target_clinic == g['clinic_id']:
             fail('Choose a different clinic')
@@ -165,6 +166,7 @@ def snapshot(c, r):
     """Build a bounded, explicit data allowlist; private source notes never cross clinics."""
     from portal import grant, view
     data = view(c, grant(c, r['grant_token']))
+    __import__('clinical_reconciliation').require_patient(c,r['source_clinic'],r['patient_id'])
     source_patient = owned(c, r['patient_id'], r['source_clinic'], 'patient')
     owner = owned(c, source_patient['data']['owner_id'], r['source_clinic'], 'owner')
     scope = json.loads(r['scope'])

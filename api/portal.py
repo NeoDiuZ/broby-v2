@@ -41,6 +41,9 @@ def grant(c,token,allow_expired=False):
 def view(c,g):
     from spine.reader import native_records
     patient=owned(c,g['patient_id'],g['clinic_id'],'patient');rs=all_records(c,g['clinic_id'])+native_records(g['clinic_id'],g['patient_id'])
+    from clinical_reconciliation import current_records,eligibility
+    state=eligibility(c,g['clinic_id'])
+    rs=current_records(c,g['clinic_id'],rs,state)
     selected=[r for r in rs if r['data'].get('patient_id')==patient['id']]
     owner_patient_fields={'name','species','breed','sex','age','weight','date_of_birth','microchip_id','color'}
     def safe(r):
@@ -53,8 +56,9 @@ def view(c,g):
                   if k not in ('path','source_ids','source_id','owner_id','additional_owner_ids','owner_access','fingerprint','edit_key','edit_fingerprint','receipt','migration_origin')
                   and not k.startswith('v1_')}
         return {**r,'data':data}
+    if patient['id'] in state['patients']:patient={**patient,'data':{**patient['data'],'weight':None}}
     selected.sort(key=lambda r:r['data'].get('occurred_at',r['created_at']),reverse=True)
-    return {'patient':safe(patient),'events':[safe(r) for r in selected if r['kind']=='event' and r['data'].get('approved')],
+    return {'clinical_review_notice':'Some historical care information is unavailable while the clinic reviews patient identity. Contact the clinic before relying on previous copies.' if patient['id'] in state['patients'] else None,'patient':safe(patient),'events':[safe(r) for r in selected if r['kind']=='event' and r['data'].get('approved')],
             'medications':[safe(r) for r in selected if r['kind']=='medication'],'reminders':sorted([safe(r) for r in selected if r['kind']=='reminder'],key=lambda r:r['data']['due']),
             'files':[safe(r) for r in selected if r['kind']=='attachment' and r['data'].get('approved')],
             'audio':[safe(r) for r in selected if r['kind']=='recording' and r['data'].get('approved')],
@@ -69,13 +73,17 @@ def owner(token:str):
 def file(token:str,id:str):
     with connection() as c:
         g=grant(c,token);r=owned(c,id,g['clinic_id'],'attachment')
+        from clinical_reconciliation import require_records
         if r['data']['patient_id']!=g['patient_id'] or not r['data'].get('approved'):fail('File not shared',404)
+        require_records(c,g['clinic_id'],[id])
     return FileResponse(r['data']['path'],media_type=r['data']['mime'],filename=r['data']['name'])
 @router.get('/api/owner/{token}/audio/{id}')
 def audio(token:str,id:str,request:Request):
     with connection() as c:
         g=grant(c,token);r=owned(c,id,g['clinic_id'],'recording')
+        from clinical_reconciliation import require_records
         if r['data']['patient_id']!=g['patient_id'] or not r['data'].get('approved'):fail('Recording not shared',404)
+        require_records(c,g['clinic_id'],[id])
         parts=[Path(x[0]).read_bytes() for x in c.execute('SELECT path FROM chunks WHERE recording_id=? ORDER BY chunk_index',(id,))]
     from audio_response import audio_response
     return audio_response(b''.join(parts),r['data'].get('mime','audio/webm'),request.headers.get('range'))
@@ -199,6 +207,8 @@ def edit_intake(token:str,id:str,p:IntakeEdit):
     from actions import version
     with connection(True) as c:
         g=grant(c,token);r=owned(c,id,g['clinic_id'],'intake')
+        from clinical_reconciliation import require_records
+        require_records(c,g['clinic_id'],[id])
         if r['data']['patient_id']!=g['patient_id'] or r['data'].get('owner_access')!=hashlib.sha256(g['token'].encode()).hexdigest():fail('Submission not found',404)
         fingerprint=hashlib.sha256(p.model_dump_json(exclude={'key','version'}).encode()).hexdigest()
         if r['data'].get('edit_key')==p.key:

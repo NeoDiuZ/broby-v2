@@ -208,6 +208,7 @@ SPECS = {
 # Operations whose meaningful review is a dedicated workflow or capture screen.
 # The model sees a destination, never an executable raw payload contract.
 GUIDED = {
+    'clinical.reconcile': ('Patient', 'Use the original source, both patient identities and per-record clinician reconciliation review.'),
     **{n: ('Settings', 'Use the migration preview, source file and reconciliation review.') for n in ('import.patients', 'import.records', 'migration.preview', 'migration.apply')},
     **{n: ('Patient', 'Use the recorder and verified audio chunk manifest.') for n in ('recording.create', 'recording.complete', 'recording.refine')},
     **{n: ('Billing', 'Use the provider-priced checkout/refund screen and canonical provider receipt.') for n in ('stripe.checkout', 'stripe.cancel', 'stripe.refresh', 'stripe.refund')},
@@ -215,10 +216,14 @@ GUIDED = {
     'schedule.configure': ('Settings', 'Review the complete staff rota and booking conflicts in the rota editor.'),
     'transfer.accept': ('Settings', 'Review clinic identity, patient matching, original sources and transfer consent.'),
     **{n: ('Settings', 'Use the two-party organization or master-access review.') for n in ('organization.create', 'organization.clinic_create', 'organization.policy', 'organization.join_request', 'organization.join_review')},
-    **{n: ('Patient', 'Use the original clinical source and typed observation approval screen.') for n in ('clinical.ingest', 'clinical.approve', 'ontology.propose', 'ontology.review')},
+    **{n: ('Patient', 'Use the original clinical source and typed observation approval screen.') for n in ('clinical.ingest', 'clinical.approve')},
+    **{n: ('Settings', 'Open Observation catalog to review the dictionary definition, meaning, units and synonyms.') for n in ('ontology.propose', 'ontology.review')},
     'conversation.policy': ('Handover', 'Review the clinic-approved owner-conversation policy and staffed escalation arrangements.'),
     **{n: ('Settings', 'Review the operational incident details and webhook receipts in Sync & jobs, and enter an explicit reason. Acknowledgement does not mark recovery or delivery.') for n in ('operations.alert.acknowledge', 'operations.alert.retry')},
 }
+
+# Fixed application sections, never model-supplied routes or mutation payloads.
+GUIDED_SECTIONS = {'ontology.propose': 'Observation catalog', 'ontology.review': 'Observation catalog'}
 
 
 def catalogue():

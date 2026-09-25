@@ -14,7 +14,7 @@ def observation_fields(clinic, limit=200):
         rows=s.execute(select(Concept.code,Concept.name,Concept.unit).join(
             Observation,Observation.concept_id==Concept.id).join(
             Event,Observation.event_id==Event.id).where(
-            Event.clinic_id==clinic,Event.payload_hash!='legacy').distinct().order_by(
+            Event.clinic_id==clinic,Event.payload_hash!='legacy',__import__('spine.reconciliation',fromlist=['active']).active(s,clinic,Event.id)).distinct().order_by(
             Concept.code,Concept.name,Concept.unit).limit(limit)).all()
         return [tuple(row) for row in rows]
 

@@ -121,12 +121,13 @@ def dispatch(c,a,p,clinic,actor):
             payload=json.loads(job['payload'])
             if payload.get('recording_id')==r['id']:return {'id':job['id'],'status':job['status']}
         if p.get('language','multi') not in ('multi','en','zh','ms'): fail('Unsupported speech language')
-        job=uid();payload={'kind':'transcription','recording_id':r['id'],'patient_id':r['data']['patient_id'],'actor_id':actor,'language':p.get('language','multi'),'diarize':p.get('diarize',True)}
+        job=uid();payload={'kind':'transcription','recording_id':r['id'],'patient_id':r['data']['patient_id'],'actor_id':actor,'language':p.get('language','multi'),'diarize':p.get('diarize',True),'clinical_epoch':__import__('clinical_reconciliation').scope_epoch(__import__('clinical_reconciliation').eligibility(c,clinic),r['data']['patient_id'])}
         c.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)',(job,clinic,r['data']['consultation_id'],'queued',json.dumps(payload),None,None,now(),now()))
         return {'id':job,'status':'queued'}
     if a=='job.retry':
         r=c.execute('SELECT * FROM jobs WHERE id=? AND clinic_id=?',(p['id'],clinic)).fetchone()
         if not r:fail('Job not found',404)
+        __import__('clinical_reconciliation').guard_job(c,dict(r),json.loads(r['payload']))
         if r['status']!='failed':fail('Only failed jobs can be retried. Regenerate conflicting documents from current sources.',409)
         c.execute('DELETE FROM job_claims WHERE job_id=?',(r['id'],))
         c.execute("UPDATE jobs SET status='queued',error=NULL,updated_at=? WHERE id=?",(now(),r['id']))

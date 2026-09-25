@@ -1,11 +1,12 @@
 """PMS transaction and concurrency contracts against real PostgreSQL."""
 import os,uuid
+import threading,time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 import db,actions,main
-from pms_postgres import parameters,pool,url,schema,Row
+from pms_postgres import parameters,pool,url,schema,Row,Connection
 
 
 @pytest.fixture
@@ -93,3 +94,49 @@ def test_postgres_json_and_double_precision_claims(postgres_store):
         assert c.execute('SELECT lease_until FROM twilio_attempts WHERE id=?',('precision',)).fetchone()[0]==1789999999.123456
         assert 'scope' in db.columns(c,'transfer_requests')
         assert c.execute("SELECT ? AS safely_bound",("'; DROP TABLE records; -- ? %",)).fetchone()[0]=="'; DROP TABLE records; -- ? %"
+
+
+@pytest.mark.parametrize('write,snapshot,expected', [(False,False,'read committed'), (False,True,'repeatable read'), (True,False,'read committed'), (True,True,'read committed')])
+def test_postgres_transaction_isolation_without_duplicate_begin_notice(postgres_store,write,snapshot,expected):
+    connection=Connection();notices=[]
+    connection.raw.add_notice_handler(lambda diagnostic:notices.append(diagnostic.message_primary))
+    try:
+        connection.begin(write,snapshot=snapshot)
+        assert connection.execute('SHOW transaction_isolation').fetchone()[0]==expected
+        assert connection.execute('SHOW lock_timeout').fetchone()[0]=='20s'
+        assert connection.execute('SHOW statement_timeout').fetchone()[0]=='1min'
+        assert connection.in_transaction
+        assert not notices
+        connection.rollback()
+        assert not connection.in_transaction
+        connection.begin(False)
+        assert connection.execute('SHOW transaction_isolation').fetchone()[0]=='read committed'
+        assert not notices
+    finally:connection.close()
+
+
+def test_postgres_serial_writer_waits_and_reads_the_first_committed_edit(postgres_store):
+    waiting=Connection();started=threading.Event();finished=threading.Event()
+    pid=waiting.raw.info.backend_pid
+    def next_writer():
+        started.set()
+        try:
+            waiting.begin(True)
+            current=db.get(waiting,'luna')
+            assert current['data']['name']=='SYNTHETIC first writer'
+            changed=db.update(waiting,current,{**current['data'],'name':'SYNTHETIC second writer'})
+            waiting.commit();return changed
+        finally:waiting.close();finished.set()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with db.connection(True) as first:
+            old=db.get(first,'luna');db.update(first,old,{**old['data'],'name':'SYNTHETIC first writer'})
+            future=executor.submit(next_writer);assert started.wait(5)
+            deadline=time.monotonic()+5;blocked=False
+            while time.monotonic()<deadline:
+                blocked=bool(first.execute("SELECT 1 FROM pg_locks WHERE pid=? AND locktype='advisory' AND NOT granted",(pid,)).fetchone())
+                if blocked:break
+                time.sleep(.01)
+            assert blocked and not finished.is_set()
+        result=future.result(timeout=5)
+    assert result['version']==old['version']+2
+    with db.connection() as c:assert db.get(c,'luna')['data']['name']=='SYNTHETIC second writer'

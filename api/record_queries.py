@@ -10,17 +10,19 @@ from billing import outstanding
 
 RecordKind = Literal['patient','event','observation','medication','medication_history','invoice','payment','inventory','appointment','reminder','intake','outbox','consultation']
 READ_KINDS = set(RecordKind.__args__)
+OWNER_LINK_KINDS = {'patient', 'appointment', 'invoice', 'reminder'}
+NAMED_KINDS = {'patient', 'observation', 'inventory', 'medication', 'medication_history'}
 
 
 class RecordQuery(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     kind: RecordKind
     patient_id: StrictStr | None = Field(default=None, max_length=100)
-    owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches primary or additional owner links on patients and appointments for those patients.')
+    owner_id: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact clinic owner ID; matches current same-clinic primary or additional patient links for patients, appointments, invoices and reminders. This is a current relationship filter, not historical invoice ownership or payment liability.')
     start: StrictStr | None = None
     end: StrictStr | None = None
     category: StrictStr | None = Field(default=None, max_length=120)
-    name: StrictStr | None = Field(default=None, max_length=200, description='Exact recorded name, ignoring case. No substring match.')
+    name: StrictStr | None = Field(default=None, max_length=200, description='Exact recorded patient, observation, inventory or medication name, ignoring case. Local medication and imported medication_history remain separate kinds. No substring, synonym, brand/generic or drug-equivalence match.')
     species: StrictStr | None = Field(default=None, min_length=1, max_length=120, description='Exact recorded patient species, ignoring case.')
     clinician: StrictStr | None = Field(default=None, min_length=1, max_length=100, description='Exact recorded appointment clinician ID.')
     code: StrictStr | None = Field(default=None, max_length=120, description='Exact recorded observation concept code.')
@@ -60,14 +62,14 @@ class RecordQuery(BaseModel):
             raise ValueError('Use equality or a range, not both')
         if self.status and self.kind not in {'invoice','appointment','reminder','intake','outbox','consultation'}:
             raise ValueError('Status does not apply to this record kind')
-        if self.name and self.kind not in {'patient','observation','inventory'}:
+        if self.name and self.kind not in NAMED_KINDS:
             raise ValueError('Name does not apply to this record kind')
         if self.species and self.kind not in {'patient','appointment'}:raise ValueError('Species requires patients or appointments')
-        if self.owner_id and self.kind not in {'patient','appointment'}:raise ValueError('Owner links require patients or appointments')
+        if self.owner_id and self.kind not in OWNER_LINK_KINDS:raise ValueError('Owner links require patients, appointments, invoices or reminders')
         if self.clinician and self.kind!='appointment':raise ValueError('Clinician requires appointments')
         if self.group_by=='species' and self.kind not in {'patient','appointment'}:raise ValueError('Species grouping requires patients or appointments')
         if self.group_by=='clinician' and self.kind!='appointment':raise ValueError('Clinician grouping requires appointments')
-        if self.group_by=='name' and self.kind not in {'patient','observation','inventory'}:
+        if self.group_by=='name' and self.kind not in NAMED_KINDS:
             raise ValueError('Name grouping does not apply to this record kind')
         return self
 
@@ -114,7 +116,11 @@ def query_summary(query, patient=None, owner=None):
     if query.get('start') or query.get('end'):parts.append(f"{query.get('start') or 'earliest'} to {query.get('end') or 'latest'}")
     for key in ('category','name','species','clinician','code','unit','status'):
         if query.get(key):parts.append(f"{key.replace('_',' ')}: {query[key]}")
-    if query.get('owner_id'):parts.append('owner: '+(owner['data']['name'] if owner else query['owner_id']))
+    if query.get('owner_id'):
+        parts.append('owner: '+(owner['data']['name'] if owner else query['owner_id']))
+        if query['kind'] in {'invoice', 'reminder'}:parts.append('current patient-owner links')
+    if query['kind'] in {'medication', 'medication_history'}:
+        parts.append('local prescriptions' if query['kind']=='medication' else 'externally recorded medication history; not a local prescription')
     if query.get('low_stock'):parts.append('stock at or below reorder level')
     if query.get('outstanding'):parts.append('positive outstanding balance, excluding void invoices')
     for key,label in [('value_min','value at least'),('value_max','value at most'),('value_equals','value equals')]:
@@ -123,10 +129,10 @@ def query_summary(query, patient=None, owner=None):
     return ' · '.join(parts)
 
 
-def _appointment_patients(c, clinic, appointments):
+def _linked_patients(c, clinic, records):
     """Fetch only referenced same-clinic patients, bounded by SQLite's bind limit."""
-    ids=sorted({patient_id for row in appointments
-                if row['clinic_id']==clinic and row['kind']=='appointment'
+    ids=sorted({patient_id for row in records
+                if row['clinic_id']==clinic and row['kind'] in OWNER_LINK_KINDS-{'patient'}
                 for patient_id in [row['data'].get('patient_id')]
                 if isinstance(patient_id,str) and patient_id})
     linked={}
@@ -146,7 +152,10 @@ def select_records(c, clinic, query, records=None):
         records=all_records(c,clinic,query['kind'])
         if query['kind'] in {'event','observation'}:
             records+=native_records(clinic,query.get('patient_id'))
-    linked_patients=_appointment_patients(c,clinic,records) if query['kind']=='appointment' and (query.get('species') or query.get('owner_id') or query.get('group_by')=='species') else {}
+    from clinical_reconciliation import current_records
+    records=current_records(c,clinic,records,clinical_use=True)
+    needs_patient_links=(query['kind'] in OWNER_LINK_KINDS-{'patient'} and query.get('owner_id')) or (query['kind']=='appointment' and (query.get('species') or query.get('group_by')=='species'))
+    linked_patients=_linked_patients(c,clinic,records) if needs_patient_links else {}
     def linked_patient(data):
         patient_id=data.get('patient_id')
         return linked_patients.get(patient_id) if isinstance(patient_id,str) else None

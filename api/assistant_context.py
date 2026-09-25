@@ -58,7 +58,8 @@ def candidates(c, clinic, message, patient_id=None, identified=()):
             slots=','.join('?' for _ in ids)
             add(c.execute('SELECT * '+base+f' AND id IN ({slots})',(*scope,*ids)))
     total=c.execute('SELECT count(*) '+base,scope).fetchone()[0]
-    return list(rows.values()),total
+    from clinical_reconciliation import current_records
+    return current_records(c,clinic,list(rows.values()),clinical_use=True),total
 
 
 def select(records, message, patient_id=None, available_records=None):

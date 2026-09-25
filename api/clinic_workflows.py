@@ -77,6 +77,7 @@ def prepare_handover(c, clinic, instant=None):
     id = 'handover:' + clinic + ':' + day
     existing = get(c, id, clinic)
     if existing:
+        __import__('clinical_reconciliation').require_records(c,clinic,[existing['id']])
         return existing
     snapshot = handover(c, clinic, instant=instant)
     patients={r['id']:r['data']['name'] for r in all_records(c,clinic,'patient')}
