@@ -14,8 +14,8 @@ def patient(s,id,clinic):
     if not p or p.clinic_id!=clinic:fail('Patient not found',404)
     return p
 
-def source(s,source_id):
-    r=s.get(Source,source_id) if source_id else None
+def source(s,source_id,sources=None):
+    r=(sources.get(source_id) if sources is not None else s.get(Source,source_id)) if source_id else None
     if not r:return None
     return {'kind':r.kind,'id':r.reference_id,'receipt_id':r.id,**{k:getattr(r,k) for k in ('page','start_ms','end_ms') if getattr(r,k) is not None}}
 def observation_value(o):
@@ -26,16 +26,42 @@ def flag(o):
     if o.ref_high is not None and o.value>o.ref_high:return 'high'
     return None
 
-def event_view(s,e):
-    obs=s.scalars(select(Observation).where(Observation.event_id==e.id).order_by(Observation.id)).all()
+def event_context(s,events):
+    """Load receipts and measurements in bounded batches for authorized events.
+
+    This is a per-request context, never a cache across users or clinic scopes.
+    Empty observation lists remain empty instead of falling back to N queries.
+    """
+    events=list(events)
+    observations={e.id:[] for e in events}
+    def batches(ids):
+        ids=sorted(set(ids))
+        return (ids[start:start+400] for start in range(0,len(ids),400))
+    for ids in batches(observations):
+        for o in s.scalars(select(Observation).where(Observation.event_id.in_(ids)).order_by(Observation.id)):
+            observations[o.event_id].append(o)
+    all_observations=[o for rows in observations.values() for o in rows]
+    concepts={}
+    for ids in batches(o.concept_id for o in all_observations):
+        concepts.update((c.id,c) for c in s.scalars(select(Concept).where(Concept.id.in_(ids))))
+    sources={}
+    source_ids={e.source_id for e in events if e.source_id}|{o.source_id for o in all_observations if o.source_id}
+    for ids in batches(source_ids):
+        sources.update((r.id,r) for r in s.scalars(select(Source).where(Source.id.in_(ids))))
+    return {'observations':observations,'concepts':concepts,'sources':sources}
+
+def event_view(s,e,context=None):
+    obs=(context['observations'][e.id] if context is not None else
+         s.scalars(select(Observation).where(Observation.event_id==e.id).order_by(Observation.id)).all())
+    sources=context['sources'] if context is not None else None
     flags=[] if e.source_id else [{'type':'missing_source'}]
     values=[]
     for o in obs:
-        term=s.get(Concept,o.concept_id);f=flag(o)
+        term=context['concepts'][o.concept_id] if context is not None else s.get(Concept,o.concept_id);f=flag(o)
         if f:flags.append({'type':'out_of_range','observation_id':o.id})
         if not o.source_id:flags.append({'type':'missing_source','observation_id':o.id})
-        values.append({'id':o.id,'concept':term.code,'name':term.name,'value':observation_value(o),'value_type':o.value_type,'unit':term.unit,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':f,'source':source(s,o.source_id)})
-    return {'id':e.id,'event_type':canonical(e.event_type),'occurred_at':utc(e.occurred_at),'summary':e.summary,'actor':e.actor,'source':source(s,e.source_id),'body':e.body,'flags':flags,'observations':values}
+        values.append({'id':o.id,'concept':term.code,'name':term.name,'value':observation_value(o),'value_type':o.value_type,'unit':term.unit,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':f,'source':source(s,o.source_id,sources)})
+    return {'id':e.id,'event_type':canonical(e.event_type),'occurred_at':utc(e.occurred_at),'summary':e.summary,'actor':e.actor,'source':source(s,e.source_id,sources),'body':e.body,'flags':flags,'observations':values}
 
 def add_source(s,clinic,pid,value,id=None):
     if value is None:return None
@@ -124,7 +150,8 @@ def timeline(s,clinic,pid,limit,cursor,category='',q='',start=None,end=None):
         except ValueError:fail('Invalid cursor timestamp')
         query=query.where(or_(Event.occurred_at<when,and_(Event.occurred_at==when,Event.id<after[1])))
     rows=s.scalars(query.order_by(Event.occurred_at.desc(),Event.id.desc()).limit(limit+1)).all();items=rows[:limit]
-    return {'items':[event_view(s,e) for e in items],'next_cursor':cursor_encode(scope,[utc(items[-1].occurred_at),items[-1].id]) if len(rows)>limit else None}
+    context=event_context(s,items)
+    return {'items':[event_view(s,e,context) for e in items],'next_cursor':cursor_encode(scope,[utc(items[-1].occurred_at),items[-1].id]) if len(rows)>limit else None}
 def concepts(s,clinic,pid):
     patient(s,pid,clinic)
     terms=s.scalars(select(Concept).join(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid).distinct().order_by(Concept.name,Concept.unit)).all()
