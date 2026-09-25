@@ -19,7 +19,11 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
   patient link within the same clinic. An owner name alone is not an identity
   key; the assistant must select the recorded owner ID before retrieving the
   complete clinic-scoped set.
-  Duplicate owner names require explicit identity selection rather than a guess.
+Duplicate owner names require explicit identity selection rather than a guess.
+For an owner-specific question, the server also checks that the model kept the
+same exact owner ID in a patient or appointment query. If the model omits the
+owner, selects a different one, or proposes another record kind, the answer is
+a clarification without records. An unknown explicit owner ID is clarified.
 - Appointments filtered or grouped by the exact recorded species of their
   linked clinic patient. Missing, malformed or foreign-clinic patient links do
   not match a requested species; grouping labels them "Not recorded".

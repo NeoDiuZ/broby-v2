@@ -190,6 +190,24 @@ def test_duplicate_owner_names_require_exact_identity_before_model_query(monkeyp
     assert selected['dashboard']['count']==0
 
 
+def test_owner_specific_questions_never_drop_or_replace_the_owner_filter(monkeypatch):
+    requested=act('owner.create',{'name':'SYNTHETIC Scope Requested'})
+    other=act('owner.create',{'name':'SYNTHETIC Scope Other'})
+    act('patient.create',{'name':'SYNTHETIC Scope Pet','species':'Cat','owner_id':requested['id']})
+    message='Show all pets linked to SYNTHETIC Scope Requested in the whole clinic'
+    for read in ({'kind':'patient','scope':'clinic'},
+                 {'kind':'patient','scope':'clinic','owner_id':other['id']},
+                 {'kind':'invoice','scope':'clinic','outstanding':True}):
+        answer=ask(monkeypatch,message,{'read':read})
+        assert 'cannot safely answer' in answer['text']
+        assert answer['sources']==[] and 'dashboard' not in answer
+    unknown=ask(monkeypatch,'Show pets linked to owner ID not-a-clinic-owner',{'read':{'kind':'patient','scope':'clinic'}})
+    assert 'cannot safely answer' in unknown['text'] and 'dashboard' not in unknown
+    valid=ask(monkeypatch,message,{'read':{'kind':'patient','scope':'clinic','owner_id':requested['id']}})
+    assert valid['dashboard']['count']==1
+    assert valid['dashboard']['query']['owner_id']==requested['id']
+
+
 def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
     with db.connection(True) as c:
         first=db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Midnight clinic time','occurred_at':'2026-09-23T16:30:00Z'})
