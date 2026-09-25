@@ -102,7 +102,7 @@ def test_dates_use_observed_time_in_clinic_timezone_and_label_record_time_fallba
         db.update(c,points[1],{**points[1]['data'],'observed_at':None})
     first=query({**BASE,'start':'2098-07-10','end':'2098-07-10'})['trend']['series']
     assert len(first)==1 and first[0]['record_id']==points[0]['id'] and first[0]['ref_low'] is None and first[0]['ref_high']==3
-    fallback=query({**BASE,'record_id':points[1]['id']})['trend']['series'][0]
+    fallback=next(p for p in query(BASE)['trend']['series'] if p['record_id']==points[1]['id'])
     assert fallback['time_basis']=='recorded' and fallback['observed_at']==points[1]['created_at']
     assert query({**BASE,'start':'2100-01-01'})['trend']['series']==[]
 
@@ -171,3 +171,45 @@ def test_quoted_trend_code_and_unit_are_data_not_clinic_scope_dates_or_patient(m
     answer=ask(monkeypatch,message,{'read':filters},'luna')
     assert answer['dashboard']['query']==filters and answer['dashboard']['source_ids']==[wanted['id']]
     assert not ask(monkeypatch,message,{'read':{**filters,'scope':'clinic'}},'luna').get('dashboard')
+
+
+@pytest.mark.parametrize('extra',[{'value_min':1},{'value_max':1},{'value_equals':2},{'category':'lab'},{'name':'SYNTHETIC marker'},{'start':'2098-07-11'},{'end':'2098-07-11'},{'record_id':'first'}])
+def test_model_cannot_invent_subset_filters_or_unsupplied_dates(monkeypatch,extra):
+    points,_=measurements()
+    if extra.get('record_id')=='first':extra={'record_id':points[0]['id']}
+    answer=ask(monkeypatch,'Plot observations with code "synthetic_marker" and unit "mmol/L"',{'read':{**BASE,**extra}},'luna')
+    assert not answer.get('dashboard') and not answer['sources']
+
+
+@pytest.mark.parametrize('extra',[{'value_min':1},{'value_max':1},{'value_equals':2},{'category':'lab'},{'name':'SYNTHETIC marker'},{'record_id':'first'}])
+def test_direct_saved_trend_contract_rejects_additional_subsets(extra):
+    measurements();err(422,lambda:query({**BASE,**extra}))
+
+
+def test_model_cannot_hide_over_limit_points_with_unasked_numeric_filter(monkeypatch):
+    measurements(201)
+    answer=ask(monkeypatch,MESSAGE,{'read':{**BASE,'value_min':399}},'luna')
+    assert not answer.get('dashboard') and not answer['sources']
+
+
+def test_relative_trend_dates_are_pinned_and_missing_model_bounds_are_completed(monkeypatch):
+    from datetime import date
+    measurements()
+    monkeypatch.setattr(assistant,'period',lambda query,timezone:(date(2098,7,10),date(2098,7,12)))
+    answer=ask(monkeypatch,'Plot synthetic_marker in mmol/L this week',{'read':BASE},'luna')
+    assert answer['dashboard']['query']=={**BASE,'start':'2098-07-10','end':'2098-07-12'}
+    wrong=ask(monkeypatch,'Plot synthetic_marker in mmol/L this week',{'read':{**BASE,'start':'2098-07-11'}},'luna')
+    assert not wrong.get('dashboard')
+
+
+def test_explicit_unsupported_trend_filter_clarifies_instead_of_dropping_condition(monkeypatch):
+    measurements()
+    answer=ask(monkeypatch,'Plot synthetic_marker in mmol/L with value at least 2',{'read':{**BASE,'value_min':2}},'luna')
+    assert not answer.get('dashboard') and not answer['sources']
+
+
+@pytest.mark.parametrize('condition',['with value at least 2','where value equals 0','above 2','where value > 2','with category "lab"','grouped by day','with code "synthetic_marker" and name "SYNTHETIC marker"'])
+def test_model_cannot_drop_explicit_unsupported_trend_condition(monkeypatch,condition):
+    measurements()
+    answer=ask(monkeypatch,'Plot synthetic_marker in mmol/L '+condition,{'read':BASE},'luna')
+    assert not answer.get('dashboard') and not answer['sources']

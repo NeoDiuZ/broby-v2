@@ -43,7 +43,11 @@ class RecordQuery(BaseModel):
         if self.presentation=='trend':
             if self.kind!='observation' or not all(isinstance(value,str) and value.strip() for value in (self.patient_id,self.code,self.unit)):
                 raise ValueError('Trend requires observations, one exact patient, recorded code and unit')
-            if self.group_by!='auto':raise ValueError('A numeric trend cannot also group record counts')
+            # A complete series cannot acquire model-selected subsets that hide
+            # points, invalid values, changed labels or the hard point limit.
+            allowed={'kind','presentation','patient_id','code','unit','start','end'}
+            if set(self.model_dump(exclude_none=True,exclude_defaults=True))-allowed:
+                raise ValueError('Trend supports only one patient, exact code/unit and date bounds; use a count query for other filters')
         if self.text_contains is not None and (self.kind!='event' or not self.text_contains.strip()):
             raise ValueError('Literal text search requires events and a nonblank phrase')
         if isinstance(self.value_equals,float) and not math.isfinite(self.value_equals):
