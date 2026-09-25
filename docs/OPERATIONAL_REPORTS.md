@@ -38,6 +38,8 @@ Switching to 7 days changed the displayed period to 19–25 September. Switching
 to a separate synthetic receiving clinic and opening Reports displayed 6
 registered patients, 4 consultations, no appointments and 1 message. A direct
 authenticated CSV readback and JSON comparison were also checked against the
-full clinic dataset; the browser's operating-system download event was not
-observed. These checks show deployed V2 rendering and clinic scoping with
-synthetic data, not real-clinic or physical-device acceptance.
+full clinic dataset. After PR #51 deployed as `84b76fc`, the V2 browser's
+"Export full report" button produced a downloadable, parseable CSV with 23
+metric rows, 2,476 bytes and no empty rows. The browser displayed no framework
+error overlay. These checks show deployed V2 rendering, download and clinic
+scoping with synthetic data, not real-clinic or physical-device acceptance.
