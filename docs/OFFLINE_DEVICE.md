@@ -61,6 +61,14 @@ all 64,044 original audio bytes by SHA-256 and all 66 unrelated records unchange
 The final build passed two consecutive offline reload/unlock/draft-recovery checks.
 No microphone or simultaneous physical-device handoff is claimed by this test.
 
+A separate two-client API overlap test uses two synthetic clinic staff and device
+labels on the same consultation. The second note completes while the first is
+still recording; both original byte streams remain separate, and replay does
+not create a duplicate. The focused test passes with SQLite and PostgreSQL.
+On one device, navigating to another consultation now shows a link back to the
+active voice note instead of offering another recorder. This does not replace
+the pending physical-device microphone and offline/reconnect handoff test.
+
 Settings → Sync & jobs shows offline readiness, expiry, queue count, legacy
 migration warnings and device lock/copy controls. Lock/sign-out cannot discard
 an active recording or audio still held only in memory. Failed actions display
