@@ -76,6 +76,33 @@ Real-clinic launch gates below are tracked separately from those counts.
 
 ## Blockers versus unfinished engineering
 
+### 25 September V2-only assistant acceptance
+
+PRs #72–#74 strengthened the partial patient and clinic assistant items (#23–24)
+without changing their classification. An explicit recorded status or species
+cannot be omitted or substituted by a model-produced factual query. A single
+explicit `on YYYY-MM-DD` request has exact day bounds; invalid, conflicting or
+multiple ISO dates clarify without records. Relative clinic periods reject
+conflicting model dates. Patient chat cannot silently switch from the selected
+animal to a different animal or the whole clinic; an explicit whole-clinic
+request cannot be narrowed back to one patient by the model.
+
+All three PRs passed frontend, SQLite, PostgreSQL and packaged API CI. At V2
+revision `a11ec5785e0a9d879080fb6135d5e64113ab83b7`, both isolated Railway
+services reported SUCCESS, the persisted-state smoke passed 17/17 checks, and
+real-model synthetic questions returned the exact requested status, species,
+calendar day, selected patient and explicit whole-clinic scopes. An invalid
+day returned no records or action. These are specific prompt and fixture checks,
+not a representative model or clinical-language certification. Exact evidence
+is in ASSISTANT_QUERIES.md and ignored private test receipts.
+
+The V2 Twilio trial's Content API was read again on 25 September: HTTP 401,
+provider code 20003, with no template ID. Customer dispatch remains disabled.
+The native WhatsApp app cannot show whether this Twilio account has upgraded.
+Read-only inspection of the original Broby repository found terminology files
+but no approved patient/consultation export. No original Broby files or service
+were changed.
+
 **Engineering that can continue without a new vendor:** offline physical-device/crash acceptance; long-session physical-device acceptance; verified owner account flows (delivery channel needed for final verification); correction of established clinic-patient mappings and clinical-fact reconciliation; independent workers/object storage; full bootstrap pagination and broader load/soak testing; external alerts and incident response; direct advanced assistant workflows, broader custom reports and test coverage. The completion release adds all-advertised-action strict contracts and a real process-loss/complete-row restore rehearsal; see RELIABILITY_ACCEPTANCE.md. These are unfinished work, not things an AI agent is inherently unable to build.
 
 **External inputs for final acceptance:** live merchant activation and lab vendor/test access; Twilio provision of a usable trial template/webhook setup (or an explicitly approved upgraded sender), then production sender enrollment; approved V1 export; clinic sign-off on the proposed billing, retention and escalation policy in CLINIC_LAUNCH_POLICY_DRAFT.md; representative recordings and physical devices. Test adapters cannot prove payment settlement, analyser compatibility, emergency response or customer message delivery.

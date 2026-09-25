@@ -190,3 +190,19 @@ The saved-view appointment patient lookup also passed a 501-reference SQLite reg
 that checks batch boundaries, exact species grouping, the 100-record saved-view
 limit and absence of a full patient-table read. PostgreSQL parity remains a CI
 gate for this change; hosted load/soak acceptance is still outstanding.
+
+## V2 assistant filter and identity guard — 25 September 2026
+
+PRs #72–#74 passed full frontend, SQLite, PostgreSQL and packaged API CI. The
+focused assistant/query suites passed 105, 107 and 109 cases respectively as
+the guards were added. Both isolated V2 Railway services reported the exact
+successful commit after each merge. The 17-check persisted-state smoke passed
+after PRs #73 and #74. Two fresh real-model synthetic questions retained the requested
+recorded status and patient species. A third retained the exact `on YYYY-MM-DD`
+bounds; an invalid day returned no records or action. After revision
+`a11ec5785e0a9d879080fb6135d5e64113ab83b7`, real-model patient chat
+stayed on the selected synthetic animal, and an explicit whole-clinic question
+returned clinic scope. Private V2 test receipts retain the queries and saved
+conversation IDs. No customer message, payment or original Broby action was
+performed. These successful examples do not measure representative language
+accuracy or capacity at real-clinic scale.
