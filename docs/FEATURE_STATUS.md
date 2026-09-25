@@ -119,6 +119,25 @@ was sent; Twilio sending remained disabled. The standard hosted readback passed
 17/17 checks. This narrows #8/#23/#24 but does not establish general model
 accuracy or real-clinic readiness.
 
+PR #78 added the owner-visible staff reply to the same reviewed assistant path,
+bringing direct proposals to 70 and guided operations to 29. Its frontend,
+SQLite, PostgreSQL and packaged API CI passed. The first hosted model attempt
+selected the right action but substituted a field, so the server rejected the
+proposal without saving a reply. A follow-up V2 main commit
+`dab49ead6fda8f73819a74c4ae21bc1201ff0f48` made the exact operator command,
+not model-provided fields, authoritative for conversation target, reason and
+reply text. This commit was pushed directly to V2 main in error; the original
+Broby repository and services were untouched. The exact commit's [push CI](https://github.com/NeoDiuZ/broby-v2/actions/runs/36135737075)
+then passed all three jobs, and both isolated V2 Railway services reported
+SUCCESS at that SHA. A fresh hosted real-model synthetic test passed exact
+reply review, owner-portal visibility, unchanged urgent alert, no external
+message, confirmation/replay, closure and new-login readback with one timeline
+receipt per human message. A separate deployed-browser test displayed the
+exact owner message and staff reply before confirmation, then confirmed one
+portal reply; API readback matched and its synthetic grant was revoked. The
+standard hosted smoke passed 17/17 at this revision. These are synthetic
+examples, not representative clinical-language or real-customer acceptance.
+
 **Engineering that can continue without a new vendor:** offline physical-device/crash acceptance; long-session physical-device acceptance; verified owner account flows (delivery channel needed for final verification); correction of established clinic-patient mappings and clinical-fact reconciliation; independent workers/object storage; full bootstrap pagination and broader load/soak testing; external alerts and incident response; direct advanced assistant workflows, broader custom reports and test coverage. The completion release adds all-advertised-action strict contracts and a real process-loss/complete-row restore rehearsal; see RELIABILITY_ACCEPTANCE.md. These are unfinished work, not things an AI agent is inherently unable to build.
 
 **External inputs for final acceptance:** live merchant activation and lab vendor/test access; Twilio provision of a usable trial template/webhook setup (or an explicitly approved upgraded sender), then production sender enrollment; approved V1 export; clinic sign-off on the proposed billing, retention and escalation policy in CLINIC_LAUNCH_POLICY_DRAFT.md; representative recordings and physical devices. Test adapters cannot prove payment settlement, analyser compatibility, emergency response or customer message delivery.

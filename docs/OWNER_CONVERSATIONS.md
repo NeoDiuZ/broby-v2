@@ -24,6 +24,10 @@ limited to 2,000 characters, threads to 100 messages and owner traffic is bounde
 per clinic/pet. Returned fact lists show at most 20 records with an explicit limit.
 
 Staff use **Handover → Owner conversations** to read, reply, acknowledge or close.
+A staff member may also use Ask Broby with an explicit exact thread ID and their
+own verbatim reply, then inspect and confirm the saved review. The assistant
+selects the operation but cannot author the owner-visible words. This does not
+send WhatsApp or email, and replying does not resolve an urgent internal alert.
 A new owner message invalidates the reviewed version. The UI requires a refresh
 before submitting a stale review and preserves a drafted reply while refreshing.
 Replies are saved to the portal; this never implies a WhatsApp message was sent.
