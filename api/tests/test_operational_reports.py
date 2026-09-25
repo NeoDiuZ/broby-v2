@@ -121,7 +121,11 @@ def test_malformed_legacy_values_are_counted_without_breaking_the_report():
     with db.connection(True) as c:
         db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC malformed legacy',
                                                'species': 0, 'owner_id': 'unknown'})
-        db.record(c, 'consultation', 'clinic-east', {'status': 0})
+        consultation = db.record(c, 'consultation', 'clinic-east', {'status': 0})
+        # built() uses a fixed clinic day; keep this fixture inside that day
+        # instead of making its inclusion depend on the wall clock.
+        c.execute('UPDATE records SET created_at=? WHERE id=?',
+                  ('2026-09-25T01:00:00+00:00', consultation['id']))
         c.execute("INSERT INTO records(id,kind,clinic_id,data,version,created_at,updated_at) "
                   "VALUES(?,?,?,?,?,?,?)", ('malformed-report-stock', 'inventory', 'clinic-east',
                                               '[]', 1, db.now(), db.now()))
