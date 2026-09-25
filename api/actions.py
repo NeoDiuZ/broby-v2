@@ -82,6 +82,8 @@ from access_controls import PERMISSIONS as ACCESS_PERMISSIONS
 PERMISSIONS.update(ACCESS_PERMISSIONS)
 from owner_conversations import PERMISSIONS as CONVERSATION_PERMISSIONS
 PERMISSIONS.update(CONVERSATION_PERMISSIONS)
+from operational_alerts import PERMISSIONS as OPS_ALERT_PERMISSIONS
+PERMISSIONS.update(OPS_ALERT_PERMISSIONS)
 
 DEPENDENCIES={
  'recall.prepare':('message.queue',), 'recall.cancel':('message.cancel',),
@@ -140,6 +142,9 @@ def execute(action,p,clinic,actor,key,*,expected_versions=None):
 
 def dispatch(c,a,p,clinic,actor):
     from clinic_workflows import calendar_date, clinic_today, revoke_patient_access
+    if a in OPS_ALERT_PERMISSIONS:
+        from operational_alerts import dispatch as operational_alert_action
+        return operational_alert_action(c,a,p,clinic,actor)
     if a in CONVERSATION_PERMISSIONS:
         from owner_conversations import dispatch as conversation_action
         return conversation_action(c,a,p,clinic,actor)

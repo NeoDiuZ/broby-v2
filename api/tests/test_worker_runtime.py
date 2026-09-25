@@ -137,6 +137,13 @@ def test_health_probe_does_not_register_or_certify_an_absent_worker():
         assert c.execute('SELECT COUNT(*) FROM worker_runtime').fetchone()[0] == 0
 
 
+def test_mode_mismatch_does_not_misreport_matching_storage():
+    with db.connection(True) as c:
+        c.execute("UPDATE worker_runtime SET mode='embedded'")
+    assert all(v['storage_matches'] and not v['mode_matches'] and v['attention']
+               for v in workers.ExternalWorkers(register=False).snapshot())
+
+
 def test_postgres_ownership_rejects_a_second_volume(tmp_path):
     if db.store() != 'postgres':
         pytest.skip('PostgreSQL advisory ownership is covered by the PostgreSQL PMS matrix')

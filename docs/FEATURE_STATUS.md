@@ -22,7 +22,7 @@ Real-clinic launch gates below are tracked separately from those counts.
 | 5 | AI-authored ontology | **Partial.** Model/manual proposals, aliases, reviewed acceptance/rejection and immutable codes/types/units. Approved clinical terminology and broader model evaluation remain; a real hosted AI proposal and rejection were verified with synthetic data. |
 | 6 | Provenance / receipts | **Implemented with verification limits.** Original document/audio/human receipts, missing-source flags, verbatim AI quote validation, omitted source text and timestamps. This exposes mistakes; it does not certify speech or clinical interpretation accuracy. |
 | 7 | Outbox | **Partial.** Durable drafts, edit/cancel/manual completion, simulated delivery callbacks and signed replay checks. A restricted Twilio trial worker, signed callbacks and conservative reconciliation are implemented. Provider configuration/delivery evidence and production customer dispatch remain unfinished. |
-| 8 | One action layer for UI and AI | **Partial: shared executor implemented; full assistant coverage unfinished.** Shared authorized, versioned, idempotent audited mutations; AI proposals require confirmation. All 72 directly proposed operations now have strict schemas, reference checks, labelled reviews and atomic referenced-version guards. Twenty-seven complex/capture/provider operations route to their dedicated review screens; six internal test-adapter actions stay unadvertised. Exact selected recall batches and internal escalation acknowledgements now have complete recipient/source review, stale guards and explicit operator commands. Owner-conversation acknowledgement, closure and exact staff reply require an explicit operator command and show the complete human conversation before confirmation; pending, closed and long conversations use the Handover screen. A reply is saved in the owner portal without external dispatch. Direct AI execution of the remaining guided workflows and representative intent evaluation remain unfinished. See ASSISTANT_OPERATIONS.md. |
+| 8 | One action layer for UI and AI | **Partial: shared executor implemented; full assistant coverage unfinished.** Shared authorized, versioned, idempotent audited mutations; AI proposals require confirmation. All 74 directly proposed operations now have strict schemas, reference checks, labelled reviews and atomic referenced-version guards. Twenty-seven complex/capture/provider operations route to their dedicated review screens; six internal test-adapter actions stay unadvertised. Exact selected recall batches and internal escalation acknowledgements now have complete recipient/source review, stale guards and explicit operator commands. Exact administrative commands additionally review a complete member read-restriction replacement or withdrawal of a pending organization request; effective access is pinned to current clinic/member versions and organization policy/account relationships. Owner-conversation acknowledgement, closure and exact staff reply require an explicit operator command and show the complete human conversation before confirmation; pending, closed and long conversations use the Handover screen. A reply is saved in the owner portal without external dispatch. Direct AI execution of the remaining guided workflows and representative intent evaluation remain unfinished. See ASSISTANT_OPERATIONS.md. |
 | 9 | Read APIs | **Implemented.** Clinic-scoped patient search, paged timeline, observations, event detail and source access. Patient-page summaries now use five queries per page instead of five per patient. A 1,000-patient/eight-client isolated PostgreSQL workflow passed 19 checks with no HTTP errors; the unnecessary clinical refresh after dashboard writes was removed. A 5,000-patient/16-client burst also passed with zero HTTP errors. Removing redundant bootstrap JSON conversion cut standalone 5,000-patient reads from 1.08–1.28 seconds to 0.49–0.73 seconds and a matched mixed burst's bootstrap p95 from 9.20 to 4.17 seconds. Hidden tabs no longer poll the full snapshot every six seconds. Guarded single patient/owner changes now project incrementally; a real synthetic patient edit read back in 246.8 ms at 5,000 patients with 20/20 acceptance checks passing. After V2 revision `672b5cc` deployed, a separate small hosted synthetic create/update/readback retained the same owner link and revised name in both typed view and bootstrap. The uncompressed bootstrap remains 7.84 MB and first clinical projections took 20–27 seconds across disposable runs; older PMS screens still load full datasets, other clinical changes require full projection, and pagination and broader soak work remain. |
 | 10 | Numbered voice notes | **Implemented.** Persistent notes, renaming, imported audio, independent capture lifecycle and replay. Real microphone/device/browser acceptance remains limited. |
 | 11 | Offline first | **Partial.** Offline cold launch, encrypted account-scoped notes/audio/drafts/clinic copies, password unlock, bounded session access, legacy migration and snapshot eviction are implemented. Isolated production-browser acceptance verifies disconnected reopening, exact note/audio recovery and reconnect without changing unrelated records. Full physical-device/browser crash and storage-eviction acceptance remains. See OFFLINE_DEVICE.md. |
@@ -74,13 +74,69 @@ Real-clinic launch gates below are tracked separately from those counts.
 | 57 | Remove 10-second live chunk pipeline | **Implemented in V2.** Five-second browser chunks are durability/upload pieces, not ten-second AI passes. |
 | 58 | Remove duplicate action executors | **Implemented in V2.** UI and assistant proposals use the shared authorization/mutation boundary. |
 
-## Completion release under verification — 25 September
+## Administrative and operational review verification — 25 September
+
+The next integration batch passes **1,026 backend tests in SQLite PMS mode and
+1,026 in PostgreSQL PMS mode**, with one expected skip in each and a real
+PostgreSQL clinical spine. All **41 frontend tests**, TypeScript, production build
+and offline packaging pass. These counts describe local revision `37d3203`;
+release deployment is recorded separately after required CI.
+
+The primary operator personally reviewed and confirmed both synthetic
+administrative proposals in the local password-authenticated browser. A separate
+login passed **18 readbacks**: exact restriction only, inherited inventory lock
+retained, stale organization-policy proposal unexecuted, exact consent history
+preserved, independent clinic unchanged, and both completed confirmations replayed
+without a second mutation. The local model was fixed for this fixture; this is
+not hosted real-model acceptance. The hosted service fixture requires verified
+V2 service execution, which the currently configured Railway CLI account cannot
+access. The API-only fallback covers a new synthetic child clinic's restrictions
+without changing existing organization policy or clinic ownership.
+
+A separate local PostgreSQL/browser/API/worker fixture produced six actual
+loopback HTTP 503 receipts. The primary operator reviewed a retry, which preserved
+the original event ID and recorded HTTP 204 on attempt seven, then separately
+acknowledged the still-open incident and retried its failed synthetic document.
+The job completed; the independent monitor recorded a distinct sequence-2
+recovery event accepted with HTTP 204. **11 independent saved-state checks**
+confirmed job completion, preserved receipts, two audited reviews, separate
+acknowledgement/recovery and matching external worker storage. No hosted webhook,
+real on-call destination or clinical emergency service was enabled. See
+[OPERATIONAL_ALERTS.md](OPERATIONAL_ALERTS.md).
+
+## Completion release verified — 25 September
 
 The isolated integration branch passes **944 backend tests in SQLite PMS mode
 and 944 in PostgreSQL PMS mode** (one expected skip in each), with a real
 PostgreSQL clinical spine. All **41 frontend tests**, TypeScript, the production
-web build and offline packaging pass. These are local results; hosted acceptance
-of the new code is recorded separately after deployment.
+web build and offline packaging pass. These are local results. PR #82 subsequently passed every SQLite, PostgreSQL,
+frontend and packaged-API CI check before merge.
+
+Both isolated Railway services reported SUCCESS at exact revision
+`cc32980a69ce24dc43a1dc29624371ca735164e7`. The existing persisted-state check
+passed **17/17**. A fresh synthetic workflow passed **30 checks**, including new
+verbatim and real-Anthropic source-excerpt jobs, PDF/file/lab receipts, owner
+access exclusions and revoked-link rejection. Chrome displayed the new saved
+source excerpts and omitted-source text. Hosted document/schedule/payment worker
+cycles progressed in embedded mode; the messaging worker remained disabled.
+
+Two real-model assistant reviews were confirmed in Chrome: exactly two manual
+recall drafts and one internal escalation acknowledgement. Saved reviews, exact
+draft text, idempotent confirmation receipts and unchanged open owner conversation
+passed API readback. The unsent drafts were cancelled and synthetic owner link
+revoked. No external message was sent.
+
+Hosted mapping-correction acceptance used two newly created SYNTHETIC clinics.
+The owner browser explicitly selected medication history, original audio and
+permission to correct the earlier patient link. The staff browser displayed both
+identities, all owners and native facts; after a controlled additional-owner edit,
+its stale confirmation was rejected. Reload cleared the reason and both
+acknowledgements. Fresh browser confirmation passed **43 stored-state readback
+checks**, including unchanged prior records, exact file/audio bytes, native
+PostgreSQL events/observations/receipts, exact new destination copies, immutable
+review fingerprints, no stock movement, and a deduplicated repeat. Both patient
+screens showed unresolved-history warnings, retained while filtering. This does
+not establish legal owner identity or resolve clinical-fact equivalence.
 
 New coverage includes reviewed recall preparation and internal escalation
 acknowledgement; explicitly consented correction of existing receiving-patient
