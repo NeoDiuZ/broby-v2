@@ -14,6 +14,10 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 - A patient or the clinic, inclusive start/end dates, exact recorded category,
   status or name; exact patient species and appointment clinician ID; counts
   grouped by category, status, species, name, clinician or day.
+- Patients linked to an exact clinic owner ID, including primary and additional
+  owners. An owner name alone is not an identity key; the assistant must select
+  the recorded owner ID before retrieving the complete clinic-scoped set.
+  Duplicate owner names require explicit identity selection rather than a guess.
 - Observations with an exact concept code, optionally exact unit and typed
   equality. Boolean false remains distinct from zero and the text "false".
 - User-supplied numeric bounds for an exact observation code and unit. No unit
@@ -38,7 +42,8 @@ current read layer still loads records in memory and is not clinic-scale certifi
 ## Acceptance
 
 `api/tests/test_record_queries.py` checks assistant/view parity, exact species
-and clinician filters, live refresh, outstanding balances, timezone boundaries,
+and clinician filters, primary/additional owner links and live link changes,
+outstanding balances, timezone boundaries,
 reminder due dates, exact units and typed equality, malformed/unsupported filters,
 scope, native facts, bounded output and old saved-query compatibility.
 PostgreSQL acceptance also verifies native
@@ -68,3 +73,10 @@ IDs through authenticated API readback. In the hosted browser, Reports rendered
 the 14 Cat matches; after reload and device unlock, the clinician view was still
 listed and rendered 9 matches. This verifies these two example intents and
 their persistence, not broad language accuracy or clinic-scale performance.
+
+The exact owner-linked patient filter passed a focused synthetic SQLite and
+PostgreSQL test on 25 September. It covered assistant/view parity, current
+primary and additional links, a removed additional link, duplicate-name
+clarification, wrong-kind rejection, foreign-clinic owner rejection and
+malformed historical link data. Hosted
+real-model phrasing and browser acceptance are still pending for this filter.

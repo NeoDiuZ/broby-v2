@@ -93,6 +93,47 @@ def test_exact_clinician_filter_and_grouping_survive_saved_view(monkeypatch):
     assert [r['id'] for r in saved['records']]==[first['id']]
 
 
+def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch):
+    owner=act('owner.create',{'name':'SYNTHETIC Shared Household'})
+    primary=act('patient.create',{'name':'SYNTHETIC Primary Pet','species':'Cat','owner_id':owner['id']})
+    additional=act('patient.create',{'name':'SYNTHETIC Additional Pet','species':'Dog','owner_name':'Another Synthetic Owner'})
+    additional=act('patient.owners',{'id':additional['id'],'version':additional['version'],
+                                     'owner_id':additional['data']['owner_id'],'additional_owner_ids':[owner['id']]})
+    plan={'read':{'kind':'patient','scope':'clinic','owner_id':owner['id'],'group_by':'species'}}
+    answer=ask(monkeypatch,'Show all pets linked to SYNTHETIC Shared Household, grouped by species',plan)
+    assert {r['id'] for r in answer['sources']}=={primary['id'],additional['id']}
+    assert answer['dashboard']['groups']==[{'label':'Cat','count':1},{'label':'Dog','count':1}]
+    assert 'owner: SYNTHETIC Shared Household' in answer['text']
+    view=act('dashboard.save',{'name':'SYNTHETIC owner pets','query':answer['dashboard']['query']})
+    client=TestClient(main.app)
+    saved=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert {r['id'] for r in saved['records']}=={primary['id'],additional['id']}
+    act('patient.owners',{'id':additional['id'],'version':additional['version'],
+                          'owner_id':additional['data']['owner_id'],'additional_owner_ids':[]})
+    refreshed=client.get('/api/dashboards/'+view['id']).json()['result']
+    assert [r['id'] for r in refreshed['records']]==[primary['id']]
+    with db.connection(True) as c:
+        foreign=db.record(c,'owner','clinic-river',{'name':'SYNTHETIC Other Clinic'})
+        db.record(c,'patient','clinic-east',{'name':'SYNTHETIC malformed links','species':'Cat','owner_id':'owner-luna','additional_owner_ids':None})
+    assert [r['id'] for r in query({'kind':'patient','owner_id':owner['id']})['records']]==[primary['id']]
+    err(404,lambda:query({'kind':'patient','owner_id':foreign['id']}))
+    err(422,lambda:query({'kind':'appointment','owner_id':owner['id']}))
+
+
+def test_duplicate_owner_names_require_exact_identity_before_model_query(monkeypatch):
+    first=act('owner.create',{'name':'SYNTHETIC Same Client'})
+    act('owner.create',{'name':'SYNTHETIC Same Client'})
+    monkeypatch.setattr(assistant.providers,'available',lambda:{'ai':True})
+    monkeypatch.setattr(assistant.providers,'model_json',lambda *args:pytest.fail('Ambiguous owner reached the model'))
+    with db.connection() as c:
+        result=assistant.answer(c,'clinic-east','clinic-east-vet','Show pets linked to SYNTHETIC Same Client')
+    assert 'exact owner ID' in result['text'] and 'dashboard' not in result
+    selected=ask(monkeypatch,'Show pets linked to SYNTHETIC Same Client, owner ID '+first['id'],
+                 {'read':{'kind':'patient','scope':'clinic','owner_id':first['id']}})
+    assert selected['dashboard']['query']['owner_id']==first['id']
+    assert selected['dashboard']['count']==0
+
+
 def test_clinic_timezone_uses_occurrence_instead_of_utc_date():
     with db.connection(True) as c:
         first=db.record(c,'event','clinic-east',{'patient_id':'luna','title':'Midnight clinic time','occurred_at':'2026-09-23T16:30:00Z'})
@@ -135,6 +176,7 @@ def test_typed_equality_false_is_not_zero_and_exact_unit_comparisons():
     {'kind':'observation','code':'x','value_equals':float('inf')},
     {'kind':'invoice','low_stock':'false'}, {'kind':'patient','status':'due'},
     {'kind':'invoice','species':'Cat'}, {'kind':'patient','clinician':'clinic-east-vet'},
+    {'kind':'patient','owner_id':''}, {'kind':'patient','owner_id':False},
     {'kind':'patient','group_by':'clinician'},
     {'kind':'invoice','start':'20260924'}, {'kind':'invoice','start':'2099-02-30'},
     {'kind':'event','start':'2099-02-01','end':'2099-01-01'},
