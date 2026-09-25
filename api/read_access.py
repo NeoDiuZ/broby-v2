@@ -100,6 +100,7 @@ ROUTES = {
     '/api/invoices/{id}/pdf': BILLING, '/api/credit-notes/{id}/pdf': BILLING,
     '/api/credit-notes/export': BILLING,
     '/api/reports/financial': BILLING, '/api/reports/financial/export': BILLING,
+    '/api/reports/operations': ALL, '/api/reports/operations/export': ALL,
     '/api/integrations/stripe/status': BILLING,
     '/api/schedule/preview': SCHEDULE, '/api/schedule/rota': SCHEDULE, '/api/schedule/leave/preview': SCHEDULE,
     '/api/recalls/preview': MESSAGES, '/api/recalls/{campaign_id}': MESSAGES,

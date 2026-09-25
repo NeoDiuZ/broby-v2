@@ -43,6 +43,7 @@ def test_bootstrap_filters_records_and_dependent_writes(capability):
  '/api/operations/status','/api/operations/health',
  '/api/invoices/old/pdf','/api/credit-notes/old/pdf','/api/credit-notes/export',
  '/api/reports/financial','/api/reports/financial/export','/api/integrations/stripe/status',
+ '/api/reports/operations','/api/reports/operations/export',
 ])
 def test_restricted_paths_fail_before_missing_record_or_provider_read(path):
     restrict('read.billing')
