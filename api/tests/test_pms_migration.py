@@ -44,6 +44,25 @@ def test_fingerprint_is_independent_of_database_collation_but_preserves_every_va
     assert digest(binary)!=digest(binary[:-1])
 
 
+def test_old_sqlite_projection_queue_upgrades_without_losing_change_history(tmp_path,monkeypatch):
+    path=tmp_path/'old-queue.sqlite3'
+    with sqlite3.connect(path) as c:
+        c.executescript('''CREATE TABLE records(id TEXT,kind TEXT,clinic_id TEXT);
+        CREATE TABLE auth_memberships(clinic_id TEXT);
+        CREATE TABLE spine_changes(sequence INTEGER PRIMARY KEY AUTOINCREMENT,clinic_id TEXT);
+        INSERT INTO spine_changes(clinic_id) VALUES('clinic-east');''')
+    monkeypatch.setattr(db,'DB',path)
+    monkeypatch.setenv('BROBY_PMS_STORE','sqlite')
+    from spine.projection import setup_queue
+    setup_queue()
+    with db.connection(True) as c:
+        old=c.execute('SELECT record_id,kind FROM spine_changes WHERE sequence=1').fetchone()
+        assert old['record_id'] is None and old['kind'] is None
+        c.execute("INSERT INTO records(id,kind,clinic_id) VALUES('synthetic-owner','owner','clinic-east')")
+        changed=c.execute('SELECT record_id,kind FROM spine_changes ORDER BY sequence DESC LIMIT 1').fetchone()
+        assert changed['record_id']=='synthetic-owner' and changed['kind']=='owner'
+
+
 def test_cutover_preserves_every_table_auth_claims_history_and_original_file(legacy):
     db.init(seed=False)
     with db.connection() as c:
@@ -138,8 +157,10 @@ def test_projection_sequence_continues_after_migrated_high_watermark(legacy):
     db.init(seed=False)
     with db.connection(True) as c:
         previous=c.execute('SELECT MAX(sequence) FROM spine_changes').fetchone()[0]
-        db.record(c,'owner','clinic-east',{'name':'SYNTHETIC after promotion'})
+        owner=db.record(c,'owner','clinic-east',{'name':'SYNTHETIC after promotion'})
         assert c.execute('SELECT MAX(sequence) FROM spine_changes').fetchone()[0]>previous
+        changed=c.execute('SELECT record_id,kind FROM spine_changes ORDER BY sequence DESC LIMIT 1').fetchone()
+        assert changed['record_id']==owner['id'] and changed['kind']=='owner'
 
 
 def test_crash_after_database_commit_recovers_only_the_matching_fence(legacy):
