@@ -23,11 +23,16 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     matches=[p for p in patients if re.search(r'(?<!\w)'+re.escape(p['data']['name'].lower())+r'(?!\w)',q)]
     if not patient and len(matches)>1:return {'text':'Choose the exact patient before retrieving or changing their record.','choices':matches,'sources':[]}
     if not patient and matches:patient=matches[0]
+    requested_owner=None
     if re.search(r'\b(?:owners?|clients?|households?|pets?|belong\w*|linked)\b',q):
         owners=[r for r in rs if r['kind']=='owner' and not r['data'].get('merged_into')]
         named=[r for r in owners if r['data'].get('name') and re.search(r'(?<!\w)'+re.escape(r['data']['name'].casefold())+r'(?!\w)',q)]
-        if len(named)>1 and not any(re.search(r'(?<!\w)'+re.escape(r['id'].casefold())+r'(?!\w)',q) for r in named):
-            return {'text':'Multiple clinic owners match this request. Open Clients and specify the exact owner ID before I retrieve linked patients.','sources':[]}
+        identified=[r for r in owners if re.search(r'(?<!\w)'+re.escape(r['id'].casefold())+r'(?!\w)',q)]
+        if re.search(r'\b(?:owner|client)\s+id\b',q) and not identified:
+            return UNSUPPORTED_READ
+        if len(identified)>1 or len(named)>1 and (not identified or identified[0] not in named) or len(named)==1 and identified and named[0]!=identified[0]:
+            return {'text':'I could not identify one clinic owner for this request. Open Clients and specify the exact owner ID before I retrieve linked records.','sources':[]}
+        requested_owner=identified[0] if identified else named[0] if named else None
     if any(x in q for x in ('differential','what disease','what should i prescribe','diagnose','recommend treatment')):
         return {'text':'I can retrieve recorded findings and prescribed instructions. Diagnosis and treatment decisions stay with the veterinarian.','sources':[]}
     clinic_timezone=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore')
@@ -81,6 +86,10 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     if read.get('patient_id'):patient=owned(c,read['patient_id'],clinic,'patient')
     kind=read.get('kind') or ('inventory' if 'stock' in q or 'inventory' in q else 'invoice' if 'invoice' in q or 'outstanding' in q else 'appointment' if 'appointment' in q or 'today' in q or 'handover' in q else 'observation' if any(x in q for x in ('weight','observation','blood','creatinine')) else 'medication_history' if 'medication history' in q else 'medication' if 'med' in q else 'event' if patient else 'patient')
     query={**read,'kind':kind,'patient_id':patient['id'] if patient else None}
+    # A model may omit a requested condition while still producing a valid read.
+    # Never widen an owner-specific question to another owner or the whole clinic.
+    if requested_owner and (kind not in {'patient','appointment'} or query.get('owner_id')!=requested_owner['id']):
+        return UNSUPPORTED_READ
     if not query.get('start') and start:query['start']=str(start)
     if not query.get('end') and end:query['end']=str(end)
     # Compatibility for direct questions/offline fallback, now captured in the
