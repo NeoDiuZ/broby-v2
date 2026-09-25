@@ -127,7 +127,9 @@ def history(c):
 def projection_queue(c):
     from projection_kinds import PROJECTED_KIND_SQL
     c.executescript('''
-    CREATE TABLE IF NOT EXISTS spine_changes(sequence BIGSERIAL PRIMARY KEY,clinic_id TEXT);
+    CREATE TABLE IF NOT EXISTS spine_changes(sequence BIGSERIAL PRIMARY KEY,clinic_id TEXT,record_id TEXT,kind TEXT);
+    ALTER TABLE spine_changes ADD COLUMN IF NOT EXISTS record_id TEXT;
+    ALTER TABLE spine_changes ADD COLUMN IF NOT EXISTS kind TEXT;
     CREATE INDEX IF NOT EXISTS spine_changes_clinic_sequence ON spine_changes(clinic_id,sequence DESC);
     CREATE OR REPLACE FUNCTION enqueue_spine_change() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
@@ -135,7 +137,16 @@ def projection_queue(c):
         INSERT INTO spine_changes(clinic_id) VALUES(OLD.clinic_id);
         RETURN OLD;
       END IF;
-      INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id);
+      IF TG_TABLE_NAME='records' THEN
+        IF TG_OP='UPDATE' THEN
+          INSERT INTO spine_changes(clinic_id,record_id,kind)
+            VALUES(NEW.clinic_id,NEW.id,CASE WHEN OLD.kind=NEW.kind THEN NEW.kind ELSE NULL END);
+        ELSE
+          INSERT INTO spine_changes(clinic_id,record_id,kind) VALUES(NEW.clinic_id,NEW.id,NEW.kind);
+        END IF;
+      ELSE
+        INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id);
+      END IF;
       RETURN NEW;
     END;
     $$;

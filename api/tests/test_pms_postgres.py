@@ -69,6 +69,8 @@ def test_unrelated_postgres_writes_do_not_rebuild_clinical_projection(postgres_s
         owner=db.get(c,'owner-milo')
         db.update(c,owner,{**owner['data'],'name':'SYNTHETIC changed owner'})
         assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]>before
+        changed=c.execute("SELECT record_id,kind FROM spine_changes WHERE clinic_id='clinic-east' ORDER BY sequence DESC LIMIT 1").fetchone()
+        assert changed['record_id']=='owner-milo' and changed['kind']=='owner'
 
 
 def test_postgres_shared_action_concurrent_retry_charges_once(postgres_store):

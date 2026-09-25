@@ -17,16 +17,38 @@ def setup_queue():
             from pms_postgres import projection_queue
             projection_queue(c)
             return
-        c.executescript('''CREATE TABLE IF NOT EXISTS spine_changes(sequence INTEGER PRIMARY KEY AUTOINCREMENT,clinic_id TEXT);
-        CREATE INDEX IF NOT EXISTS spine_changes_clinic_sequence ON spine_changes(clinic_id,sequence DESC);
+        c.execute('CREATE TABLE IF NOT EXISTS spine_changes(sequence INTEGER PRIMARY KEY AUTOINCREMENT,clinic_id TEXT,record_id TEXT,kind TEXT)')
+        for column in ('record_id','kind'):
+            if column not in db.columns(c,'spine_changes'):
+                c.execute('ALTER TABLE spine_changes ADD COLUMN '+column+' TEXT')
+        c.executescript('''CREATE INDEX IF NOT EXISTS spine_changes_clinic_sequence ON spine_changes(clinic_id,sequence DESC);
         DROP TRIGGER IF EXISTS spine_insert;
         DROP TRIGGER IF EXISTS spine_update;
-        CREATE TRIGGER spine_insert AFTER INSERT ON records WHEN NEW.kind IN '''+PROJECTED_KIND_SQL+''' BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
+        CREATE TRIGGER spine_insert AFTER INSERT ON records WHEN NEW.kind IN '''+PROJECTED_KIND_SQL+''' BEGIN INSERT INTO spine_changes(clinic_id,record_id,kind) VALUES(NEW.clinic_id,NEW.id,NEW.kind); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_insert AFTER INSERT ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_update AFTER UPDATE ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
         CREATE TRIGGER IF NOT EXISTS spine_membership_delete AFTER DELETE ON auth_memberships BEGIN INSERT INTO spine_changes(clinic_id) VALUES(OLD.clinic_id); END;
-        CREATE TRIGGER spine_update AFTER UPDATE ON records WHEN NEW.kind IN '''+PROJECTED_KIND_SQL+''' OR OLD.kind IN '''+PROJECTED_KIND_SQL+''' BEGIN INSERT INTO spine_changes(clinic_id) VALUES(NEW.clinic_id); END;
+        CREATE TRIGGER spine_update AFTER UPDATE ON records WHEN NEW.kind IN '''+PROJECTED_KIND_SQL+''' OR OLD.kind IN '''+PROJECTED_KIND_SQL+''' BEGIN INSERT INTO spine_changes(clinic_id,record_id,kind) VALUES(NEW.clinic_id,NEW.id,CASE WHEN NEW.kind=OLD.kind THEN NEW.kind ELSE NULL END); END;
         ''')
+
+def project_identity_records(s,records):
+    """Apply the owner/patient/link projection in dependency order."""
+    for r in records:
+        if r['kind']=='owner':
+            d=r['data']
+            s.merge(Owner(id=r['id'],clinic_id=r['clinic_id'],name=d['name'],email=d.get('email',''),phone=d.get('phone','')))
+    s.flush()
+    for r in records:
+        if r['kind']=='patient':
+            d=r['data'];dob=date.fromisoformat(d['date_of_birth']) if d.get('date_of_birth') else None
+            s.merge(Patient(id=r['id'],clinic_id=r['clinic_id'],name=d['name'],species=d['species'].lower(),breed=d.get('breed',''),sex=d.get('sex','Unknown'),date_of_birth=dob))
+    s.flush()
+    from clinic_workflows import owner_ids
+    for r in records:
+        if r['kind']=='patient':
+            s.execute(delete(OwnerPatient).where(OwnerPatient.patient_id==r['id']))
+            for oid in owner_ids(r):s.add(OwnerPatient(owner_id=oid,patient_id=r['id'],is_primary=oid==r['data'].get('owner_id')))
+    s.flush()
 
 def sync(clinic):
     with session() as s,s.begin():
@@ -36,27 +58,22 @@ def sync(clinic):
         with db.connection(snapshot=True) as c:
             seq=c.execute('SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id=?',(clinic,)).fetchone()[0]
             if checkpoint and checkpoint.sequence==seq:return
+            if checkpoint and seq>checkpoint.sequence:
+                changes=c.execute('SELECT record_id,kind FROM spine_changes WHERE clinic_id=? AND sequence>? AND sequence<=? ORDER BY sequence LIMIT 101',(clinic,checkpoint.sequence,seq)).fetchall()
+                if changes and len(changes)<=100 and all(row['record_id'] and row['kind'] in ('owner','patient') for row in changes):
+                    changed={row['record_id']:db.get(c,row['record_id'],clinic) for row in changes}
+                    if all(r and r['kind'] in ('owner','patient') for r in changed.values()):
+                        project_identity_records(s,list(changed.values()))
+                        s.merge(Projection(name=clinic,sequence=seq))
+                        return
             records=db.all_records(c,clinic)
             memberships=[dict(r) for r in c.execute('SELECT * FROM auth_memberships WHERE clinic_id=?',(clinic,))]
         by_id={r['id']:r for r in records};practice=by_id.get(clinic)
         if not practice:return
         s.merge(Clinic(id=clinic,name=practice['data']['name']));s.flush()
+        project_identity_records(s,records)
         for r in records:
             d=r['data']
-            if r['kind']=='owner':s.merge(Owner(id=r['id'],clinic_id=clinic,name=d['name'],email=d.get('email',''),phone=d.get('phone','')))
-        s.flush()
-        for r in records:
-            d=r['data']
-            if r['kind']=='patient':
-                dob=date.fromisoformat(d['date_of_birth']) if d.get('date_of_birth') else None
-                s.merge(Patient(id=r['id'],clinic_id=clinic,name=d['name'],species=d['species'].lower(),breed=d.get('breed',''),sex=d.get('sex','Unknown'),date_of_birth=dob))
-        s.flush()
-        for r in records:
-            d=r['data']
-            if r['kind']=='patient':
-                s.execute(delete(OwnerPatient).where(OwnerPatient.patient_id==r['id']))
-                from clinic_workflows import owner_ids
-                for oid in owner_ids(r):s.add(OwnerPatient(owner_id=oid,patient_id=r['id'],is_primary=oid==d.get('owner_id')))
             if r['kind']=='member':
                 linked=next((m for m in memberships if m['member_id']==r['id']),None)
                 person_id='account:'+linked['username'] if linked else r['id']
