@@ -74,13 +74,39 @@ Real-clinic launch gates below are tracked separately from those counts.
 | 57 | Remove 10-second live chunk pipeline | **Implemented in V2.** Five-second browser chunks are durability/upload pieces, not ten-second AI passes. |
 | 58 | Remove duplicate action executors | **Implemented in V2.** UI and assistant proposals use the shared authorization/mutation boundary. |
 
-## Completion release under verification — 25 September
+## Completion release verified — 25 September
 
 The isolated integration branch passes **944 backend tests in SQLite PMS mode
 and 944 in PostgreSQL PMS mode** (one expected skip in each), with a real
 PostgreSQL clinical spine. All **41 frontend tests**, TypeScript, the production
-web build and offline packaging pass. These are local results; hosted acceptance
-of the new code is recorded separately after deployment.
+web build and offline packaging pass. These are local results. PR #82 subsequently passed every SQLite, PostgreSQL,
+frontend and packaged-API CI check before merge.
+
+Both isolated Railway services reported SUCCESS at exact revision
+`cc32980a69ce24dc43a1dc29624371ca735164e7`. The existing persisted-state check
+passed **17/17**. A fresh synthetic workflow passed **30 checks**, including new
+verbatim and real-Anthropic source-excerpt jobs, PDF/file/lab receipts, owner
+access exclusions and revoked-link rejection. Chrome displayed the new saved
+source excerpts and omitted-source text. Hosted document/schedule/payment worker
+cycles progressed in embedded mode; the messaging worker remained disabled.
+
+Two real-model assistant reviews were confirmed in Chrome: exactly two manual
+recall drafts and one internal escalation acknowledgement. Saved reviews, exact
+draft text, idempotent confirmation receipts and unchanged open owner conversation
+passed API readback. The unsent drafts were cancelled and synthetic owner link
+revoked. No external message was sent.
+
+Hosted mapping-correction acceptance used two newly created SYNTHETIC clinics.
+The owner browser explicitly selected medication history, original audio and
+permission to correct the earlier patient link. The staff browser displayed both
+identities, all owners and native facts; after a controlled additional-owner edit,
+its stale confirmation was rejected. Reload cleared the reason and both
+acknowledgements. Fresh browser confirmation passed **43 stored-state readback
+checks**, including unchanged prior records, exact file/audio bytes, native
+PostgreSQL events/observations/receipts, exact new destination copies, immutable
+review fingerprints, no stock movement, and a deduplicated repeat. Both patient
+screens showed unresolved-history warnings, retained while filtering. This does
+not establish legal owner identity or resolve clinical-fact equivalence.
 
 New coverage includes reviewed recall preparation and internal escalation
 acknowledgement; explicitly consented correction of existing receiving-patient

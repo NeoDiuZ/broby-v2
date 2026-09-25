@@ -66,7 +66,7 @@ check('patient directory loaded',bool(request('GET','/v2/patients').json()['item
 
 if args.verify_only:
     state=json.loads(args.state.read_text())
-    check('SQLite patient survived redeploy',current(state['patient_id'])['data']['name']==state['patient_name'])
+    check('PMS patient survived redeploy',current(state['patient_id'])['data']['name']==state['patient_name'])
     check('PostgreSQL lab survived redeploy',request('GET',f"/v2/patients/{state['patient_id']}/events/{state['event_id']}").json()['id']==state['event_id'])
     content=request('GET','/files/'+state['attachment_id']).content
     check('uploaded file survived redeploy',hashlib.sha256(content).hexdigest()==state['file_sha256'])
