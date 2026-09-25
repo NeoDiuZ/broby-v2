@@ -14,6 +14,11 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
 - A patient or the clinic, inclusive start/end dates, exact recorded category,
   status or name; exact patient species and appointment clinician ID; counts
   grouped by category, status, species, name, clinician or day.
+  In patient chat, the selected or exactly named patient stays authoritative:
+  the model cannot replace that patient ID or silently widen the read to the
+  clinic. Explicit “clinic-wide,” “whole clinic,” “entire clinic,” or “across
+  this/the clinic” wording permits a clinic read, but the model cannot then
+  narrow it back to one patient. Other scope changes require clarification.
 - Patients and their appointments linked to an exact clinic owner ID, including
   primary and additional owner links. Appointment matching uses the current
   patient link within the same clinic. An owner name alone is not an identity
@@ -79,6 +84,9 @@ It also checks that a model cannot silently widen an explicit recorded status
 or species request, including a wrong value and an unknown value.
 Explicit ISO-day and relative-period cases check omission, conflicting model
 bounds, invalid dates and multi-date clarification.
+Patient-scope cases reject a substituted patient, an unrequested clinic scope,
+and a model-narrowed explicit clinic request, while preserving valid patient
+and clinic reads.
 PostgreSQL acceptance also verifies native
 numeric filters, original receipts, boolean/text equality and saved-view parity.
 

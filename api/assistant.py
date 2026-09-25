@@ -54,6 +54,9 @@ def explicit_on_day(message):
     try:return value if date.fromisoformat(value).isoformat()==value else False
     except ValueError:return False
 
+def explicit_clinic_scope(message):
+    return bool(re.search(r'\b(?:clinic[- ]wide|whole clinic|entire clinic|across (?:this|the) clinic)\b',message,re.I))
+
 def answer(c,clinic,actor,message,patient_id=None,history=None):
     from read_access import require, ALL
     require(c,clinic,actor,ALL)
@@ -130,6 +133,15 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     read=dict(read)
     scope=read.pop('scope',None)
     if scope not in (None,'patient','clinic'):return UNSUPPORTED_READ
+    # A patient selected in the UI or identified by name is authoritative. A
+    # model cannot silently switch animals or widen the question to the clinic.
+    # Explicit whole-clinic wording removes the selected-patient constraint but
+    # must not be narrowed back to one patient by a model-supplied ID.
+    if explicit_clinic_scope(message):
+        if read.get('patient_id') or scope=='patient':return UNSUPPORTED_READ
+        patient=None
+    elif patient and (scope=='clinic' or read.get('patient_id') not in (None,'',patient['id'])):
+        return UNSUPPORTED_READ
     if scope=='clinic':patient=None
     if read.get('patient_id'):patient=owned(c,read['patient_id'],clinic,'patient')
     kind=read.get('kind') or ('inventory' if 'stock' in q or 'inventory' in q else 'invoice' if 'invoice' in q or 'outstanding' in q else 'appointment' if 'appointment' in q or 'today' in q or 'handover' in q else 'observation' if any(x in q for x in ('weight','observation','blood','creatinine')) else 'medication_history' if 'medication history' in q else 'medication' if 'med' in q else 'event' if patient else 'patient')
