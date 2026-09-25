@@ -7,6 +7,17 @@ from sqlalchemy import select
 from . import database,service
 from .models import Event,Observation,Concept
 
+
+def observation_fields(clinic, limit=200):
+    """List recorded native concepts without materializing events or sources."""
+    with database.session() as s:
+        rows=s.execute(select(Concept.code,Concept.name,Concept.unit).join(
+            Observation,Observation.concept_id==Concept.id).join(
+            Event,Observation.event_id==Event.id).where(
+            Event.clinic_id==clinic,Event.payload_hash!='legacy').distinct().order_by(
+            Concept.code,Concept.name,Concept.unit).limit(limit)).all()
+        return [tuple(row) for row in rows]
+
 def clinical_archive(clinic):
     """Clinic-scoped SQL rows for archival; global concepts are limited to used IDs."""
     from .models import Patient,Owner,OwnerPatient,Source
