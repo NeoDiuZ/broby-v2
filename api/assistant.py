@@ -67,6 +67,15 @@ def explicit_conversation_resolution(message, name, payload):
                          r'(?P<id>[^\s,;]+)\s+reason\s*:\s*(?P<reason>\S[^\r\n]*)\s*',message,re.I)
     return bool(command and command.group('id')==target and command.group('reason').strip()==reason)
 
+def explicit_conversation_reply(message, payload):
+    """A model may select a thread, but it cannot author owner-facing text."""
+    target=payload.get('id')
+    reply=payload.get('message')
+    if not isinstance(target,str) or not isinstance(reply,str):return False
+    command=re.fullmatch(r'\s*(?:please\s+)?reply\s+to\s+(?:owner\s+)?conversation\s+'
+                         r'(?P<id>[^\s,;]+)\s+message\s*:\s*(?P<reply>\S[\s\S]*?)\s*',message,re.I)
+    return bool(command and command.group('id')==target and command.group('reply').strip()==reply)
+
 def answer(c,clinic,actor,message,patient_id=None,history=None):
     from read_access import require, ALL
     require(c,clinic,actor,ALL)
@@ -124,6 +133,8 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
             if not isinstance(action,dict) or action.get('action') not in allowed or not isinstance(action.get('payload'),dict):fail('Assistant proposed an unavailable operation',422)
             if action['action'] in ('conversation.acknowledge','conversation.close') and not explicit_conversation_resolution(message,action['action'],action['payload']):
                 return {'text':'To resolve an owner conversation, enter its exact ID and an explicit reason in the form “Close conversation [ID] reason: [your reason]” or “Acknowledge conversation [ID] reason: [your reason]”. Nothing has been changed.','sources':[]}
+            if action['action']=='conversation.reply' and not explicit_conversation_reply(message,action['payload']):
+                return {'text':'To reply in an owner portal conversation, enter its exact ID and the exact text to show in the form “Reply to conversation [ID] message: [your text]”. Nothing has been changed.','sources':[]}
             if action['action'] in assistant_operations.CONTRACTS or action['action'] in assistant_contracts.SPECS:
                 try:
                     if action['action'] in assistant_contracts.SPECS:

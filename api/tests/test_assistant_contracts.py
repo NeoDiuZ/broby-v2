@@ -13,6 +13,7 @@ import assistant_history
 import assistant_operations
 import db
 import main
+import owner_conversations
 from test_integrity import isolated, act, get, rows
 from test_assistant_operations import proposal, confirm, snapshot
 
@@ -48,7 +49,7 @@ def fixtures(monkeypatch):
         thread_id = db.uid()
         owner_turn = db.record(c, 'owner_turn', 'clinic-east', {'patient_id': 'luna', 'thread_id': thread_id,
             'speaker': 'owner', 'message': 'Exact synthetic owner question.', 'state': 'completed'})
-        thread = db.record(c, 'owner_thread', 'clinic-east', {'patient_id': 'luna', 'owner_access': 'synthetic-access-digest',
+        thread = db.record(c, 'owner_thread', 'clinic-east', {'patient_id': 'luna', 'owner_access': owner_conversations.digest(grant['id']),
             'title': 'Synthetic owner question', 'status': 'needs_attention', 'urgent': False,
             'last_owner_turn': owner_turn['id']}, thread_id)
         job = db.uid()
@@ -102,6 +103,7 @@ def fixtures(monkeypatch):
         'owner.recall_preference': {**target(owner), 'opt_out': True, 'reason': 'Explicit synthetic preference'},
         'conversation.acknowledge': {**target(thread), 'reason': 'Synthetic phone follow-up completed'},
         'conversation.close': {**target(thread), 'reason': 'Synthetic phone follow-up completed'},
+        'conversation.reply': {**target(thread), 'message': 'SYNTHETIC staff portal reply copied exactly.'},
         'recall.cancel': {**target(campaign), 'reason': 'Synthetic cancellation'},
         'leave.request': {'member_id': 'clinic-east-nurse', 'start': '2098-08-01', 'end': '2098-08-02', 'reason': 'Synthetic leave'},
         'leave.review': {**target(leave), 'decision': 'approved', 'reason': 'Synthetic approval'},
@@ -114,7 +116,9 @@ def fixtures(monkeypatch):
 def test_every_contract_saved_review_confirm_and_replay(monkeypatch, name):
     payload = fixtures(monkeypatch)[name]
     before = snapshot()
-    message = f"{name.split('.')[1].capitalize()} conversation {payload['id']} reason: {payload['reason']}" if name.startswith('conversation.') else 'Synthetic explicit operator request'
+    message = (f"Reply to conversation {payload['id']} message: {payload['message']}" if name == 'conversation.reply'
+               else f"{name.split('.')[1].capitalize()} conversation {payload['id']} reason: {payload['reason']}" if name.startswith('conversation.')
+               else 'Synthetic explicit operator request')
     turn = proposal(monkeypatch, name, payload, message=message)
     monkeypatch.setattr('providers.available', lambda: {'ai': True, 'transcription': True})
     assert 'action' in turn, turn
@@ -134,9 +138,14 @@ def test_every_contract_saved_review_confirm_and_replay(monkeypatch, name):
     if name == 'leave.review': assert first['data']['status'] == 'approved'
     if name == 'share.revoke': assert TestClient(main.app).get('/api/owner/' + payload['token']).status_code == 404
     if name.startswith('conversation.'):
-        assert first['data']['status'] == ('closed' if name.endswith('close') else 'acknowledged')
+        assert first['data']['status'] == ('closed' if name.endswith('close') else 'needs_attention' if name.endswith('reply') else 'acknowledged')
         assert first['data']['last_owner_turn'] == turn['action']['payload']['last_owner_turn']
         assert 'Exact synthetic owner question.' in next(f['value'] for f in turn['review']['fields'] if f['label'] == 'Exact human conversation')
+        if name == 'conversation.reply':
+            with db.connection() as c:
+                token = next(row['token'] for row in c.execute('SELECT token FROM grants WHERE clinic_id=?', ('clinic-east',))
+                             if owner_conversations.digest(row['token']) == first['data']['owner_access'])
+            assert owner_conversations.owner_read(token, payload['id'])['turns'][-1]['message'] == payload['message']
 
 
 def test_every_operation_is_strict_guided_or_explicit_internal_test_adapter():
@@ -220,7 +229,7 @@ def test_permission_revocation_after_proposal_blocks_confirmation(monkeypatch):
     assert snapshot() == before
 
 
-@pytest.mark.parametrize('operation,destination', [('stripe.refund', 'Billing'), ('recording.create', 'Patients'), ('migration.apply', 'Settings'), ('conversation.reply', 'Handover')])
+@pytest.mark.parametrize('operation,destination', [('stripe.refund', 'Billing'), ('recording.create', 'Patients'), ('migration.apply', 'Settings'), ('conversation.policy', 'Handover')])
 def test_dedicated_workflows_are_navigation_never_raw_actions(monkeypatch, operation, destination):
     monkeypatch.setattr(assistant.providers, 'available', lambda: {'ai': True})
     monkeypatch.setattr(assistant.providers, 'model_json', lambda *a: {'guide': operation})
@@ -255,9 +264,50 @@ def test_conversation_resolution_requires_exact_current_operator_command(monkeyp
     assert reviewed['action']['payload']['last_owner_turn']
 
 
+def test_conversation_reply_requires_exact_operator_words(monkeypatch):
+    payload = fixtures(monkeypatch)['conversation.reply']
+    command = f"Reply to conversation {payload['id']} message: {payload['message']}"
+    for message, candidate in [
+        ('Reply to the owner with an appropriate answer', payload),
+        (command.replace(payload['id'], 'wrong-conversation'), payload),
+        (command.replace(payload['message'], 'Different staff words'), payload),
+        (command, {**payload, 'message': 'Model-authored clinical advice'}),
+        (command.replace(' message:', ' but do not send it; message:'), payload),
+    ]:
+        before = snapshot()
+        result = proposal(monkeypatch, 'conversation.reply', candidate, message=message)
+        assert 'action' not in result and snapshot() == before
+    reviewed = proposal(monkeypatch, 'conversation.reply', payload, message=command)
+    assert reviewed['action']['payload']['message'] == payload['message']
+    assert reviewed['action']['payload']['last_owner_turn']
+
+
+def test_full_length_staff_reply_reaches_owner_portal_only_after_confirmation(monkeypatch):
+    payload = fixtures(monkeypatch)['conversation.reply']
+    exact = 'SYNTHETIC ' + 'x' * (4000 - len('SYNTHETIC '))
+    payload['message'] = exact
+    monkeypatch.setattr(assistant.providers, 'model_json', lambda *a: {'action': {'action': 'conversation.reply', 'payload': payload}})
+    client = TestClient(main.app)
+    before = snapshot()
+    response = client.post('/api/assistant', headers={'x-actor-id': 'clinic-east-admin'}, json={
+        'message': f"Reply to conversation {payload['id']} message: {exact}", 'patient_id': 'luna',
+        'key': str(uuid.uuid4())})
+    assert response.status_code == 200
+    turn = response.json()
+    assert turn['action']['payload']['message'] == exact and snapshot() == before
+    result = confirm(turn)
+    assert result['data']['status'] == 'needs_attention'
+    assert [r['data']['message'] for r in rows('owner_turn') if r['data']['speaker'] == 'clinic'] == [exact]
+    with db.connection() as c:
+        token = next(row['token'] for row in c.execute('SELECT token FROM grants WHERE clinic_id=?', ('clinic-east',))
+                     if owner_conversations.digest(row['token']) == result['data']['owner_access'])
+    assert owner_conversations.owner_read(token, payload['id'])['turns'][-1]['message'] == exact
+
+
+@pytest.mark.parametrize('name', ['conversation.close', 'conversation.reply'])
 @pytest.mark.parametrize('state', ['pending', 'closed', 'long'])
-def test_conversation_resolution_rechecks_current_thread_before_review(monkeypatch, state):
-    payload = fixtures(monkeypatch)['conversation.close']
+def test_conversation_action_rechecks_current_thread_before_review(monkeypatch, state, name):
+    payload = fixtures(monkeypatch)[name]
     with db.connection(True) as c:
         thread = db.get(c, payload['id'])
         if state == 'closed':
@@ -271,15 +321,18 @@ def test_conversation_resolution_rechecks_current_thread_before_review(monkeypat
                     'speaker': 'clinic', 'message': f'Synthetic clinic follow-up {n}', 'state': 'completed'})
         payload['version'] = thread['version']
     before = snapshot()
-    result = proposal(monkeypatch, 'conversation.close', payload,
-        message=f"Close conversation {payload['id']} reason: {payload['reason']}")
+    command = (f"Reply to conversation {payload['id']} message: {payload['message']}" if name.endswith('reply')
+               else f"Close conversation {payload['id']} reason: {payload['reason']}")
+    result = proposal(monkeypatch, name, payload, message=command)
     assert 'action' not in result and snapshot() == before
 
 
-def test_conversation_resolution_new_owner_turn_requires_fresh_review(monkeypatch):
-    payload = fixtures(monkeypatch)['conversation.close']
-    reviewed = proposal(monkeypatch, 'conversation.close', payload,
-        message=f"Close conversation {payload['id']} reason: {payload['reason']}")
+@pytest.mark.parametrize('name', ['conversation.close', 'conversation.reply'])
+def test_conversation_action_new_owner_turn_requires_fresh_review(monkeypatch, name):
+    payload = fixtures(monkeypatch)[name]
+    command = (f"Reply to conversation {payload['id']} message: {payload['message']}" if name.endswith('reply')
+               else f"Close conversation {payload['id']} reason: {payload['reason']}")
+    reviewed = proposal(monkeypatch, name, payload, message=command)
     with db.connection(True) as c:
         thread = db.get(c, payload['id'])
         latest = db.record(c, 'owner_turn', 'clinic-east', {'patient_id': 'luna', 'thread_id': thread['id'],
@@ -290,11 +343,13 @@ def test_conversation_resolution_new_owner_turn_requires_fresh_review(monkeypatc
     assert snapshot() == before
 
 
-def test_conversation_resolution_cannot_cross_selected_patient(monkeypatch):
-    payload = fixtures(monkeypatch)['conversation.close']
+@pytest.mark.parametrize('name', ['conversation.close', 'conversation.reply'])
+def test_conversation_action_cannot_cross_selected_patient(monkeypatch, name):
+    payload = fixtures(monkeypatch)[name]
     before = snapshot()
-    result = proposal(monkeypatch, 'conversation.close', payload, patient='milo',
-        message=f"Close conversation {payload['id']} reason: {payload['reason']}")
+    command = (f"Reply to conversation {payload['id']} message: {payload['message']}" if name.endswith('reply')
+               else f"Close conversation {payload['id']} reason: {payload['reason']}")
+    result = proposal(monkeypatch, name, payload, patient='milo', message=command)
     assert 'action' not in result and snapshot() == before
 
 

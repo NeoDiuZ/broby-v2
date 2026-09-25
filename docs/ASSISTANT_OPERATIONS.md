@@ -2,40 +2,46 @@
 
 ## Current coverage — 25 September 2026
 
-All 69 directly proposed assistant operations now have strict typed contracts,
+All 70 directly proposed assistant operations now have strict typed contracts,
 read-only preparation and labelled deterministic reviews. This replaces the old
 49 untyped field descriptions and adds ten routine operations: speaker labels,
 automation settings, save/archive dashboards, recall preference/cancellation,
 leave request/review/withdrawal and discharge draft preparation. Every one of the
-105 shared operations is explicitly classified: 69 reviewed proposals, 30 routed
+105 shared operations is explicitly classified: 70 reviewed proposals, 29 routed
 to their dedicated review screen, and six internal test-adapter operations that
 are never advertised to the model. Guided operations are not direct AI execution.
 
 Four formerly advertised low-level operations (raw imports and binary recording
 creation/finalization) now route to the existing import/recorder screens, where
 the source file, manifest and migration review can actually be inspected. Stripe,
-Twilio, clinic transfer/adoption, complex rota changes and owner-conversation
-replies similarly retain their purpose-built reviews. No arbitrary untyped
+Twilio, clinic transfer/adoption and complex rota changes retain their
+purpose-built reviews. No arbitrary untyped
 mutation fallback remains.
 
-Owner-conversation acknowledgement and closure now have direct assistant
-proposals. The operator must use the exact command “Acknowledge conversation
-[ID] reason: [reason]” or “Close conversation [ID] reason: [reason]”. The server
-requires the exact thread ID and the exact reason in that same request; neither
-can be supplied only by the model. The model receives status, urgency, patient
-ID and version metadata, never the owner's message text or access-link digest.
+Owner-conversation acknowledgement, closure and staff reply now have direct
+assistant proposals. The operator must use the exact command “Acknowledge
+conversation [ID] reason: [reason]”, “Close conversation [ID] reason: [reason]”,
+or “Reply to conversation [ID] message: [exact staff text]”. The server requires
+the exact thread ID and the reason or owner-visible reply in that same request;
+none can be supplied only by the model. The model receives status, urgency,
+patient ID and version metadata, never the owner's message text or access-link digest.
+The assistant request accepts the full 4,000-character staff reply plus its
+command prefix; the normal Handover editor remains available for multiline work.
 The deterministic review displays every human message, the latest owner-turn
 ID, urgency and effect. Conversations with more than 20 messages remain in
 Handover for full review. Pending or closed conversations cannot be proposed.
 Confirmation rechecks the thread and referenced records under the writer lock;
-a newer owner message requires a fresh review. Neither action sends a reply or
-an external notification.
+a newer owner message requires a fresh review. A reply is visible in the owner
+portal after confirmation, leaves the urgent internal alert open, and sends no
+WhatsApp or email. Acknowledgement and closure send no owner reply or external
+notification.
 
 For hosted synthetic acceptance, run `scripts/smoke-assistant-conversations.py`
 with private credentials and a fresh state file in `setup`, `review`, then
 `readback` phases. It tests the real model proposal, unchanged record at review,
-exact owner text, confirmation/replay, persisted result, internal alert and
-revoked owner link without sending a customer message.
+exact owner text, owner-visible portal reply, confirmation/replay, persisted
+result, internal alert and revoked owner link without sending an external
+customer message.
 
 This hosted script passed on 25 September at deployed V2 revision
 `20a186c965517accf23bc6fef4f088cefda0c896`: one synthetic urgent owner
@@ -59,7 +65,7 @@ complete source facts. This is not a limit on factual queries: deterministic
 reads still count/filter the complete authorized clinic dataset. Missing context
 requires exact identification or clarification, not guessed IDs or facts.
 
-New acceptance covers all 57 expanded contracts through saved proposal, actual
+New acceptance covers all 58 expanded contracts through saved proposal, actual
 confirmation, persisted result and replay, plus invalid values, unknown fields,
 patient isolation, reference changes and permission revocation. The hosted
 real-model scenario is repeatable with scripts/smoke-assistant-completion.py.

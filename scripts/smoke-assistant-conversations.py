@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V2-only hosted assistant closure of a synthetic owner conversation.
+"""V2-only hosted assistant reply and closure of a synthetic owner conversation.
 
 No customer message, provider dispatch, payment, or real patient data is used.
 Keep the credentials and state files outside Git. Run setup, review, readback.
@@ -65,6 +65,27 @@ with httpx.Client(base_url=base + '/api/', headers={'Origin': base, 'x-clinic-id
             assert state.get('phase') == 'setup', 'Setup must complete before review.'
             thread = req('GET', 'owner-conversations/' + state['thread'])
             check(thread['data']['status'] == 'needs_attention', 'current owner conversation remains open')
+            reply = 'SYNTHETIC staff portal reply ' + state['tag'] + ': we received your question.'
+            reply_command = f"Reply to conversation {state['thread']} message: {reply}"
+            before = rows()[state['thread']]
+            reply_turn = req('POST', 'assistant', json={'message': reply_command, 'patient_id': state['patient'],
+                'key': 'assistant-conversation-reply-' + state['tag']})
+            state['reply_turn'] = reply_turn; save()
+            check(reply_turn.get('action', {}).get('action') == 'conversation.reply', 'real model proposes the reviewed portal reply')
+            check(reply_turn['action']['payload']['message'] == reply, 'model copies the operator reply exactly')
+            check(rows()[state['thread']] == before, 'reply review leaves the owner thread unchanged')
+            reply_result = req('POST', f"assistant/conversations/{reply_turn['conversation_id']}/turns/{reply_turn['turn_id']}/confirm")
+            state['reply_result'] = reply_result; save()
+            check(reply_result['data']['status'] == 'needs_attention', 'reply leaves the urgent staff queue open')
+            owner_view = req('GET', 'owner/' + state['grant'] + '/conversations/' + state['thread'])
+            check(len(owner_view['turns']) == 2 and owner_view['turns'][-1]['speaker'] == 'clinic'
+                  and owner_view['turns'][-1]['message'] == reply, 'exact staff reply is visible through the owner portal link')
+            reply_replay = req('POST', f"assistant/conversations/{reply_turn['conversation_id']}/turns/{reply_turn['turn_id']}/confirm")
+            check(reply_replay == reply_result and len(req('GET', 'owner-conversations/' + state['thread'])['turns']) == 2,
+                  'reply confirmation replay does not duplicate the portal message')
+            alert = rows().get('conversation-escalation:' + state['thread'])
+            check(alert and alert['data']['status'] == 'needs_attention', 'reply does not silently acknowledge the urgent alert')
+            thread = req('GET', 'owner-conversations/' + state['thread'])
             reason = 'SYNTHETIC staff follow-up completed ' + state['tag']
             message = f"Close conversation {state['thread']} reason: {reason}"
             before = rows()[state['thread']]
@@ -74,7 +95,7 @@ with httpx.Client(base_url=base + '/api/', headers={'Origin': base, 'x-clinic-id
             check(turn.get('action', {}).get('action') == 'conversation.close', 'real model proposes the exact reviewed closure')
             check(turn['action']['payload']['reason'] == reason, 'reason is copied exactly from the operator request')
             human = next(field['value'] for field in turn['review']['fields'] if field['label'] == 'Exact human conversation')
-            check(thread['turns'][0]['data']['message'] in human, 'review displays the exact owner message')
+            check(all(turn['data']['message'] in human for turn in thread['turns']), 'closure review displays both exact human messages')
             check(rows()[state['thread']] == before, 'review causes no conversation mutation')
             result = req('POST', f"assistant/conversations/{turn['conversation_id']}/turns/{turn['turn_id']}/confirm")
             state['result'] = result; save()
@@ -86,10 +107,18 @@ with httpx.Client(base_url=base + '/api/', headers={'Origin': base, 'x-clinic-id
         else:
             assert state.get('phase') == 'complete', 'Review must finish before readback.'
             thread = req('GET', 'owner-conversations/' + state['thread'])
-            check(thread['data']['status'] == 'closed' and len(thread['turns']) == 1, 'closed conversation survives a new login')
+            expected = 2 if state.get('reply_turn') else 1
+            check(thread['data']['status'] == 'closed' and len(thread['turns']) == expected, 'closed conversation survives a new login')
             saved = req('GET', 'assistant/conversations/' + state['turn']['conversation_id'])['turns'][0]
             check(saved['review'] == state['turn']['review'] and saved['execution'] == state['result'],
                   'exact assistant review and execution survive readback')
+            if state.get('reply_turn'):
+                reply_saved = req('GET', 'assistant/conversations/' + state['reply_turn']['conversation_id'])['turns'][0]
+                check(reply_saved['review'] == state['reply_turn']['review'] and reply_saved['execution'] == state['reply_result'],
+                      'exact owner-visible reply review and result survive readback')
+                timeline = req('GET', 'v2/patients/' + state['patient'] + '/timeline?category=message')['items']
+                check({event['id'] for event in timeline} == {'conversation-event:' + turn['id'] for turn in thread['turns']},
+                      'owner and clinic messages each have one patient-timeline receipt')
             alert = rows().get('conversation-escalation:' + state['thread'])
             check(alert and alert['data']['status'] == 'acknowledged' and alert['data']['delivery'] == 'disabled',
                   'internal urgent alert is acknowledged without external delivery')
