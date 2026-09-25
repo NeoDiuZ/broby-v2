@@ -19,14 +19,15 @@ cannot be reconstructed from an old view's title; ask again and save a new view.
   clinic. Explicit “clinic-wide,” “whole clinic,” “entire clinic,” or “across
   this/the clinic” wording permits a clinic read, but the model cannot then
   narrow it back to one patient. Other scope changes require clarification.
-- Patients and their appointments linked to an exact clinic owner ID, including
-  primary and additional owner links. Appointment matching uses the current
-  patient link within the same clinic. An owner name alone is not an identity
+- Patients, appointments, invoices and reminders linked to an exact clinic owner
+  ID, including current primary and additional owner links. Matching uses the
+  current patient link within the same clinic. Invoice reads describe current
+  relationships, not historical invoice ownership or payment liability. An owner name alone is not an identity
   key; the assistant must select the recorded owner ID before retrieving the
   complete clinic-scoped set.
 Duplicate owner names require explicit identity selection rather than a guess.
 For an owner-specific question, the server also checks that the model kept the
-same exact owner ID in a patient or appointment query. If the model omits the
+same exact owner ID in a supported owner-linked query. If the model omits the
 owner, selects a different one, or proposes another record kind, the answer is
 a clarification without records. An unknown explicit owner ID is clarified.
 - When a question explicitly says **status equals/is** or **species equals/is**
@@ -42,6 +43,13 @@ a clarification without records. An unknown explicit owner ID is clarified.
 - User-supplied numeric bounds for an exact observation code and unit. No unit
   conversion, invented reference range, diagnosis or treatment recommendation.
 - Externally recorded medication history separately from local prescriptions.
+  Both support exact recorded name filters and name grouping, ignoring case but
+  never matching substrings, alternative strengths, brand/generic substitutions
+  or inferred drug equivalents. With “medication name equals/is [recorded name]”,
+  a dropped, substituted or unknown name produces clarification. Explicit
+  “local prescriptions” and “imported medication history” cannot be interchanged
+  by the model; request them separately. This retrieves recorded instructions
+  and does not determine whether a historical medication is currently indicated.
 
 For example: “Show due reminders on 2098-07-10 grouped by day” or “Show recorded
 potassium at least 5 mmol/L on 2026-09-24 for this patient.” Unsupported conditions
@@ -232,3 +240,43 @@ opened its exact 6.2 mmol/L source receipt and showed the saved view again
 after reload and device unlock without a framework error overlay. This is
 a synthetic release check; clinic-wide pagination, broader natural-language
 evaluation and real-clinic capacity remain open.
+
+## Bounded linked-read acceptance
+
+`scripts/smoke-assistant-linked-reads.py` prepares a new synthetic owner, two
+linked patients, exact invoice/reminder records, two differently named synthetic
+medications and a same-name Cat/Dog pair for patient selection. Use only an
+explicitly SYNTHETIC V2 clinic and private state/credentials outside Git:
+
+```sh
+python scripts/smoke-assistant-linked-reads.py "$V2_ACCEPTANCE_ORIGIN" \
+  --credentials "$V2_ACCEPTANCE_CREDENTIALS" --state "$V2_LINKED_READ_STATE" \
+  --clinic "$V2_SYNTHETIC_CLINIC" --actor "$V2_SYNTHETIC_ACTOR" --phase setup
+```
+
+Repeat with `--phase evaluate`. Evaluation checks actual model filters, complete
+counts, exact source IDs and saved views while leaving business records unchanged.
+The default imported-history case expects zero and proves a new local prescription
+is not treated as imported history. To exercise a positive imported result, supply
+`--history-record ID` in every phase for an existing synthetic imported-medication
+receipt in this clinic. That record and its patient remain read-only. Positive
+imported-history behavior also has local SQLite/PostgreSQL coverage.
+
+The state file records two additional saved browser conversations:
+
+1. Open `browser_turns.choices`, choose one of the two same-name synthetic
+   patients, and inspect its exact due reminder on 2098-10-11. The retained
+   question must remain `browser.duplicate_prompt`, with the original date/status.
+2. Open `browser_turns.catalog`, click **Open Observation catalog**, and verify
+   Settings displays **Typed observation catalog** and dictionary review. Do not
+   create or approve a definition for this check.
+
+Then run `--phase readback`. It requires the saved selected-patient continuation
+first, verifies its exact filters/source and the persisted catalog destination,
+then merges only this run's new owner into another fresh synthetic owner. Saved
+invoice/reminder views must resolve that reviewed merge with the same source IDs,
+while original saved answers retain their dated snapshots. Setup and interrupted
+phases use deterministic mutation keys. No customer message, online payment or
+assistant mutation confirmation is part of this script. Local script regressions
+use fixed intent and API continuation stand-ins; only an observed hosted browser
+run establishes hosted model and navigation acceptance.

@@ -243,7 +243,7 @@ def test_primary_and_additional_owner_patients_match_live_saved_view(monkeypatch
         db.record(c,'patient','clinic-east',{'name':'SYNTHETIC malformed links','species':'Cat','owner_id':'owner-luna','additional_owner_ids':None})
     assert [r['id'] for r in query({'kind':'patient','owner_id':owner['id']})['records']]==[primary['id']]
     err(404,lambda:query({'kind':'patient','owner_id':foreign['id']}))
-    err(422,lambda:query({'kind':'invoice','owner_id':owner['id']}))
+    err(422,lambda:query({'kind':'payment','owner_id':owner['id']}))
 
 
 def test_owner_appointments_follow_current_clinic_patient_links(monkeypatch):
@@ -419,9 +419,9 @@ def test_invalid_model_filter_is_not_ignored(monkeypatch):
 def test_unsupported_model_read_is_completed_and_replays_without_query_leak(monkeypatch):
     monkeypatch.setattr(assistant.providers,'available',lambda:{'ai':True})
     calls=[]
-    monkeypatch.setattr(assistant.providers,'model_json',lambda *args:calls.append(args) or {'read':{'kind':'invoice','owner_id':'owner-luna'}})
+    monkeypatch.setattr(assistant.providers,'model_json',lambda *args:calls.append(args) or {'read':{'kind':'payment','owner_id':'owner-luna'}})
     client=TestClient(main.app)
-    payload={'message':'Show invoices linked to this owner','key':'synthetic-unsupported-owner-invoice'}
+    payload={'message':'Show payments linked to this owner','key':'synthetic-unsupported-owner-payment'}
     first=client.post('/api/assistant',json=payload)
     assert first.status_code==200
     body=first.json()
