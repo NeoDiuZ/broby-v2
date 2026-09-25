@@ -37,6 +37,14 @@ with private credentials and a fresh state file in `setup`, `review`, then
 exact owner text, confirmation/replay, persisted result, internal alert and
 revoked owner link without sending a customer message.
 
+This hosted script passed on 25 September at deployed V2 revision
+`20a186c965517accf23bc6fef4f088cefda0c896`: one synthetic urgent owner
+question, real-model exact closure proposal, unchanged record at review,
+confirmed close, idempotent replay, and new-login readback of the exact review,
+result, internal-only escalation and revoked owner link. The separate persisted
+V2 smoke passed 17/17. These checks do not validate arbitrary owner language,
+on-call delivery, or real-clinic policy.
+
 New reviews validate exact clinic and patient references, calendar dates, finite
 values, explicit tax/discount fields, replacement contact fields and workflow
 states. Confirmation checks every referenced record version under the shared

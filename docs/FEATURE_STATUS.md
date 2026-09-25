@@ -103,6 +103,22 @@ Read-only inspection of the original Broby repository found terminology files
 but no approved patient/consultation export. No original Broby files or service
 were changed.
 
+PR #76 moved owner-conversation acknowledgement and closure from guided
+navigation to strict reviewed assistant proposals, increasing direct coverage
+from 67 to 69 actions and leaving 30 guided. The request must contain the exact
+thread ID and verbatim reason; the model sees only thread selection metadata,
+while the deterministic staff review displays the exact human conversation.
+Pending, closed, stale and more-than-20-message threads remain protected. Full
+frontend, SQLite, PostgreSQL and packaged API CI passed. At isolated V2 revision
+`20a186c965517accf23bc6fef4f088cefda0c896`, both Railway services reported
+SUCCESS. A hosted real-model synthetic closure proposed the exact action and
+reason; review left the thread unchanged, confirmation closed it, replay returned
+the same receipt, and a new-login readback retained the review/result, resolved
+one internal alert and rejected the revoked test owner link. No customer message
+was sent; Twilio sending remained disabled. The standard hosted readback passed
+17/17 checks. This narrows #8/#23/#24 but does not establish general model
+accuracy or real-clinic readiness.
+
 **Engineering that can continue without a new vendor:** offline physical-device/crash acceptance; long-session physical-device acceptance; verified owner account flows (delivery channel needed for final verification); correction of established clinic-patient mappings and clinical-fact reconciliation; independent workers/object storage; full bootstrap pagination and broader load/soak testing; external alerts and incident response; direct advanced assistant workflows, broader custom reports and test coverage. The completion release adds all-advertised-action strict contracts and a real process-loss/complete-row restore rehearsal; see RELIABILITY_ACCEPTANCE.md. These are unfinished work, not things an AI agent is inherently unable to build.
 
 **External inputs for final acceptance:** live merchant activation and lab vendor/test access; Twilio provision of a usable trial template/webhook setup (or an explicitly approved upgraded sender), then production sender enrollment; approved V1 export; clinic sign-off on the proposed billing, retention and escalation policy in CLINIC_LAUNCH_POLICY_DRAFT.md; representative recordings and physical devices. Test adapters cannot prove payment settlement, analyser compatibility, emergency response or customer message delivery.
