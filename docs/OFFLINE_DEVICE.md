@@ -68,6 +68,10 @@ not create a duplicate. The focused test passes with SQLite and PostgreSQL.
 On one device, navigating to another consultation now shows a link back to the
 active voice note instead of offering another recorder. This does not replace
 the pending physical-device microphone and offline/reconnect handoff test.
+`scripts/smoke-recording-handoff.py` repeats the server overlap with two
+independent authenticated sessions and newly created synthetic records on the
+isolated V2 host; it must be run again after deployment before hosted acceptance
+is claimed.
 
 Settings → Sync & jobs shows offline readiness, expiry, queue count, legacy
 migration warnings and device lock/copy controls. Lock/sign-out cannot discard
