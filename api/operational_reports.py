@@ -73,38 +73,35 @@ def build(c, clinic, days, *, as_of=None):
         (clinic, 'patient'),
     )
     by_species = _groups(species_rows)
-    owner_id = "p.data::jsonb #>> '{owner_id}'" if c.dialect == 'postgres' else "json_extract(p.data,'$.owner_id')"
-    merged_into = "o.data::jsonb #>> '{merged_into}'" if c.dialect == 'postgres' else "json_extract(o.data,'$.merged_into')"
-    active_owner = f"({merged_into} IS NULL OR {merged_into}='')"
-    owner_join = (' JOIN records o ON o.id=' + owner_id +
-                  " AND o.clinic_id=p.clinic_id AND o.kind='owner' AND " + active_owner)
-    linked = c.execute(
-        'SELECT COUNT(*) FROM records p' + owner_join +
-        " WHERE p.clinic_id=? AND p.kind='patient'",
-        (clinic,),
-    ).fetchone()[0]
-    if linked < patient_total:
-        # Normal patient links stay in SQL. Only rows with no active primary
-        # owner need their historical additional-owner list inspected.
-        missing = c.execute(
-            'SELECT p.data FROM records p LEFT' + owner_join +
-            " WHERE p.clinic_id=? AND p.kind='patient' AND o.id IS NULL",
-            (clinic,),
-        ).fetchall()
-        active_ids = {row[0] for row in c.execute(
-            'SELECT o.id FROM records o WHERE o.clinic_id=? AND o.kind=? AND ' + active_owner,
-            (clinic, 'owner'),
-        )}
-        for row in missing:
-            try:
-                data = json.loads(row[0])
-                additional = data.get('additional_owner_ids') if isinstance(data, dict) else None
-                if isinstance(additional, list) and any(
-                    isinstance(owner, str) and owner in active_ids for owner in additional
-                ):
-                    linked += 1
-            except (TypeError, ValueError, json.JSONDecodeError):
+    # A PostgreSQL JSON-expression join against owners became the dominant
+    # report cost under concurrent synthetic load. Scan the indexed clinic/kind
+    # ranges once each, then resolve valid primary/additional links in memory.
+    # This counts each patient once and never treats a merged or foreign owner
+    # as current, including for malformed historical link lists.
+    active_ids = set()
+    for row in c.execute("SELECT id,data FROM records WHERE clinic_id=? AND kind='owner'", (clinic,)):
+        try:
+            owner = json.loads(row['data'])
+            if isinstance(owner, dict) and owner.get('merged_into') in (None, ''):
+                active_ids.add(row['id'])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    linked = 0
+    for row in c.execute("SELECT data FROM records WHERE clinic_id=? AND kind='patient'", (clinic,)):
+        try:
+            data = json.loads(row[0])
+            if not isinstance(data, dict):
                 continue
+            primary = data.get('owner_id')
+            additional = data.get('additional_owner_ids')
+            if (isinstance(primary, str) and primary in active_ids) or (
+                isinstance(additional, list) and any(
+                    isinstance(owner, str) and owner in active_ids for owner in additional
+                )
+            ):
+                linked += 1
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
     timestamp = _stamp_filter(c)
     consultations = _status_counts(c, clinic, 'consultation', 'AND ' + timestamp, (lower, upper))
     appointments = _status_counts(c, clinic, 'appointment',

@@ -32,6 +32,19 @@ def client(tmp_path,monkeypatch):
 
 def result(**changes):
     return {'patient_id':'milo','dedupe_key':'lab:report-001','occurred_at':'2026-09-18T09:14:00Z','summary':'Haematology + biochemistry','actor':{'kind':'system','name':'Synthetic analyser'},'source':{'kind':'document','id':'report-001','page':1,'text':'Potassium 5.8 mmol/L. Lab reference 3.5–5.1.'},'body':{'accession':'001'},'observations':[{'concept':'potassium','name':'Potassium','value':5.8,'unit':'mmol/L','ref_low':3.5,'ref_high':5.1}],**changes}
+
+
+def test_sqlite_projection_queue_tracks_only_clinical_writes(client):
+    if db.store()!='sqlite':pytest.skip('SQLite projection queue contract')
+    with db.connection(True) as c:
+        before=c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]
+        dashboard=db.record(c,'dashboard','clinic-east',{'name':'Synthetic display only'})
+        db.update(c,dashboard,{'name':'Synthetic display revised'})
+        assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]==before
+        owner=db.get(c,'owner-milo')
+        db.update(c,owner,{**owner['data'],'name':'SYNTHETIC changed owner'})
+        assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]>before
+
 def ingest(client,p=None,**kwargs):return client.post('/api/v2/ingest/lab',json=p or result(),**kwargs)
 
 def test_lab_without_visit_is_one_patient_event(client):

@@ -59,6 +59,18 @@ def test_postgres_seed_schema_history_and_rollback(postgres_store):
     with db.connection() as c:assert db.get(c,'luna')['data']['weight']==5.2
 
 
+def test_unrelated_postgres_writes_do_not_rebuild_clinical_projection(postgres_store):
+    with db.connection(True) as c:
+        before=c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]
+        dashboard=db.record(c,'dashboard','clinic-east',{'name':'Synthetic display only'})
+        assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]==before
+        db.update(c,dashboard,{'name':'Synthetic display revised'})
+        assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]==before
+        owner=db.get(c,'owner-milo')
+        db.update(c,owner,{**owner['data'],'name':'SYNTHETIC changed owner'})
+        assert c.execute("SELECT COALESCE(MAX(sequence),0) FROM spine_changes WHERE clinic_id='clinic-east'").fetchone()[0]>before
+
+
 def test_postgres_shared_action_concurrent_retry_charges_once(postgres_store):
     with db.connection() as c:invoice=db.all_records(c,'clinic-east','invoice')[0]
     def run(_):
