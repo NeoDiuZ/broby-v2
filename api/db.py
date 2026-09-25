@@ -128,6 +128,8 @@ def init(seed=True):
         ''')
     from schema import migrate
     with connection(True) as c:migrate(c)
+    from bootstrap_refresh import setup as setup_bootstrap_refresh
+    with connection(True) as c:setup_bootstrap_refresh(c)
     if store()=='postgres':
         from pms_postgres import projection_queue
         from pms_migrate import promote_if_needed

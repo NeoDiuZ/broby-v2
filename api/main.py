@@ -76,13 +76,13 @@ def ready():
 @app.get('/api/bootstrap')
 def bootstrap(request:Request):
     clinic,actor=identity(request)
-    with connection() as c:
+    with connection(snapshot=True) as c:
         member=owned(c,actor,clinic,'member')
+        if not member['data'].get('active'): fail('Member is inactive',403)
         from spine.reader import native_records
-        rs=all_records(c,clinic)+native_records(clinic)
+        native=native_records(clinic)
         from read_access import allowed_reads, filter_records, ALL
         reads=allowed_reads(c,clinic,actor)
-        rs=filter_records(rs,reads,actor)
         if auth.enabled():
             sess=auth.session(request); clinics=[]
             for membership in c.execute('SELECT clinic_id,member_id FROM auth_memberships WHERE username=?',(sess['username'],)):
@@ -91,9 +91,14 @@ def bootstrap(request:Request):
         else:clinics=[unpack(r) for r in c.execute("SELECT * FROM records WHERE kind='clinic' ORDER BY id")]
         from stripe_payments import configured
         integrations={**providers.available(),'payments':configured(clinic)}
+        metadata={'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'}
+        from bootstrap_refresh import conditional
+        revision,unchanged=conditional(c,request,clinic,actor,metadata,native)
+        if unchanged:return JSONResponse({'unchanged':True,'snapshot_revision':revision})
+        rs=filter_records(all_records(c,clinic)+native,reads,actor)
         # These persisted records are already JSON values. Returning a response
         # directly avoids a second recursive conversion of the full clinic set.
-        return JSONResponse({'records':rs,'actor':member,'clinic':get(c,clinic,clinic),'clinics':clinics,'jobs':[unpack(r) for r in c.execute('SELECT * FROM jobs WHERE clinic_id=? ORDER BY created_at DESC LIMIT 20',(clinic,))] if ALL<=reads else [],'permissions':allowed_actions(c,clinic,actor),'read_permissions':sorted(reads),'integrations':integrations,'mode':'password' if auth.enabled() else 'local-demo'})
+        return JSONResponse({**metadata,'records':rs,'snapshot_revision':revision})
 class Command(BaseModel):
     action:str
     payload:dict[str,Any]=Field(default_factory=dict)

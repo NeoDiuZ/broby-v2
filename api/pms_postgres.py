@@ -90,7 +90,9 @@ class Connection:
     def executescript(self,query):
         self.raw.execute(query)
     def begin(self,write,*,snapshot=False):
-        self.raw.execute('BEGIN ISOLATION LEVEL REPEATABLE READ' if snapshot and not write else 'BEGIN')
+        # psycopg starts a transaction before the first statement. An explicit
+        # BEGIN would therefore nest BEGIN and emit a warning on every request.
+        if snapshot and not write:self.raw.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
         self.raw.execute("SET LOCAL lock_timeout='20s'")
         self.raw.execute("SET LOCAL statement_timeout='60s'")
         if write:
