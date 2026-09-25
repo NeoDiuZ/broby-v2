@@ -152,6 +152,8 @@ def select_records(c, clinic, query, records=None):
         records=all_records(c,clinic,query['kind'])
         if query['kind'] in {'event','observation'}:
             records+=native_records(clinic,query.get('patient_id'))
+    from clinical_reconciliation import current_records
+    records=current_records(c,clinic,records,clinical_use=True)
     needs_patient_links=(query['kind'] in OWNER_LINK_KINDS-{'patient'} and query.get('owner_id')) or (query['kind']=='appointment' and (query.get('species') or query.get('group_by')=='species'))
     linked_patients=_linked_patients(c,clinic,records) if needs_patient_links else {}
     def linked_patient(data):

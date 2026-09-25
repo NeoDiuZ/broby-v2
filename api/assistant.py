@@ -99,6 +99,19 @@ def explicit_administrative_access(message, name):
     return exact
 
 def answer(c,clinic,actor,message,patient_id=None,history=None):
+    from clinical_reconciliation import eligibility,require_patient,scope_epoch
+    before=eligibility(c,clinic)
+    if patient_id:require_patient(c,clinic,patient_id,before)
+    result=_answer(c,clinic,actor,message,patient_id,history)
+    after=eligibility(c,clinic)
+    from clinical_reconciliation import require_records,guard_action
+    require_records(c,clinic,[r.get('id') for r in result.get('sources',[]) if isinstance(r,dict)],after)
+    if result.get('action'):guard_action(c,result['action']['action'],result['action']['payload'],clinic)
+    if scope_epoch(before,patient_id)!=scope_epoch(after,patient_id):fail('Clinical identity review changed while this answer was prepared. Refresh and ask again.',409)
+    return {**result,'clinical_epoch':scope_epoch(after,patient_id),'clinical_review_notice':'Some patient histories are restricted pending identity review; counts and results exclude these records.' if after['patients'] else None}
+
+
+def _answer(c,clinic,actor,message,patient_id=None,history=None):
     from read_access import require, ALL
     require(c,clinic,actor,ALL)
     from clinic_workflows import clinic_today
@@ -125,6 +138,7 @@ def answer(c,clinic,actor,message,patient_id=None,history=None):
     matches=[p for p in patients if re.search(r'(?<!\w)'+re.escape(p['data']['name'].lower())+r'(?!\w)',q)]
     if not patient and len(matches)>1:return {'text':'Choose the exact patient before retrieving or changing their record.','choices':matches,'sources':[]}
     if not patient and matches:patient=matches[0]
+    if patient:__import__('clinical_reconciliation').require_patient(c,clinic,patient['id'])
     requested_owner=None
     if re.search(r'\b(?:owners?|clients?|households?|pets?|belong\w*|linked)\b',q):
         owners=[r for r in all_records(c,clinic,'owner') if not r['data'].get('merged_into')]

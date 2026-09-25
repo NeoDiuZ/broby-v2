@@ -208,6 +208,7 @@ SPECS = {
 # Operations whose meaningful review is a dedicated workflow or capture screen.
 # The model sees a destination, never an executable raw payload contract.
 GUIDED = {
+    'clinical.reconcile': ('Patient', 'Use the original source, both patient identities and per-record clinician reconciliation review.'),
     **{n: ('Settings', 'Use the migration preview, source file and reconciliation review.') for n in ('import.patients', 'import.records', 'migration.preview', 'migration.apply')},
     **{n: ('Patient', 'Use the recorder and verified audio chunk manifest.') for n in ('recording.create', 'recording.complete', 'recording.refine')},
     **{n: ('Billing', 'Use the provider-priced checkout/refund screen and canonical provider receipt.') for n in ('stripe.checkout', 'stripe.cancel', 'stripe.refresh', 'stripe.refund')},

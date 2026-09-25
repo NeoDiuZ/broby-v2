@@ -24,7 +24,7 @@ def period(query,timezone='Asia/Singapore'):
 
 def handover(c,clinic,instant=None):
     from owner_conversations import handover_rows
-    records=all_records(c,clinic);tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore');today=(instant or datetime.now(ZoneInfo(tz))).astimezone(ZoneInfo(tz)).date().isoformat()
+    records=__import__('clinical_reconciliation').current_records(c,clinic,all_records(c,clinic));tz=get(c,clinic,clinic)['data'].get('timezone','Asia/Singapore');today=(instant or datetime.now(ZoneInfo(tz))).astimezone(ZoneInfo(tz)).date().isoformat()
     return {'date':today,'owner_conversations':handover_rows(c,clinic),'appointments':[r for r in records if r['kind']=='appointment' and r['data']['date']==today],
        'intakes':[r for r in records if r['kind']=='intake' and r['data']['status']=='new'],
        'reminders':[r for r in records if r['kind']=='reminder' and r['data']['status']=='due' and r['data']['due']<=today],
@@ -36,6 +36,8 @@ def patient_records(c,clinic,patient_id,kind=None,category=None,start=None,end=N
     owned(c,patient_id,clinic,'patient')
     from spine.reader import native_records
     records=all_records(c,clinic,kind)+[r for r in native_records(clinic,patient_id) if not kind or r['kind']==kind]
+    from clinical_reconciliation import current_records
+    records=current_records(c,clinic,records)
     rows=[r for r in records if r['data'].get('patient_id')==patient_id]
     def match(r):
         d=r['data'];when=d.get('occurred_at',r['created_at'])[:10]

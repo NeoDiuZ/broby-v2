@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from fastapi import HTTPException
 from .categories import canonical, aliases
 from .models import Patient,Owner,OwnerPatient,Event,Source,Concept,Observation
+from .reconciliation import active, state
 
 def fail(message,status=422):raise HTTPException(status,message)
 def utc(value):return value.astimezone(timezone.utc).isoformat().replace('+00:00','Z')
@@ -106,20 +107,22 @@ def patient_views(s,items):
     aggregates; joins cannot multiply observation or document counts.
     """
     if not items:return []
-    ids=[p.id for p in items];owners={}
+    ids=[p.id for p in items];owners={};clinic=items[0].clinic_id
+    clinical=state(s,clinic)
     for pid,owner in s.execute(select(OwnerPatient.patient_id,Owner).join(Owner,Owner.id==OwnerPatient.owner_id)
                                .where(OwnerPatient.patient_id.in_(ids)).order_by(OwnerPatient.is_primary.desc(),Owner.id)):
         owners.setdefault(pid,owner)
     visits={pid:(count,last) for pid,count,last in s.execute(select(Event.patient_id,func.count(),func.max(Event.occurred_at))
-             .where(Event.patient_id.in_(ids),Event.event_type=='consult').group_by(Event.patient_id))}
+             .where(Event.patient_id.in_(ids),Event.event_type=='consult',active(s,clinic,Event.id)).group_by(Event.patient_id))}
     observations=dict(s.execute(select(Event.patient_id,func.count()).select_from(Observation).join(Event)
-                      .where(Event.patient_id.in_(ids)).group_by(Event.patient_id)).all())
-    documents=dict(s.execute(select(Source.patient_id,func.count()).where(Source.patient_id.in_(ids),Source.kind=='document')
+                      .where(Event.patient_id.in_(ids),active(s,clinic,Event.id),active(s,clinic,Observation.id)).group_by(Event.patient_id)).all())
+    documents=dict(s.execute(select(Source.patient_id,func.count()).where(Source.patient_id.in_(ids),Source.kind=='document',active(s,clinic,Source.id))
                     .group_by(Source.patient_id)).all())
     result=[]
     for p in items:
         owner=owners.get(p.id);count,last=visits.get(p.id,(0,None))
         result.append({'id':p.id,'name':p.name,'species':p.species,'breed':p.breed,'sex':p.sex,
+                       'clinical_reconciliation':{'status':'current_use_restricted','epoch':clinical['epoch']} if p.id in clinical['patients'] else None,
                        'date_of_birth':p.date_of_birth.isoformat() if p.date_of_birth else None,
                        'owner':{'id':owner.id,'name':owner.name} if owner else None,'last_seen':utc(last) if last else None,
                        'stats':{'visits':count,'observations':observations.get(p.id,0),'document_sources':documents.get(p.id,0)}})
@@ -138,7 +141,7 @@ def patients(s,clinic,q,limit,cursor):
     return {'items':patient_views(s,items),'next_cursor':cursor_encode(scope,[items[-1].name,items[-1].id]) if len(rows)>limit else None}
 def timeline(s,clinic,pid,limit,cursor,category='',q='',start=None,end=None):
     patient(s,pid,clinic);scope=json.dumps([clinic,pid,category,q,str(start),str(end)]);after=cursor_decode(cursor,scope)
-    query=select(Event).where(Event.clinic_id==clinic,Event.patient_id==pid)
+    query=select(Event).where(Event.clinic_id==clinic,Event.patient_id==pid,active(s,clinic,Event.id))
     if category:query=query.where(Event.event_type.in_(aliases(category)))
     if q:
         pattern='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
@@ -154,7 +157,7 @@ def timeline(s,clinic,pid,limit,cursor,category='',q='',start=None,end=None):
     return {'items':[event_view(s,e,context) for e in items],'next_cursor':cursor_encode(scope,[utc(items[-1].occurred_at),items[-1].id]) if len(rows)>limit else None}
 def concepts(s,clinic,pid):
     patient(s,pid,clinic)
-    terms=s.scalars(select(Concept).join(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid).distinct().order_by(Concept.name,Concept.unit)).all()
+    terms=s.scalars(select(Concept).join(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid,active(s,clinic,Event.id)).distinct().order_by(Concept.name,Concept.unit)).all()
     return [{'id':r.id,'name':r.name,'code':r.code,'unit':r.unit,'value_type':r.value_type} for r in terms]
 def series(s,clinic,pid,code):
     patient(s,pid,clinic)
@@ -162,5 +165,5 @@ def series(s,clinic,pid,code):
     if not terms:fail('Concept not found',404)
     if len(terms)>1:fail('This concept has multiple units; select its exact concept ID')
     term=terms[0]
-    rows=s.scalars(select(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid,Observation.concept_id==term.id).order_by(Observation.observed_at,Observation.id)).all()
+    rows=s.scalars(select(Observation).join(Event).where(Event.clinic_id==clinic,Event.patient_id==pid,Observation.concept_id==term.id,active(s,clinic,Event.id),active(s,clinic,Observation.id)).order_by(Observation.observed_at,Observation.id)).all()
     return {'concept':{'id':term.id,'name':term.name,'unit':term.unit,'value_type':term.value_type},'series':[{'observed_at':utc(o.observed_at),'value':observation_value(o),'value_type':o.value_type,'ref_low':o.ref_low,'ref_high':o.ref_high,'flag':flag(o),'event_id':o.event_id,'source':source(s,o.source_id)} for o in rows]}

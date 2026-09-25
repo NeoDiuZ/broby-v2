@@ -41,7 +41,7 @@ def handover(request:Request):
 def patients(request:Request,q:str='',offset:int=Query(0,ge=0),limit:int=Query(50,ge=1,le=200)):
     clinic,_=identity(request)
     with connection() as c:
-        rs=[r for r in all_records(c,clinic,'patient') if q.lower() in (r['data']['name']+' '+r['data'].get('external_id','')).lower()]
+        rs=[r for r in __import__('clinical_reconciliation').current_records(c,clinic,all_records(c,clinic,'patient')) if q.lower() in (r['data']['name']+' '+r['data'].get('external_id','')).lower()]
     return {'items':rs[offset:offset+limit],'total':len(rs)}
 @router.get('/api/patients/{id}/timeline')
 def timeline(id:str,request:Request,category:str='',q:str='',start:str='',end:str='',offset:int=Query(0,ge=0),limit:int=Query(50,ge=1,le=200)):
@@ -58,7 +58,8 @@ def history(id:str,request:Request):
     with connection() as c:
         r=owned(c,id,clinic)
         previous=[unpack(x) for x in c.execute('SELECT * FROM record_versions WHERE record_id=? AND clinic_id=? ORDER BY version DESC',(id,clinic))]
-        return {'current':r,'versions':previous}
+        state=__import__('clinical_reconciliation').eligibility(c,clinic)
+        return {'current':r,'versions':previous,'purpose':'forensic_history','clinical_reconciliation':state['excluded'].get(id),'current_clinical_use':id not in state['excluded']}
 @router.get('/api/actions/catalog')
 def catalog(request:Request):
     clinic,actor=identity(request)
@@ -78,6 +79,9 @@ def backup(request:Request):
         output=io.BytesIO();manifest={'version':1,'clinic_id':clinic,'created_at':now(),'records':rs,'history':versions,'ontology':[dict(r) for r in c.execute('SELECT * FROM ontology')],'audit':[dict(r) for r in c.execute('SELECT * FROM audit WHERE clinic_id=?',(clinic,))],'chunks':[],'files':[]}
         from spine.reader import clinical_archive
         spine=clinical_archive(clinic)
+        manifest['purpose']='forensic_archive';manifest['current_clinical_use']=False
+        manifest['clinical_reconciliation']=__import__('clinical_reconciliation').eligibility(c,clinic)
+        manifest['jobs']=[dict(row) for row in c.execute('SELECT * FROM jobs WHERE clinic_id=?',(clinic,))]
         manifest['spine_archive']='spine.json'
         manifest['native_event_count']=sum(e['payload_hash']!='legacy' for e in spine.get('events',[]))
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
