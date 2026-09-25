@@ -80,3 +80,27 @@ def test_api_and_csv_export_share_full_clinic_counts_and_require_all_reads():
     with TestClient(main.app, headers={'x-actor-id': 'clinic-east-vet'}) as client:
         assert client.get('/api/reports/operations?days=7').status_code == 403
         assert client.get('/api/reports/operations/export?days=7').status_code == 403
+
+
+def test_malformed_legacy_values_are_counted_without_breaking_the_report():
+    with db.connection(True) as c:
+        db.record(c, 'patient', 'clinic-east', {'name': 'SYNTHETIC malformed legacy',
+                                               'species': 0, 'owner_id': 'unknown'})
+        db.record(c, 'consultation', 'clinic-east', {'status': 0})
+        c.execute("INSERT INTO records(id,kind,clinic_id,data,version,created_at,updated_at) "
+                  "VALUES(?,?,?,?,?,?,?)", ('malformed-report-stock', 'inventory', 'clinic-east',
+                                              '[]', 1, db.now(), db.now()))
+    report = built()
+    assert any(group == {'label': '0', 'count': 1} for group in report['patients']['by_species'])
+    assert any(group == {'label': '0', 'count': 1} for group in report['consultations']['by_status'])
+    assert report['stock']['invalid'] >= 1
+
+
+def test_invalid_clinic_timezone_is_an_actionable_configuration_error():
+    with db.connection(True) as c:
+        clinic = db.get(c, 'clinic-east')
+        db.update(c, clinic, {**clinic['data'], 'timezone': None})
+    with TestClient(main.app, headers={'x-actor-id': 'clinic-east-admin'}) as client:
+        response = client.get('/api/reports/operations?days=7')
+        assert response.status_code == 409
+        assert 'timezone' in response.json()['detail']

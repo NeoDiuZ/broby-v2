@@ -33,7 +33,16 @@ def _status_counts(c, clinic, kind, condition='', extra=()):
         f'WHERE clinic_id=? AND kind=? {condition} GROUP BY 1 ORDER BY 1',
         (clinic, kind, *extra),
     )
-    return [{'label': row['label'] or 'Not recorded', 'count': row['amount']} for row in rows]
+    return _groups(rows)
+
+
+def _groups(rows):
+    counts = {}
+    for row in rows:
+        raw = row['label']
+        label = 'Not recorded' if raw is None or raw == '' else str(raw)
+        counts[label] = counts.get(label, 0) + row['amount']
+    return [{'label': label, 'count': count} for label, count in sorted(counts.items())]
 
 
 def _total(groups):
@@ -46,7 +55,7 @@ def build(c, clinic, days, *, as_of=None):
     practice = get(c, clinic, clinic)
     try:
         zone = ZoneInfo(practice['data'].get('timezone', 'Asia/Singapore'))
-    except ZoneInfoNotFoundError:
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
         fail('The clinic timezone must be configured before reporting', 409)
     end = as_of or datetime.now(zone).date()
     start = end - timedelta(days=days - 1)
@@ -62,7 +71,7 @@ def build(c, clinic, days, *, as_of=None):
         'FROM records WHERE clinic_id=? AND kind=? GROUP BY 1 ORDER BY 1',
         (clinic, 'patient'),
     )
-    by_species = [{'label': row['label'], 'count': row['amount']} for row in species_rows]
+    by_species = _groups(species_rows)
     owner_id = "p.data::jsonb #>> '{owner_id}'" if c.dialect == 'postgres' else "json_extract(p.data,'$.owner_id')"
     linked = c.execute(
         'SELECT COUNT(*) FROM records p JOIN records o ON o.id=' + owner_id +
@@ -100,7 +109,7 @@ def build(c, clinic, days, *, as_of=None):
                 raise ValueError('Invalid quantity')
             stock_items += 1
             low_stock += stock <= reorder
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        except (AttributeError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             invalid_stock += 1
 
     return {
