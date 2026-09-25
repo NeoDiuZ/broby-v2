@@ -7,9 +7,17 @@ read-only preparation and labelled deterministic reviews. This replaces the old
 49 untyped field descriptions and adds ten routine operations: speaker labels,
 automation settings, save/archive dashboards, recall preference/cancellation,
 leave request/review/withdrawal and discharge draft preparation. Every one of the
-107 shared operations is explicitly classified: 74 reviewed proposals, 27 routed
+108 shared operations is explicitly classified: 74 reviewed proposals, 28 routed
 to their dedicated review screen, and six internal test-adapter operations that
 are never advertised to the model. Guided operations are not direct AI execution.
+
+Guided Settings reviews save their fixed section with the conversation: sender
+and delivery review opens Integrations; imports, migration and incoming transfers
+open Data & migration; operational incident review opens Sync & jobs; ontology
+review opens Observation catalog; organization and rota review opens Clinic.
+Model-supplied page or section values cannot override these destinations. Opening
+a guide never confirms an action or sends to a provider. Clinical reconciliation
+adds the 28th guided operation and retains its original-evidence review.
 
 Two additional formerly guided operations now have direct saved reviews:
 

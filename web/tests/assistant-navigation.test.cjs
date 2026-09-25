@@ -32,16 +32,28 @@ test('choosing a duplicate patient resubmits the exact saved question in the sam
  assert(!h.calls.some(c=>c.url.includes('/confirm')));
 });
 
-test('saved dictionary guide opens the real catalog section without posting an action',async()=>{
- const h=await savedAssistant({turn_id:'guide',request_key:'guide-key',message:'Review dictionary',status:'completed',text:'Use the catalog',navigate:'Settings',navigate_section:'Observation catalog'});
- nodes(h.tree).find(n=>n.type==='button'&&text(n)==='Open Observation catalog').props.onClick();
- assert.equal(JSON.stringify(h.navigation),JSON.stringify([['Settings','Observation catalog']]));assert.equal(h.closed(),1);
+for(const [section,expectedPanels] of [
+ ['Observation catalog',['OntologyProposals']],
+ ['Integrations',['TestConnections']],
+ ['Data & migration',['IncomingTransfers','MigrationRehearsal']],
+ ['Sync & jobs',['OperationsHealth','DeviceControls']],
+ ['Clinic',['SchedulePreferences','OrganizationControls']],
+])test('saved guide opens the actual '+section+' review controls without posting an action',async()=>{
+ const h=await savedAssistant({turn_id:'guide',request_key:'guide-key',message:'Open the dedicated review',status:'completed',text:'Use the review screen',navigate:'Settings',navigate_section:section});
+ nodes(h.tree).find(n=>n.type==='button'&&text(n)==='Open '+section).props.onClick();
+ assert.equal(JSON.stringify(h.navigation),JSON.stringify([['Settings',section]]));assert.equal(h.closed(),1);
  assert(!h.calls.some(c=>c.options?.method==='POST'));
- const c=component('components/operations/Administration.tsx',{'@/lib/workspace':{useWorkspace:()=>({records:[{id:'settings',kind:'settings',data:{}}],snapshot:{clinic:{id:'fixture'},actor:{data:{role:'admin'}}}})},'@/lib/api':{api:async()=>[]}});
+ const calls=[];
+ const mocks={'@/lib/workspace':{useWorkspace:()=>({records:[{id:'settings',kind:'settings',data:{}}],pending:[],snapshot:{mode:'password',clinic:{id:'fixture'},actor:{data:{role:'admin'}},integrations:{},jobs:[]}})},'@/lib/api':{api:async(url,options)=>{calls.push({url,options});return []}}};
+ const c=component('components/operations/Administration.tsx',mocks);
  const tree=c.render('Settings',{section:h.navigation[0][1]});
- assert(nodes(tree).some(n=>n.type==='h2'&&text(n)==='Typed observation catalog'));
- assert(nodes(tree).some(n=>n.type==='OntologyProposals'));
- assert(!nodes(tree).some(n=>n.type==='h2'&&text(n)==='Clinic preferences'));
+ for(const panel of expectedPanels)assert(nodes(tree).some(n=>n.type===panel),'Missing actual review panel '+panel);
+ assert.equal(nodes(tree).some(n=>n.type==='h2'&&text(n)==='Clinic preferences'),section==='Clinic');
+ if(section==='Integrations'){
+  const controls=component('components/AdvancedOperations.tsx',{...mocks,'./ui':new Proxy({patientOptions:()=>[]},{get:(target,name)=>target[name]||String(name)})}).render('TestConnections',{});
+  assert(nodes(controls).some(n=>n.type==='TwilioTrial'),'Sender and provider-receipt review must be reachable here');
+ }
+ assert(!calls.some(c=>c.options?.method==='POST'));
 });
 
 test('unknown settings section cannot select an arbitrary panel',()=>{

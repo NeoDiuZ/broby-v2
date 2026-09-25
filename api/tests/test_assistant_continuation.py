@@ -1,4 +1,4 @@
-"""Saved selection context and dedicated catalog navigation, without mutations."""
+"""Saved selection context and dedicated review navigation, without mutations."""
 import pytest
 from fastapi.testclient import TestClient
 import assistant
@@ -7,19 +7,29 @@ import main
 from test_integrity import isolated
 
 
-@pytest.mark.parametrize('guided', ['ontology.propose', 'ontology.review'])
-def test_saved_ontology_guidance_opens_actual_catalog_without_creating_a_definition(monkeypatch, guided):
+@pytest.mark.parametrize('guided,section', [
+    ('ontology.propose', 'Observation catalog'), ('ontology.review', 'Observation catalog'),
+    ('import.patients', 'Data & migration'), ('import.records', 'Data & migration'),
+    ('migration.preview', 'Data & migration'), ('migration.apply', 'Data & migration'),
+    ('transfer.accept', 'Data & migration'),
+    ('twilio.trial_send', 'Integrations'), ('twilio.reconcile', 'Integrations'),
+    ('operations.alert.acknowledge', 'Sync & jobs'), ('operations.alert.retry', 'Sync & jobs'),
+    ('schedule.configure', 'Clinic'), ('organization.create', 'Clinic'),
+    ('organization.clinic_create', 'Clinic'), ('organization.policy', 'Clinic'),
+    ('organization.join_request', 'Clinic'), ('organization.join_review', 'Clinic'),
+])
+def test_saved_guidance_opens_fixed_review_section_without_executing(monkeypatch, guided, section):
     monkeypatch.setattr(assistant.providers, 'available', lambda: {'ai': True})
     # Model-provided destinations are ignored; only the fixed server route survives.
-    monkeypatch.setattr(assistant.providers, 'model_json', lambda *a: {'guide': guided, 'navigate_section': 'Untrusted section'})
+    monkeypatch.setattr(assistant.providers, 'model_json', lambda *a: {'guide': guided, 'navigate': 'Untrusted page', 'navigate_section': 'Untrusted section'})
     with db.connection() as c: before = [dict(r) for r in c.execute('SELECT * FROM records ORDER BY id')]
     client = TestClient(main.app)
     headers = {'x-actor-id': 'clinic-east-admin'}
-    response = client.post('/api/assistant', headers=headers, json={'message': 'Review dictionary definitions', 'key': 'guide-catalog'}).json()
-    assert response['navigate'] == 'Settings' and response['navigate_section'] == 'Observation catalog'
+    response = client.post('/api/assistant', headers=headers, json={'message': 'Open the dedicated review for ' + guided, 'key': 'guide-review'}).json()
+    assert response['navigate'] == 'Settings' and response['navigate_section'] == section
     assert not response.get('action') and not response['sources']
     saved = client.get('/api/assistant/conversations/' + response['conversation_id'], headers=headers).json()['turns'][0]
-    assert saved['navigate_section'] == response['navigate_section']
+    assert saved['navigate'] == 'Settings' and saved['navigate_section'] == section
     assert client.post(f"/api/assistant/conversations/{response['conversation_id']}/turns/{response['turn_id']}/confirm", headers=headers).status_code == 409
     with db.connection() as c: assert [dict(r) for r in c.execute('SELECT * FROM records ORDER BY id')] == before
 
