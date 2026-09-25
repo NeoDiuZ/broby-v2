@@ -78,5 +78,14 @@ The exact owner-linked patient filter passed a focused synthetic SQLite and
 PostgreSQL test on 25 September. It covered assistant/view parity, current
 primary and additional links, a removed additional link, duplicate-name
 clarification, wrong-kind rejection, foreign-clinic owner rejection and
-malformed historical link data. Hosted
-real-model phrasing and browser acceptance are still pending for this filter.
+malformed historical link data.
+
+After V2 revision `3bdf9af` deployed, a real-model question about all pets
+linked to one named synthetic owner, grouped by species, selected the exact
+owner ID. It returned the two linked patients (one primary, one additional)
+and one Cat and one Dog group. A separate authenticated session read back the
+same saved-view query and two receipts. Removing the additional-owner link
+changed the saved view to one Cat. The deployed browser displayed that one
+matching patient, opened its receipt, then listed and rendered the same view
+after reload and device unlock, with no framework error overlay. This verifies
+one phrasing and this synthetic workflow, not broad owner-language accuracy.
